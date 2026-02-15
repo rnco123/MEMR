@@ -7,6 +7,9 @@ import { createClient } from '@/lib/supabase/server'
 import { handleApiError, AuthenticationError } from '@/lib/api-error-handler'
 import type { AuditAction, ResourceType } from '@/lib/audit'
 
+// Force dynamic rendering since we use cookies for authentication
+export const dynamic = 'force-dynamic'
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
