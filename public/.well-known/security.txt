@@ -1,0 +1,15 @@
+Contact: security@myclinicmd.com
+Expires: 2025-12-31T23:59:59.000Z
+Preferred-Languages: en
+Canonical: https://myclinicmd.com/.well-known/security.txt
+Policy: https://myclinicmd.com/security-policy
+
+# Security Policy
+# Please report security vulnerabilities responsibly
+# We appreciate responsible disclosure
+
+# Encryption
+# All communications should be encrypted
+
+# Acknowledgments
+# We will acknowledge security researchers who responsibly disclose vulnerabilities
