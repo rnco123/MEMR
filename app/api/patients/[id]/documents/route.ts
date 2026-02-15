@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Force dynamic rendering since we use cookies for authentication
+export const dynamic = 'force-dynamic'
+
 // GET - Fetch all documents for a patient
 export async function GET(
   request: NextRequest,

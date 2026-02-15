@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
+// Force dynamic rendering since we use cookies for authentication
+export const dynamic = 'force-dynamic'
+
 // DELETE - Delete a document
 export async function DELETE(
   request: NextRequest,
