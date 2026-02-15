@@ -7,7 +7,7 @@
 - ✅ Restricts resource loading to trusted sources
 - ✅ Prevents XSS attacks
 - ✅ Allows necessary external resources (Daily.co, Supabase)
-
+ 
 ### 2. CSRF Protection
 - ✅ Token-based CSRF protection (`lib/security/csrf.ts`)
 - ✅ Automatic token generation and validation
