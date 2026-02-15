@@ -8,14 +8,6 @@ import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 
-interface Patient {
-  id: number
-  first_name: string
-  last_name: string
-  email: string | null
-  phone: string | null
-}
-
 interface UpcomingAppointment {
   id: string
   appointment_date: string
@@ -31,11 +23,6 @@ function DashboardPage() {
   const { user, role } = useAuth()
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [isToggling, setIsToggling] = useState(false)
-  const [showVideoModal, setShowVideoModal] = useState(false)
-  const [patients, setPatients] = useState<Patient[]>([])
-  const [loadingPatients, setLoadingPatients] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null)
   const [totalPatients, setTotalPatients] = useState<number>(0)
   const [totalConsultations, setTotalConsultations] = useState<number>(0)
   const [loadingStats, setLoadingStats] = useState(true)
@@ -95,34 +82,6 @@ function DashboardPage() {
       fetchAvailability()
     }
   }, [role, user])
-
-  // Fetch all patients for video call modal
-  useEffect(() => {
-    const fetchPatients = async () => {
-      if (!showVideoModal) return
-      
-      setLoadingPatients(true)
-      try {
-        const { data, error } = await supabase
-          .from('patients')
-          .select('id, first_name, last_name, email, phone')
-          .order('last_name', { ascending: true })
-          .order('first_name', { ascending: true })
-
-        if (error) {
-          console.error('Error fetching patients:', error)
-        } else if (data) {
-          setPatients(data || [])
-        }
-      } catch (error) {
-        console.error('Error in fetchPatients:', error)
-      } finally {
-        setLoadingPatients(false)
-      }
-    }
-
-    fetchPatients()
-  }, [showVideoModal, supabase])
 
   // Fetch statistics
   useEffect(() => {
@@ -244,31 +203,6 @@ function DashboardPage() {
     fetchUpcomingAppointments()
   }, [user, role, supabase])
 
-  // Filter patients based on search
-  const filteredPatients = useMemo(() => {
-    if (!searchQuery.trim()) return patients
-
-    const query = searchQuery.toLowerCase()
-    return patients.filter(patient =>
-      patient.id.toString().includes(query) ||
-      patient.first_name.toLowerCase().includes(query) ||
-      patient.last_name.toLowerCase().includes(query) ||
-      patient.email?.toLowerCase().includes(query) ||
-      patient.phone?.includes(query)
-    )
-  }, [patients, searchQuery])
-
-  const handleStartVideoCall = () => {
-    if (!selectedPatient) {
-      alert('Please select a patient')
-      return
-    }
-
-    // Create video room and redirect
-    // For now, redirect to video page - you can enhance this to send link to patient
-    window.location.href = `/video?patientId=${selectedPatient.id}&patientName=${encodeURIComponent(`${selectedPatient.first_name} ${selectedPatient.last_name}`)}`
-  }
-
   return (
     <div className="p-6 lg:p-12">
       <div className="max-w-7xl mx-auto">
@@ -314,38 +248,6 @@ function DashboardPage() {
 
         {/* Quick Actions Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-          {/* Video Call Card - Only for doctors */}
-          {role === 'doctor' ? (
-            <button
-              onClick={() => setShowVideoModal(true)}
-              className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all duration-300 hover:scale-105 hover:shadow-2xl hover:shadow-blue-500/20 text-left w-full"
-            >
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <h3 className="text-xl font-bold text-white mb-2">Video Consultation</h3>
-            <p className="text-blue-200 text-sm">Start a secure video call with patients</p>
-            <div className="mt-4 flex items-center text-cyan-400 text-sm font-medium group-hover:translate-x-2 transition-transform">
-              Start Call
-              <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </div>
-          </button>
-          ) : (
-            <div className="group bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 opacity-60 cursor-not-allowed">
-              <div className="w-14 h-14 bg-gradient-to-br from-gray-500 to-gray-600 rounded-xl flex items-center justify-center mb-4 shadow-lg">
-                <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">Video Consultation</h3>
-              <p className="text-blue-200 text-sm">Only available for doctors</p>
-            </div>
-          )}
-
           {/* Patient Records Card */}
           <Link
             href="/dashboard/patients-history"
@@ -543,114 +445,6 @@ function DashboardPage() {
         )}
       </div>
 
-      {/* Video Call Modal */}
-      {showVideoModal && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-white/20 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="text-2xl font-bold text-white">Start Video Consultation</h3>
-                <p className="text-blue-200 text-sm mt-1">
-                  On start, we will send a telemedicine session link to this patient
-                </p>
-              </div>
-              <button
-                onClick={() => {
-                  setShowVideoModal(false)
-                  setSearchQuery('')
-                  setSelectedPatient(null)
-                }}
-                className="text-blue-300 hover:text-white transition-colors"
-              >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            {/* Search Input */}
-            <div className="mb-4">
-              <div className="relative">
-                <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search by patient ID, name, email, or phone..."
-                  className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </div>
-
-            {/* Patients List */}
-            <div className="flex-1 overflow-y-auto mb-4">
-              {loadingPatients ? (
-                <div className="flex items-center justify-center py-8">
-                  <LoadingSpinner message="Loading patients..." />
-                </div>
-              ) : filteredPatients.length === 0 ? (
-                <div className="text-center py-8 text-blue-200">
-                  <p>No patients found</p>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {filteredPatients.map((patient) => (
-                    <button
-                      key={patient.id}
-                      onClick={() => setSelectedPatient(patient)}
-                      className={`w-full text-left p-4 rounded-xl border transition-all ${
-                        selectedPatient?.id === patient.id
-                          ? 'bg-blue-500/20 border-blue-500/50'
-                          : 'bg-white/5 border-white/10 hover:bg-white/10'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-white font-medium">
-                            {patient.first_name} {patient.last_name}
-                          </p>
-                          <p className="text-blue-300 text-sm">ID: {patient.id}</p>
-                          {patient.email && (
-                            <p className="text-blue-200 text-xs">{patient.email}</p>
-                          )}
-                        </div>
-                        {selectedPatient?.id === patient.id && (
-                          <svg className="w-5 h-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowVideoModal(false)
-                  setSearchQuery('')
-                  setSelectedPatient(null)
-                }}
-                className="flex-1 px-4 py-3 bg-white/10 border border-white/20 text-white rounded-xl hover:bg-white/20 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleStartVideoCall}
-                disabled={!selectedPatient}
-                className="flex-1 px-4 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-              >
-                Start Call
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
