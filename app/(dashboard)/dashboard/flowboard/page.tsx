@@ -388,3 +388,4 @@ export default withRoleProtection(FlowboardPage, {
   allowedRoles: [UserRole.DOCTOR],
   redirectTo: '/dashboard',
 })
+
