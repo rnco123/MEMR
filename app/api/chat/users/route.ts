@@ -1,10 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 
-// Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
-export const runtime = 'nodejs'
-export const revalidate = 0
 export const fetchCache = 'force-no-store'
 
 export async function GET(request: NextRequest) {
@@ -18,8 +15,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all staff profiles (doctors, nurses, staff) except current user
-    // Don't filter by active - show all staff members (they can be filtered out later if needed)
+    // Fetch staff profiles
     const { data: profiles, error } = await supabase
       .from('profiles')
       .select('uid, full_name, role, email, active')
@@ -34,14 +30,18 @@ export async function GET(request: NextRequest) {
       
       // If RLS is blocking, provide helpful error message
       if (error.message?.includes('policy') || error.code === '42501') {
-        return NextResponse.json({ 
-          error: 'RLS policy blocking access. Please ensure "Authenticated users can view profiles" policy exists.',
-          details: error.message,
-          hint: 'Run migration 016_fix_profiles_rls_for_chat.sql'
-        }, { status: 403 })
+        return NextResponse.json(
+          { 
+            error: 'RLS policy blocking access. Please ensure "Authenticated users can view profiles" policy exists.' 
+          },
+          { status: 403 }
+        )
       }
       
-      return NextResponse.json({ error: 'Failed to fetch users', details: error.message }, { status: 500 })
+      return NextResponse.json(
+        { error: `Failed to fetch users: ${error.message}` },
+        { status: 500 }
+      )
     }
 
     console.log(`Found ${profiles?.length || 0} users for chat`)
@@ -50,7 +50,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ users: profiles || [] })
   } catch (error) {
     console.error('Error in GET /api/chat/users:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Internal server error'
+    const statusCode = errorMessage.includes('RLS') ? 403 : 500
+    
+    return NextResponse.json(
+      { 
+        error: errorMessage.includes('RLS') 
+          ? 'RLS policy blocking access. Please ensure "Authenticated users can view profiles" policy exists.'
+          : 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+      },
+      { status: statusCode }
+    )
   }
 }
-

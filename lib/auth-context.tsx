@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, type RefObject } from 'react'
 import { createClient } from './supabase/client'
 import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
@@ -28,6 +28,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const router = useRouter()
   const supabase = createClient()
+  // Use ref to preserve role during refreshes to prevent welcome screen on temporary failures
+  const roleRef = useRef<UserRole | null>(null)
+  
+  // Helper to update role state and ref together
+  const updateRole = (newRole: UserRole | null, preserveOnNull = false) => {
+    if (newRole) {
+      setRoleState(newRole)
+      roleRef.current = newRole
+    } else if (preserveOnNull && roleRef.current) {
+      // Preserve previous role on temporary failures
+      setRoleState(roleRef.current)
+    } else {
+      // Clear role (user truly has no role or explicit clear)
+      setRoleState(null)
+      roleRef.current = null
+    }
+  }
 
   // Fetch role from Supabase profiles table (matches existing schema)
   const fetchUserRole = async (userId: string, retryCount = 0): Promise<UserRole | null> => {
@@ -114,6 +131,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const dbRole = await fetchUserRole(user.id)
     if (dbRole) {
       // Update user metadata with role for faster access
+      // Store in user metadata to avoid repeated queries
+      if (user.user_metadata) {
+        user.user_metadata.role = dbRole
+      } else {
+        user.user_metadata = { role: dbRole }
+      }
       return dbRole
     }
 
@@ -124,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let isMounted = true
     let retryCount = 0
     const maxRetries = 2
+    let sessionRefreshInterval: NodeJS.Timeout | null = null
     
     // Get initial session with timeout and retry logic
     const initAuth = async () => {
@@ -160,11 +184,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (currentUser) {
           const userRole = await extractRole(currentUser)
           if (isMounted) {
-            setRoleState(userRole)
+            updateRole(userRole, true) // Preserve role on temporary failures
           }
         } else {
           if (isMounted) {
-            setRoleState(null)
+            updateRole(null, false) // No user = no role
           }
         }
         if (isMounted) {
@@ -180,7 +204,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Periodic session refresh to keep session alive (refresh every 30 minutes)
+    const setupPeriodicRefresh = () => {
+      if (sessionRefreshInterval) {
+        clearInterval(sessionRefreshInterval)
+      }
+      
+      // Refresh more frequently to prevent expiration (every 15 minutes instead of 30)
+      // This ensures we refresh before the 1-hour JWT expiration
+      sessionRefreshInterval = setInterval(async () => {
+        if (!isMounted) return
+        
+        try {
+          const { data: { session: currentSession } } = await supabase.auth.getSession()
+          if (currentSession) {
+            // Check if session is close to expiring (within 15 minutes)
+            const expiresAt = currentSession.expires_at
+            if (expiresAt) {
+              const now = Math.floor(Date.now() / 1000)
+              const expiresIn = expiresAt - now
+              // If session expires in less than 15 minutes, refresh it proactively
+              if (expiresIn < 900) {
+                const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+                if (!refreshError && refreshedSession && isMounted) {
+                  setSession(refreshedSession)
+                  const currentUser = refreshedSession.user ?? null
+                  setUser(currentUser)
+                  if (currentUser) {
+                    const userRole = await extractRole(currentUser)
+                    if (isMounted) {
+                      updateRole(userRole, true)
+                    }
+                  }
+                } else if (refreshError && isMounted) {
+                  // If refresh fails, try to get session again - might be a temporary issue
+                  const { data: { session: retrySession } } = await supabase.auth.getSession()
+                  if (retrySession && isMounted) {
+                    setSession(retrySession)
+                    const retryUser = retrySession.user ?? null
+                    setUser(retryUser)
+                    if (retryUser) {
+                      const userRole = await extractRole(retryUser)
+                      if (isMounted) {
+                        updateRole(userRole, true)
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              // If no expires_at, proactively refresh to ensure session stays alive
+              const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+              if (!refreshError && refreshedSession && isMounted) {
+                setSession(refreshedSession)
+                const currentUser = refreshedSession.user ?? null
+                setUser(currentUser)
+                if (currentUser) {
+                  const userRole = await extractRole(currentUser)
+                  if (isMounted) {
+                    updateRole(userRole, true)
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Periodic session refresh error:', error)
+          }
+        }
+      }, 15 * 60 * 1000) // Check every 15 minutes (more frequent to prevent expiration)
+    }
+
     initAuth()
+    setupPeriodicRefresh()
 
     // Listen for auth changes
     const {
@@ -191,9 +288,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Handle different auth events
       if (event === 'SIGNED_OUT') {
         // Only clear state on explicit sign out, not on token refresh
+        if (sessionRefreshInterval) {
+          clearInterval(sessionRefreshInterval)
+          sessionRefreshInterval = null
+        }
         setSession(null)
         setUser(null)
-        setRoleState(null)
+        updateRole(null, false) // Explicit clear on signout
         setLoading(false)
         return
       }
@@ -206,11 +307,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (currentUser) {
           const userRole = await extractRole(currentUser)
           if (isMounted) {
-            setRoleState(userRole)
+            updateRole(userRole, true) // Preserve role on temporary failures
           }
         }
         if (isMounted) {
           setLoading(false)
+        }
+        // Restart periodic refresh when session is refreshed
+        if (session) {
+          setupPeriodicRefresh()
         }
         return
       }
@@ -224,7 +329,80 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Always try to fetch role to ensure it's up to date
           const userRole = await extractRole(currentUser)
           if (isMounted) {
-            setRoleState(userRole)
+            updateRole(userRole, true) // Preserve role on temporary failures
+          }
+        }
+        // Setup periodic refresh if we have a session
+        setupPeriodicRefresh()
+      } else {
+        // If session is null but we had a user before, try to refresh
+        // This handles cases where session expired but refresh token is still valid
+        // Note: At this point, event cannot be 'SIGNED_OUT' as it's already handled above
+        if (user) {
+          try {
+            const { data: { session: refreshedSession }, error: refreshError } = await supabase.auth.refreshSession()
+            if (!refreshError && refreshedSession && isMounted) {
+              setSession(refreshedSession)
+              const refreshedUser = refreshedSession.user ?? null
+              setUser(refreshedUser)
+              if (refreshedUser) {
+                const userRole = await extractRole(refreshedUser)
+                if (isMounted) {
+                  updateRole(userRole, true)
+                }
+              }
+              setupPeriodicRefresh()
+            } else if (refreshError && isMounted) {
+              // Only clear state if refresh truly failed (refresh token expired)
+              // Don't clear on temporary errors - try getSession as fallback
+              const { data: { session: fallbackSession } } = await supabase.auth.getSession()
+              if (fallbackSession && isMounted) {
+                // Fallback session found, use it
+                setSession(fallbackSession)
+                const fallbackUser = fallbackSession.user ?? null
+                setUser(fallbackUser)
+                if (fallbackUser) {
+                  const userRole = await extractRole(fallbackUser)
+                  if (isMounted) {
+                    updateRole(userRole, true)
+                  }
+                }
+                setupPeriodicRefresh()
+              } else if (refreshError.message?.includes('refresh_token_not_found') || 
+                  refreshError.message?.includes('invalid_grant') ||
+                  refreshError.message?.includes('expired')) {
+                // Session is truly expired, clear state only as last resort
+                setSession(null)
+                setUser(null)
+                updateRole(null, false) // Session expired = clear role
+              }
+            }
+          } catch (err) {
+            // Ignore refresh errors - might be temporary, try getSession as fallback
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('Session refresh attempt failed:', err)
+            }
+            // Try getSession as last resort
+            try {
+              const { data: { session: fallbackSession } } = await supabase.auth.getSession()
+              if (fallbackSession && isMounted) {
+                setSession(fallbackSession)
+                const fallbackUser = fallbackSession.user ?? null
+                setUser(fallbackUser)
+                if (fallbackUser) {
+                  const userRole = await extractRole(fallbackUser)
+                  if (isMounted) {
+                    updateRole(userRole, true)
+                  }
+                }
+                setupPeriodicRefresh()
+              }
+            } catch (fallbackErr) {
+              // If even getSession fails, session is truly gone
+              if (process.env.NODE_ENV === 'development') {
+                console.warn('Fallback getSession also failed:', fallbackErr)
+              }
+            }
           }
         }
       }
@@ -236,6 +414,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false
+      if (sessionRefreshInterval) {
+        clearInterval(sessionRefreshInterval)
+      }
       subscription.unsubscribe()
     }
   }, [])
@@ -248,7 +429,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!error && data.user) {
       // Fetch role from database
       const userRole = await extractRole(data.user)
-      setRoleState(userRole)
+      updateRole(userRole, true)
       // Redirect based on role
       if (userRole) {
         router.push('/dashboard')
@@ -287,7 +468,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } as User
 
       setUser(mockUser)
-      setRoleState(data.user.role)
+      updateRole(data.user.role, false)
       
       // Store in localStorage for test mode
       localStorage.setItem('test_user', JSON.stringify(mockUser))
@@ -304,7 +485,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const setRole = (newRole: UserRole) => {
-    setRoleState(newRole)
+    updateRole(newRole, false)
     if (user) {
       // Update user metadata (will be persisted to Supabase in Phase 2)
       const updatedUser = {
@@ -336,11 +517,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Role will be set via the trigger in user_profiles table
       // But we can set it in state for immediate use
       if (metadata?.role) {
-        setRoleState(metadata.role)
+        updateRole(metadata.role, false)
       } else {
         // Fetch role from database after signup
         const userRole = await extractRole(data.user)
-        setRoleState(userRole)
+        updateRole(userRole, true)
       }
     }
     return { error }
@@ -355,7 +536,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clear state immediately
       setUser(null)
       setSession(null)
-      setRoleState(null)
+      updateRole(null, false) // Explicit signout = clear role
 
       // Call server-side sign out first to clear cookies
       try {
@@ -389,7 +570,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       localStorage.removeItem('test_role')
       setUser(null)
       setSession(null)
-      setRoleState(null)
+      updateRole(null, false) // Explicit signout = clear role
       // Force redirect
       window.location.href = '/'
     }
@@ -404,7 +585,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const parsedUser = JSON.parse(testUser) as User
           setUser(parsedUser)
-          setRoleState(testRole)
+          updateRole(testRole, false)
         } catch (e) {
           // Invalid test user data, clear it
           localStorage.removeItem('test_user')

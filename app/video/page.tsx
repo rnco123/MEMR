@@ -1,24 +1,162 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import DailyIframe from '@daily-co/daily-js'
+import { useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
+import { createClient } from '@/lib/supabase/client'
+import { getStatusInfo } from '@/lib/encounter-status'
+
+interface Patient {
+  id: number
+  first_name: string
+  last_name: string
+  email: string | null
+  phone: string | null
+  gender: string | null
+  date_of_birth: string | null
+  zip_code: string | null
+  state: string | null
+  street_address: string | null
+  patient_code: string | null
+}
+
+interface Encounter {
+  id: number
+  appointment_id: number
+  patient_id: number
+  intake_id: number | null
+  status: string
+  encounter_code: string | null
+}
+
+interface Appointment {
+  id: number
+  appointment_date: string | null
+  appointment_time: string | null
+  onsite_type: string | null
+}
+
+interface IntakeForm {
+  chief_complaint: string | null
+  symptoms_description: string | null
+  location: string | null
+  severity: number | null
+  onset: string | null
+  medical_conditions: unknown
+  allergies: unknown
+  current_medications: unknown
+  surgeries: unknown
+  tobacco_use: boolean | null
+  alcohol_use: boolean | null
+  drug_use: boolean | null
+}
+
+interface Vitals {
+  bp_systolic: number | null
+  bp_diastolic: number | null
+  heart_rate: number | null
+  respiratory_rate: number | null
+  temperature: number | null
+  temperature_unit: string | null
+  spo2: number | null
+  weight: number | null
+  weight_unit: string | null
+  height: number | null
+  height_unit: string | null
+  bmi: number | null
+  notes: string | null
+}
+
+interface SOAPNotes {
+  subjective_text: string | null
+  objective_text: string | null
+  assessment_text: string | null
+  plan_text: string | null
+}
+
+interface DoctorSOAPNotes {
+  id?: number
+  subjective_text: string | null
+  objective_text: string | null
+  assessment_text: string | null
+  plan_text: string | null
+}
+
+interface TranscriptEntry {
+  id: number
+  speaker_role: string
+  speaker_name: string
+  message: string
+  created_at: string
+}
+
+function cleanSoapSection(
+  text: string | null,
+  section: 'subjective' | 'objective' | 'assessment' | 'plan'
+): string | null {
+  if (!text) return null
+  const label = section
+  const pattern = new RegExp(
+    String.raw`^\s*(\*\*)?\s*${label}\s*:?\s*(\*\*)?\s*`,
+    'i'
+  )
+  return text.replace(pattern, '').trim()
+}
+
+function formatDate(dateString: string | null) {
+  if (!dateString) return 'N/A'
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function calculateAge(dob: string | null) {
+  if (!dob) return 'N/A'
+  const birthDate = new Date(dob)
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDiff = today.getMonth() - birthDate.getMonth()
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--
+  return `${age} years`
+}
 
 function VideoPage() {
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, role } = useAuth()
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
+  const searchParams = useSearchParams()
+  const encounterId = searchParams.get('encounter')
+  const supabase = useMemo(() => createClient(), [])
   const [error, setError] = useState<string | null>(null)
-  const [meetingState, setMeetingState] = useState<string>('not-joined')
-  const [roomInfo, setRoomInfo] = useState<any>(null)
-  const dailyRef = useRef<ReturnType<typeof DailyIframe.createFrame> | null>(null)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isInitializingRef = useRef(false)
-  const isCleaningUpRef = useRef(false)
+  const [roomUrl, setRoomUrl] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [patient, setPatient] = useState<Patient | null>(null)
+  const [encounter, setEncounter] = useState<Encounter | null>(null)
+  const [appointment, setAppointment] = useState<Appointment | null>(null)
+  const [intake, setIntake] = useState<IntakeForm | null>(null)
+  const [vitals, setVitals] = useState<Vitals | null>(null)
+  const [soapNotes, setSoapNotes] = useState<SOAPNotes | null>(null)
+  const [doctorSoap, setDoctorSoap] = useState<DoctorSOAPNotes | null>(null)
+  const [doctorId, setDoctorId] = useState<number | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(true)
+  const [detailsTab, setDetailsTab] = useState<'patient' | 'intake' | 'vitals' | 'soap' | 'transcript'>('patient')
+  const [soapForm, setSoapForm] = useState<DoctorSOAPNotes>({
+    subjective_text: '',
+    objective_text: '',
+    assessment_text: '',
+    plan_text: '',
+  })
+  const [savingSoap, setSavingSoap] = useState(false)
+  const [sessionEnded, setSessionEnded] = useState(false)
+  const [endMessage, setEndMessage] = useState<string | null>(null)
+  const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([])
+  const [speakerName, setSpeakerName] = useState<string>('')
+  const [newTranscriptMessage, setNewTranscriptMessage] = useState('')
+  const [addingTranscript, setAddingTranscript] = useState(false)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -27,365 +165,740 @@ function VideoPage() {
   }, [user, authLoading, router])
 
   useEffect(() => {
-    // Reset cleanup flag for new mount
-    isCleaningUpRef.current = false
-    
-    // Guard: Prevent multiple initializations (React Strict Mode protection)
-    if (isInitializingRef.current || dailyRef.current) {
-      return
-    }
+    if (!encounterId || !user || authLoading) return
 
-    isInitializingRef.current = true
-
-    const initializeVideo = async () => {
+    const fetchRoom = async () => {
       try {
         setIsLoading(true)
         setError(null)
 
-        // Wait for container to be available
-        await new Promise(resolve => setTimeout(resolve, 100))
+        const { data: { session } } = await supabase.auth.getSession()
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
 
-        if (!containerRef.current) {
-          throw new Error('Container element not found')
+        const response = await fetch('/api/daily/room', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ encounterId: Number(encounterId) }),
+        })
+
+        const room = await response.json()
+
+        if (!response.ok) {
+          throw new Error(room?.error || 'Failed to join video room')
         }
 
-        // Guard: Check again after async delay (React Strict Mode double-mount protection)
-        if (dailyRef.current) {
-          console.log('Daily instance already exists, skipping initialization')
-          isInitializingRef.current = false
+        const baseUrl: string | undefined = room?.url
+        if (!baseUrl || !baseUrl.startsWith('http')) {
+          throw new Error('Invalid room URL')
+        }
+
+        const displayName =
+          role === 'doctor' ? 'Doctor' : role === 'nurse' || role === 'staff' ? 'Nurse' : 'Staff'
+
+        const url = new URL(baseUrl)
+        url.searchParams.set('userName', displayName)
+        setRoomUrl(url.toString())
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to join video room')
+      } finally {
+            setIsLoading(false)
+          }
+    }
+
+    fetchRoom()
+  }, [encounterId, user, authLoading, role, supabase])
+
+  useEffect(() => {
+    if (!encounterId || !supabase) return
+
+    const fetchDetails = async () => {
+      setDetailsLoading(true)
+      try {
+        const { data: enc } = await supabase
+          .from('encounters')
+          .select('*')
+          .eq('id', Number(encounterId))
+          .single()
+
+        if (!enc) {
+          setDetailsLoading(false)
           return
         }
 
-        // Create Daily.co room via API
-        const response = await fetch('/api/daily/room', {
+        setEncounter(enc as Encounter)
+
+        const { data: pat } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('id', enc.patient_id)
+          .single()
+        setPatient(pat as Patient)
+
+        const { data: appt } = await supabase
+          .from('appointments')
+          .select('id, appointment_date, appointment_time, onsite_type')
+          .eq('id', enc.appointment_id)
+          .single()
+        setAppointment(appt as Appointment)
+
+        if (enc.intake_id) {
+          const { data: int } = await supabase
+            .from('intake_form')
+            .select('chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use')
+            .eq('id', enc.intake_id)
+            .maybeSingle()
+          setIntake(int as IntakeForm)
+        }
+
+        const { data: vit } = await supabase
+          .from('vitals')
+          .select('*')
+          .eq('encounter_id', Number(encounterId))
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        setVitals(vit as Vitals)
+
+        let soapData: SOAPNotes | null = null
+        const { data: soapEnc, error: soapEncErr } = await supabase
+          .from('ai_soapnotes')
+          .select('subjective_text, objective_text, assessment_text, plan_text')
+          .eq('encounter_id', Number(encounterId))
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (soapEncErr?.code === '42703') {
+          const { data: soapAppt } = await supabase
+            .from('ai_soapnotes')
+            .select('subjective_text, objective_text, assessment_text, plan_text')
+            .eq('appointment_id', enc.appointment_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          soapData = soapAppt as SOAPNotes
+        } else if (soapEnc) {
+          soapData = soapEnc as SOAPNotes
+        } else {
+          const { data: soapAppt } = await supabase
+            .from('ai_soapnotes')
+            .select('subjective_text, objective_text, assessment_text, plan_text')
+            .eq('appointment_id', enc.appointment_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          soapData = soapAppt as SOAPNotes
+        }
+        setSoapNotes(soapData)
+
+        const { data: { user: authUser } } = await supabase.auth.getUser()
+        const { data: docRow } = await supabase
+          .from('doctors')
+          .select('id')
+          .eq('user_id', authUser?.id)
+          .maybeSingle()
+        if (docRow) setDoctorId(docRow.id)
+
+        const { data: docSoap } = await supabase
+          .from('doctor_soapnotes')
+          .select('id, subjective_text, objective_text, assessment_text, plan_text')
+          .eq('encounter_id', Number(encounterId))
+          .maybeSingle()
+        if (docSoap) {
+          setDoctorSoap(docSoap as DoctorSOAPNotes)
+          setSoapForm({
+            subjective_text: docSoap.subjective_text ?? '',
+            objective_text: docSoap.objective_text ?? '',
+            assessment_text: docSoap.assessment_text ?? '',
+            plan_text: docSoap.plan_text ?? '',
+          })
+        } else {
+          setSoapForm({
+            subjective_text: '',
+            objective_text: '',
+            assessment_text: '',
+            plan_text: '',
+          })
+        }
+
+        if (authUser) {
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('uid', authUser.id)
+            .maybeSingle()
+          const name = profile?.full_name || authUser.email?.split('@')[0] || 'User'
+          setSpeakerName(name)
+        }
+
+        const { data: transcriptRows, error: transcriptErr } = await supabase
+          .from('telemedicine_transcripts')
+          .select('id, speaker_role, speaker_name, message, created_at')
+          .eq('encounter_id', Number(encounterId))
+          .order('created_at', { ascending: true })
+        if (!transcriptErr && transcriptRows) {
+          setTranscripts(transcriptRows as TranscriptEntry[])
+        } else {
+          setTranscripts([])
+        }
+      } catch (e) {
+        console.error('Error fetching patient details:', e)
+      } finally {
+        setDetailsLoading(false)
+      }
+    }
+
+    fetchDetails()
+  }, [encounterId, supabase])
+
+  // For nurses/staff: watch encounter status; if doctor concludes, show message then send them back to flowboard
+  useEffect(() => {
+    if (!encounterId || !supabase) return
+    if (role === 'doctor') return
+    if (sessionEnded) return
+
+    const encounterIdNum = Number(encounterId)
+    if (Number.isNaN(encounterIdNum)) return
+
+    const interval = setInterval(async () => {
+      try {
+        const { data, error } = await supabase
+          .from('encounters')
+          .select('status')
+          .eq('id', encounterIdNum)
+          .maybeSingle()
+
+        if (!error && data?.status === 'consultation_concluded') {
+          setSessionEnded(true)
+          setEndMessage(
+            `Doctor has concluded the consultation for room #${encounterIdNum}. Returning to flowboard...`
+          )
+          // Give nurse ~6 seconds to read the message
+          setTimeout(() => {
+            router.push(`/dashboard/flowboard?encounter=${encounterIdNum}`)
+          }, 6000)
+        }
+      } catch (e) {
+        // Ignore polling errors; try again on next tick
+        console.error('Error polling encounter status:', e)
+      }
+    }, 10000) // poll every 10 seconds
+
+    return () => clearInterval(interval)
+  }, [encounterId, supabase, role, sessionEnded, router])
+
+  const validateDoctorSoap = (): boolean => {
+    const fields: Array<keyof typeof soapForm> = [
+      'subjective_text',
+      'objective_text',
+      'assessment_text',
+      'plan_text',
+    ]
+    for (const field of fields) {
+      const value = soapForm[field]
+      if (typeof value !== 'string' || !value.trim()) {
+        alert('All SOAP sections (Subjective, Objective, Assessment, Plan) must be filled in before continuing.')
+        return false
+      }
+    }
+    return true
+  }
+
+  const handleSaveDoctorSoap = async () => {
+    if (!encounterId || !doctorId || role !== 'doctor') return
+    if (!validateDoctorSoap()) return
+
+    setSavingSoap(true)
+    try {
+      const payload = {
+        encounter_id: Number(encounterId),
+        doctor_id: doctorId,
+        subjective_text: soapForm.subjective_text!.trim(),
+        objective_text: soapForm.objective_text!.trim(),
+        assessment_text: soapForm.assessment_text!.trim(),
+        plan_text: soapForm.plan_text!.trim(),
+        updated_at: new Date().toISOString(),
+      }
+      const { error } = await supabase
+        .from('doctor_soapnotes')
+        .upsert(payload, {
+          onConflict: 'encounter_id',
+          ignoreDuplicates: false,
+        })
+      if (error) throw error
+      setDoctorSoap({ ...soapForm })
+    } catch (e) {
+      console.error('Error saving doctor SOAP:', e)
+      alert('Failed to save SOAP note. Please try again.')
+    } finally {
+      setSavingSoap(false)
+    }
+  }
+
+  const handleEndConsultation = async () => {
+    if (!encounterId || !doctorId || role !== 'doctor') return
+    if (!validateDoctorSoap()) return
+
+    setSavingSoap(true)
+    try {
+      const encounterIdNum = Number(encounterId)
+      const payload = {
+        encounter_id: encounterIdNum,
+        doctor_id: doctorId,
+        subjective_text: soapForm.subjective_text!.trim(),
+        objective_text: soapForm.objective_text!.trim(),
+        assessment_text: soapForm.assessment_text!.trim(),
+        plan_text: soapForm.plan_text!.trim(),
+        updated_at: new Date().toISOString(),
+      }
+
+      // Save/overwrite doctor SOAP note (ensures nothing is null)
+      const { error: soapError } = await supabase
+        .from('doctor_soapnotes')
+        .upsert(payload, {
+          onConflict: 'encounter_id',
+          ignoreDuplicates: false,
+        })
+      if (soapError) throw soapError
+
+      setDoctorSoap({ ...soapForm })
+
+      // Move encounter to consultation_concluded
+      const { error: encounterError } = await supabase
+        .from('encounters')
+        .update({
+          status: 'consultation_concluded',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', encounterIdNum)
+
+      if (encounterError) throw encounterError
+
+      // Best-effort: tell backend to delete the Daily.co room for this encounter
+      try {
+        await fetch('/api/daily/end-room', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ encounterId: encounterIdNum }),
         })
-
-        if (!response.ok) {
-          throw new Error('Failed to create video room')
-        }
-
-        const room = await response.json()
-        setRoomInfo(room)
-        const roomUrl = room.url
-
-        console.log('Room created:', room)
-        console.log('Room URL:', roomUrl)
-
-        if (!roomUrl) {
-          throw new Error('Room URL not provided in response')
-        }
-
-        // Ensure URL is properly formatted
-        if (!roomUrl.startsWith('http')) {
-          throw new Error(`Invalid room URL format: ${roomUrl}`)
-        }
-
-        // Final guard: Check one more time before creating iframe
-        if (dailyRef.current) {
-          console.log('Daily instance created during async operations, skipping iframe creation')
-          isInitializingRef.current = false
-          return
-        }
-
-        // Create Daily iframe (Daily.co manages the DOM, don't manipulate it directly)
-        const daily = DailyIframe.createFrame(containerRef.current!, {
-          showLeaveButton: true,
-          iframeStyle: {
-            position: 'relative',
-            width: '100%',
-            height: '100%',
-            border: '0',
-          },
-        })
-
-        dailyRef.current = daily
-
-        // Set up event listeners BEFORE joining
-        // Use dailyRef.current in closures to ensure we have the latest reference
-        daily.on('loaded', () => {
-          console.log('Daily iframe loaded')
-          // Verify instance still exists
-          if (!dailyRef.current || isCleaningUpRef.current) {
-            console.warn('Daily instance removed during loaded event')
-          }
-        })
-
-        daily.on('joined-meeting', () => {
-          console.log('Successfully joined meeting')
-          // Only update state if instance still exists and not cleaning up
-          if (dailyRef.current && !isCleaningUpRef.current) {
-            setMeetingState('joined-meeting')
-            setIsLoading(false)
-          }
-        })
-
-        daily.on('left-meeting', () => {
-          console.log('Left meeting')
-          // Only navigate if not already cleaning up
-          if (!isCleaningUpRef.current) {
-            setMeetingState('left-meeting')
-            window.location.href = '/'
-          }
-        })
-
-        daily.on('error', (ev: any) => {
-          console.error('Daily.co error:', ev)
-          // Only set error if not cleaning up
-          if (!isCleaningUpRef.current) {
-            setError(ev?.errorMsg || ev?.error || 'An error occurred')
-            setIsLoading(false)
-          }
-        })
-
-        daily.on('participant-joined', (ev: any) => {
-          console.log('Participant joined:', ev)
-        })
-
-        daily.on('participant-left', (ev: any) => {
-          console.log('Participant left:', ev)
-        })
-
-        // Wait for iframe to be ready
-        setMeetingState('joining-meeting')
-        
-        // Guard: Check if cleanup started or instance is gone
-        if (!dailyRef.current || isCleaningUpRef.current) {
-          console.log('Daily instance removed before join, aborting')
-          isInitializingRef.current = false
-          return
-        }
-
-        // Wait for iframe to be fully initialized in the DOM
-        await new Promise(resolve => setTimeout(resolve, 1000))
-
-        // Guard: Check again after delay
-        if (!dailyRef.current || isCleaningUpRef.current) {
-          console.log('Daily instance removed during initialization, aborting')
-          isInitializingRef.current = false
-          return
-        }
-
-        // Verify iframe exists in DOM and is ready before joining
-        let iframeElement = containerRef.current?.querySelector('iframe')
-        if (!iframeElement) {
-          console.warn('Iframe not found in DOM, waiting a bit more...')
-          await new Promise(resolve => setTimeout(resolve, 500))
-          
-          // Final check
-          iframeElement = containerRef.current?.querySelector('iframe')
-          if (!iframeElement) {
-            throw new Error('Iframe failed to initialize in DOM')
-          }
-        }
-
-        // Verify iframe has contentWindow (iframe is loaded and ready)
-        let retries = 0
-        const maxRetries = 10
-        while (retries < maxRetries && !iframeElement?.contentWindow) {
-          // Check if cleanup started - abort immediately
-          if (isCleaningUpRef.current || !dailyRef.current) {
-            throw new Error('Cleanup started, aborting join')
-          }
-          await new Promise(resolve => setTimeout(resolve, 200))
-          iframeElement = containerRef.current?.querySelector('iframe')
-          retries++
-        }
-
-        // Final check before proceeding
-        if (isCleaningUpRef.current || !dailyRef.current) {
-          throw new Error('Daily instance destroyed before join')
-        }
-
-        if (!iframeElement?.contentWindow) {
-          throw new Error('Iframe contentWindow not available - iframe may not be fully loaded')
-        }
-
-        console.log('Attempting to join room:', roomUrl)
-        console.log('Daily object:', dailyRef.current)
-        console.log('Container:', containerRef.current)
-        console.log('Iframe element:', iframeElement)
-
-        // Load the iframe first (if needed), then join
-        try {
-          // Final guard before any operations
-          if (!dailyRef.current || isCleaningUpRef.current) {
-            throw new Error('Daily instance was destroyed before join')
-          }
-
-          // Some versions require load() before join()
-          if (typeof dailyRef.current.load === 'function') {
-            console.log('Loading Daily iframe...')
-            await dailyRef.current.load({ url: roomUrl })
-            console.log('Iframe loaded')
-            
-            // Guard after load
-            if (!dailyRef.current || isCleaningUpRef.current) {
-              throw new Error('Daily instance was destroyed after load')
-            }
-          }
-
-          // Final guard before join
-          if (!dailyRef.current || isCleaningUpRef.current) {
-            throw new Error('Daily instance was destroyed before join')
-          }
-
-          // Join the room
-          console.log('Joining room...')
-          const joinResult = await dailyRef.current.join({
-            url: roomUrl,
-            showLeaveButton: true,
-            userName: 'User',
-          })
-          console.log('Join result:', joinResult)
-        } catch (joinError) {
-          console.error('Join error details:', joinError)
-          const errorMessage = joinError instanceof Error ? joinError.message : 'Unknown error'
-          console.error('Join failed:', errorMessage)
-          
-          // Try to get more error details (only if instance still exists)
-          if (dailyRef.current && !isCleaningUpRef.current) {
-            try {
-              const meetingState = dailyRef.current.meetingState()
-              console.log('Meeting state after failed join:', meetingState)
-            } catch (e) {
-              console.error('Could not get meeting state:', e)
-            }
-          }
-          
-          setError(`Failed to join room: ${errorMessage}. Please check browser console for details.`)
-          setIsLoading(false)
-        }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to initialize video')
-        setIsLoading(false)
-      } finally {
-        isInitializingRef.current = false
+      } catch (endRoomError) {
+        // Ignore errors here; room cleanup is not user-facing
+        console.error('Failed to end Daily.co room:', endRoomError)
       }
+
+      // Navigate back to flowboard / EMR
+      router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+    } catch (e) {
+      console.error('Error ending consultation:', e)
+      alert('Failed to end consultation. Please try again.')
+    } finally {
+      setSavingSoap(false)
     }
+  }
 
-    initializeVideo()
-
-    return () => {
-      // Prevent double cleanup (React Strict Mode protection)
-      if (isCleaningUpRef.current) {
-        return
-      }
-      
-      isCleaningUpRef.current = true
-      
-      // Cleanup: Destroy existing Daily iframe instance
-      if (dailyRef.current) {
-        const daily = dailyRef.current
-        // Clear ref immediately to prevent re-use
-        dailyRef.current = null
-        isInitializingRef.current = false
-        
-        try {
-          // Leave the meeting first (async, don't wait)
-          if (typeof daily.leave === 'function') {
-            daily.leave().catch(() => {
-              // Silently ignore - component is unmounting
-            })
-          }
-          // Destroy the iframe (this removes it from DOM)
-          // Wrap in try-catch to handle cases where DOM is already modified
-          if (typeof daily.destroy === 'function') {
-            try {
-              daily.destroy()
-            } catch (destroyError) {
-              // Ignore DOM errors - node might already be removed by React
-              // This prevents "removeChild" errors
-            }
-          }
-        } catch (err) {
-          // Silently ignore all errors during cleanup - component is unmounting
-        }
-      } else {
-        isInitializingRef.current = false
-      }
-    }
-  }, [])
-
-  if (authLoading) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-24">
-        <LoadingSpinner message="Loading..." />
-      </div>
+  const aiPlaceholder = (section: 'subjective' | 'objective' | 'assessment' | 'plan') => {
+    if (!soapNotes) return 'AI note will appear here when available'
+    const text = cleanSoapSection(
+      soapNotes[`${section}_text` as keyof SOAPNotes] as string | null,
+      section
     )
+    return text || 'Will be updated.'
   }
 
-  if (!user) {
-    return null // Will redirect via useEffect
+  const handleAddTranscript = async () => {
+    const msg = newTranscriptMessage.trim()
+    if (!msg || !encounterId || !role) return
+    const roleKey = role === 'doctor' ? 'doctor' : role === 'nurse' || role === 'staff' ? 'nurse' : 'staff'
+    setAddingTranscript(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+
+      const res = await fetch('/api/transcripts/save', {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({
+          encounterId: Number(encounterId),
+          items: [{
+            speaker_role: roleKey,
+            speaker_name: speakerName || 'User',
+            message: msg,
+          }],
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json?.error || 'Failed to save transcript')
+
+      const entry: TranscriptEntry = {
+        id: Date.now(),
+        speaker_role: roleKey,
+        speaker_name: speakerName || 'User',
+        message: msg,
+        created_at: new Date().toISOString(),
+      }
+      setTranscripts((prev) => [...prev, entry])
+      setNewTranscriptMessage('')
+    } catch (e) {
+      console.error('Error adding transcript:', e)
+      alert('Failed to add transcript. Please try again.')
+    } finally {
+      setAddingTranscript(false)
+    }
   }
 
-  if (error) {
+  const formatTranscriptLabel = (entry: TranscriptEntry) => {
+    const roleLabel = entry.speaker_role.charAt(0).toUpperCase() + entry.speaker_role.slice(1)
+    return `${roleLabel} (${entry.speaker_name}):`
+  }
+
+  if (!encounterId && !authLoading && user) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
-        <div className="text-red-500 mb-4">Error: {error}</div>
+        <div className="text-red-500 mb-4 text-center max-w-md">
+          Encounter ID is required. Please join from the flowboard.
+        </div>
         <button
-          onClick={() => window.location.href = '/'}
+          onClick={() => router.push('/dashboard')}
           className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          Go Back
+          Back to Dashboard
         </button>
       </div>
     )
   }
 
-  const handleLeave = () => {
-    if (dailyRef.current) {
-      dailyRef.current.leave()
-    }
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-24">
+        <LoadingSpinner message="Loading..." showPercentage={false} />
+      </div>
+    )
+  }
+
+  if (!user) return null
+
+  if (error) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center p-24">
+        <div className="text-red-500 mb-4 text-center max-w-md">Error: {error}</div>
+        <button
+          onClick={() => router.push('/dashboard')}
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
-      <div className="bg-gray-800 text-white px-4 py-2 flex justify-between items-center flex-shrink-0">
-        <h1 className="text-lg font-bold">MyclinicMD Video Call</h1>
-        <div className="flex items-center gap-4">
-          {meetingState === 'joined-meeting' && (
-            <span className="text-sm text-green-400">● Connected</span>
+    <div className="flex flex-col h-screen overflow-hidden bg-black">
+      {/* Global session-ended overlay for nurses/staff */}
+      {endMessage && role !== 'doctor' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-amber-500 text-white px-6 py-4 rounded-xl shadow-2xl max-w-md text-center text-sm">
+            {endMessage}
+          </div>
+        </div>
+      )}
+      {/* Top fixed header - Back to EMR */}
+      <header className="sticky top-0 z-50 flex-shrink-0 h-14 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 gap-4">
+        <button
+          onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to EMR
+        </button>
+        <span className="text-gray-400 text-sm">
+          {patient ? `${patient.first_name} ${patient.last_name}` : 'Telemedicine Session'}
+        </span>
+      </header>
+
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 bg-black flex items-center justify-center">
+          {isLoading && (
+            <div className="flex flex-col items-center justify-center h-full">
+              <LoadingSpinner message="Loading video call..." showPercentage={false} />
+            </div>
           )}
-          {meetingState === 'joining-meeting' && (
-            <span className="text-sm text-yellow-400">● Connecting...</span>
+          {!isLoading && roomUrl && (
+            <iframe
+              src={roomUrl}
+              className="w-full h-full border-0"
+              allow="camera; microphone; fullscreen; display-capture"
+            />
           )}
+        </div>
+
+      <div className="w-full max-w-md bg-gray-900 border-l border-gray-800 text-white flex flex-col overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-800 flex-shrink-0">
+          <h2 className="text-lg font-semibold">Patient Details</h2>
+          {encounter && (
+            <span className="text-xs text-gray-400 block mt-0.5">
+              {getStatusInfo(encounter.status as any)?.label || encounter.status}
+            </span>
+          )}
+        </div>
+        {!detailsLoading && (
+          <div className="flex border-b border-gray-800 flex-shrink-0 overflow-x-auto">
+            {(['patient', 'intake', 'vitals', 'soap', 'transcript'] as const).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setDetailsTab(tab)}
+                className={`flex-shrink-0 px-2 py-2 text-xs font-medium capitalize transition-colors ${
+                  detailsTab === tab ? 'text-white border-b-2 border-blue-500 bg-white/5' : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {tab === 'soap' ? 'SOAP' : tab === 'transcript' ? 'Transcript' : tab}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex-1 overflow-auto p-4 text-sm">
+          {detailsLoading ? (
+            <LoadingSpinner message="Loading details..." showPercentage={false} size="sm" />
+          ) : (
+            <>
+              {detailsTab === 'patient' && (
+                <div className="space-y-4">
+                  {patient && (
+                    <div className="space-y-1 text-gray-300">
+                      <p className="font-medium text-white">{patient.first_name} {patient.last_name}</p>
+                      <p>Code: {patient.patient_code || 'N/A'}</p>
+                      <p>Age: {calculateAge(patient.date_of_birth)}</p>
+                      <p>DOB: {formatDate(patient.date_of_birth)}</p>
+                      <p>Gender: {patient.gender || 'N/A'}</p>
+                      <p>Email: {patient.email || 'N/A'}</p>
+                      <p>Phone: {patient.phone || 'N/A'}</p>
+                      {(patient.street_address || patient.state || patient.zip_code) && (
+                        <p>Address: {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')}</p>
+                      )}
+                    </div>
+                  )}
+                  {appointment && (
+                    <div className="pt-3 border-t border-gray-700">
+                      <p className="text-blue-300 font-semibold mb-2">Appointment</p>
+                      <p>Date: {formatDate(appointment.appointment_date)}</p>
+                      <p>Time: {appointment.appointment_time || 'N/A'}</p>
+                      <p>Type: {appointment.onsite_type || 'N/A'}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {detailsTab === 'intake' && (
+                <div className="space-y-1 text-gray-300">
+                  {intake ? (
+                    <>
+                      <p>Chief Complaint: {intake.chief_complaint || 'N/A'}</p>
+                      {intake.symptoms_description && <p>Symptoms: {intake.symptoms_description}</p>}
+                      {intake.location && <p>Location: {intake.location}</p>}
+                      {intake.severity != null && <p>Severity: {intake.severity}/10</p>}
+                      {intake.onset && <p>Onset: {formatDate(intake.onset)}</p>}
+                      {intake.medical_conditions && (
+                        <p>Conditions: {Array.isArray(intake.medical_conditions) ? intake.medical_conditions.join(', ') : 'N/A'}</p>
+                      )}
+                      {intake.allergies && (
+                        <p>Allergies: {Array.isArray(intake.allergies) ? intake.allergies.join(', ') : 'N/A'}</p>
+                      )}
+                      {intake.current_medications && (
+                        <p>Meds: {Array.isArray(intake.current_medications) ? intake.current_medications.join(', ') : 'N/A'}</p>
+                      )}
+                      <p>Tobacco: {intake.tobacco_use ? 'Yes' : 'No'} | Alcohol: {intake.alcohol_use ? 'Yes' : 'No'} | Drugs: {intake.drug_use ? 'Yes' : 'No'}</p>
+                    </>
+                  ) : (
+                    <p className="text-gray-400">Intake not available</p>
+                  )}
+                </div>
+              )}
+              {detailsTab === 'vitals' && (
+                <div className="grid grid-cols-2 gap-2 text-gray-300">
+                  {vitals ? (
+                    <>
+                      <p>BP: {vitals.bp_systolic && vitals.bp_diastolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : 'N/A'}</p>
+                      <p>HR: {vitals.heart_rate ? `${vitals.heart_rate} bpm` : 'N/A'}</p>
+                      <p>Temp: {vitals.temperature ? `${vitals.temperature}°${vitals.temperature_unit || 'F'}` : 'N/A'}</p>
+                      <p>SpO2: {vitals.spo2 ? `${vitals.spo2}%` : 'N/A'}</p>
+                      <p>RR: {vitals.respiratory_rate ? `${vitals.respiratory_rate}/min` : 'N/A'}</p>
+                      <p>Weight: {vitals.weight ? `${vitals.weight} ${vitals.weight_unit || 'lbs'}` : 'N/A'}</p>
+                      <p>Height: {vitals.height ? `${vitals.height} ${vitals.height_unit || 'in'}` : 'N/A'}</p>
+                      <p>BMI: {vitals.bmi ? vitals.bmi.toFixed(1) : 'N/A'}</p>
+                      {vitals.notes && <p className="col-span-2">Notes: {vitals.notes}</p>}
+                    </>
+                  ) : (
+                    <p className="text-gray-400 col-span-2">Not recorded</p>
+                  )}
+                </div>
+              )}
+              {detailsTab === 'soap' && (
+                <div className="space-y-3">
+                  {role === 'doctor' && doctorId ? (
+                    <>
+                      <p className="text-cyan-200 text-xs mb-2">Add your SOAP note. Placeholders show AI suggestions.</p>
+                      <div>
+                        <label className="text-cyan-200 text-xs font-medium block mb-1">Subjective</label>
+                        <textarea
+                          value={soapForm.subjective_text ?? ''}
+                          onChange={(e) => setSoapForm((f) => ({ ...f, subjective_text: e.target.value }))}
+                          placeholder={aiPlaceholder('subjective')}
+                          rows={3}
+                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-cyan-200 text-xs font-medium block mb-1">Objective</label>
+                        <textarea
+                          value={soapForm.objective_text ?? ''}
+                          onChange={(e) => setSoapForm((f) => ({ ...f, objective_text: e.target.value }))}
+                          placeholder={aiPlaceholder('objective')}
+                          rows={3}
+                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-cyan-200 text-xs font-medium block mb-1">Assessment</label>
+                        <textarea
+                          value={soapForm.assessment_text ?? ''}
+                          onChange={(e) => setSoapForm((f) => ({ ...f, assessment_text: e.target.value }))}
+                          placeholder={aiPlaceholder('assessment')}
+                          rows={3}
+                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-cyan-200 text-xs font-medium block mb-1">Plan</label>
+                        <textarea
+                          value={soapForm.plan_text ?? ''}
+                          onChange={(e) => setSoapForm((f) => ({ ...f, plan_text: e.target.value }))}
+                          placeholder={aiPlaceholder('plan')}
+                          rows={3}
+                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveDoctorSoap}
+                          disabled={savingSoap}
+                          className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          {savingSoap ? 'Saving...' : 'Save SOAP Note'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleEndConsultation}
+                          disabled={savingSoap}
+                          className="flex-1 py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                        >
+                          {savingSoap ? 'Ending...' : 'End Consultation'}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-3 text-gray-300">
+                      {(doctorSoap || soapNotes) ? (
+                        <>
+                          <div>
+                            <p className="text-cyan-200 text-xs font-medium mb-1">Subjective</p>
+                            <p className="bg-white/5 p-2 rounded text-xs">
+                              {(doctorSoap?.subjective_text && doctorSoap.subjective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.subjective_text, 'subjective') || 'Will be updated.')) || 'Not available yet'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-cyan-200 text-xs font-medium mb-1">Objective</p>
+                            <p className="bg-white/5 p-2 rounded text-xs">
+                              {(doctorSoap?.objective_text && doctorSoap.objective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.objective_text, 'objective') || 'Will be updated.')) || 'Not available yet'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-cyan-200 text-xs font-medium mb-1">Assessment</p>
+                            <p className="bg-white/5 p-2 rounded text-xs">
+                              {(doctorSoap?.assessment_text && doctorSoap.assessment_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.assessment_text, 'assessment') || 'Will be updated.')) || 'Not available yet'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-cyan-200 text-xs font-medium mb-1">Plan</p>
+                            <p className="bg-white/5 p-2 rounded text-xs">
+                              {(doctorSoap?.plan_text && doctorSoap.plan_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.plan_text, 'plan') || 'Will be updated.')) || 'Not available yet'}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-gray-400">SOAP notes not available yet</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {detailsTab === 'transcript' && (
+                <div className="space-y-3 flex flex-col h-full">
+                  <div className="flex-1 overflow-auto space-y-2 min-h-0">
+                    {transcripts.length === 0 ? (
+                      <p className="text-gray-400 text-xs">No transcript yet. Add entries as the session progresses.</p>
+                    ) : (
+                      transcripts.map((entry) => (
+                        <div key={entry.id} className="bg-white/5 rounded p-2 text-xs">
+                          <p className="text-cyan-200 font-medium mb-0.5">
+                            {formatTranscriptLabel(entry)}
+                          </p>
+                          <p className="text-gray-300">{entry.message}</p>
+                          <p className="text-gray-500 text-[10px] mt-1">
+                            {new Date(entry.created_at).toLocaleTimeString()}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="flex-shrink-0 pt-2 border-t border-gray-700">
+                    <p className="text-cyan-200 text-xs font-medium mb-1">
+                      Add as {role === 'doctor' ? 'Doctor' : 'Nurse'} ({speakerName || 'You'})
+                    </p>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newTranscriptMessage}
+                        onChange={(e) => setNewTranscriptMessage(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleAddTranscript()}
+                        placeholder="Type message and press Enter..."
+                        className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddTranscript}
+                        disabled={addingTranscript || !newTranscriptMessage.trim()}
+                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded transition-colors"
+                      >
+                        {addingTranscript ? '...' : 'Add'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0">
           <button
-            onClick={handleLeave}
-            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+            onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+            className="text-sm text-blue-400 hover:text-blue-300"
           >
-            Leave Call
+            ← Back to EMR
           </button>
         </div>
       </div>
-      <div 
-        ref={containerRef} 
-        className="flex-1 w-full h-full relative"
-      >
-        {isLoading && meetingState !== 'joined-meeting' && (
-          <div className="flex flex-col items-center justify-center h-full absolute inset-0 bg-black z-10">
-            <LoadingSpinner message="Loading video call..." />
-            {roomInfo && (
-              <div className="text-sm text-gray-400 text-center max-w-md">
-                <p>Room: {roomInfo.name}</p>
-                <p className="text-xs mt-2 break-all">URL: {roomInfo.url}</p>
-                <p className="text-xs mt-1">State: {meetingState}</p>
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )
 }
 
-// Protect video page - only doctors and nurses can access
-// Protect video page - only doctors can access
 export default withRoleProtection(VideoPage, {
-  allowedRoles: [UserRole.DOCTOR],
+  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF],
   redirectTo: '/dashboard',
 })

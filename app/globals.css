@@ -3,21 +3,14 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --background: #0f172a;
+  --foreground: #f8fafc;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 @layer utilities {
@@ -52,6 +45,49 @@ body {
 
 .animation-delay-4000 {
   animation-delay: 4s;
+}
+
+/* Beta Ticker Banner */
+.beta-ticker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  background-color: #dc2626;
+  color: white;
+  overflow: hidden;
+  z-index: 9999;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.4);
+}
+
+.beta-ticker-content {
+  display: flex;
+  white-space: nowrap;
+  animation: ticker-scroll 20s linear infinite;
+}
+
+.beta-ticker-content span {
+  padding: 0 3rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+@keyframes ticker-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+body {
+  padding-top: 36px !important;
 }
 
 /* Custom Select Dropdown Styling */

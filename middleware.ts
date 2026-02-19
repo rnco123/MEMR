@@ -46,19 +46,32 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          cookiesToSet.forEach(({ name, value, options }) => {
+            request.cookies.set(name, value)
+          })
+          // Create new response with updated cookies
           response = NextResponse.next({
             request,
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
-          )
+          // Set cookies with extended expiration (24 hours) in the response
+          cookiesToSet.forEach(({ name, value, options }) => {
+            const cookieOptions = {
+              ...options,
+              maxAge: options?.maxAge || 86400, // 24 hours in seconds
+              expires: options?.expires || new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+              httpOnly: options?.httpOnly !== false,
+              secure: process.env.NODE_ENV === 'production',
+              sameSite: (options?.sameSite || 'lax') as 'lax' | 'strict' | 'none',
+              path: options?.path || '/',
+            }
+            response.cookies.set(name, value, cookieOptions)
+          })
         },
       },
     }
   )
 
-  // Refresh session if needed
+  // Refresh session if needed - this will automatically refresh expired tokens
   const {
     data: { user },
     error: userError,
@@ -66,21 +79,37 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname
 
-  // If there's an error getting user, check if it's a token refresh issue
-  // Only treat as not authenticated if it's a real auth error, not a temporary refresh issue
-  const isAuthenticated = user && !userError
+  // If there's an error getting user, try to refresh the session
+  let isAuthenticated = user && !userError
   
-  // If there's an error but we have a session cookie, try to refresh
+  // If there's an error but we have session cookies, try to refresh the session
   if (userError && !user) {
-    // Check if we have session cookies - if so, it might be a refresh issue
-    const hasSessionCookies = request.cookies.getAll().some(
-      cookie => cookie.name.includes('sb-') && cookie.name.includes('auth-token')
+    // Check if we have session cookies - if so, try to refresh
+    const sessionCookies = request.cookies.getAll().filter(
+      cookie => cookie.name.includes('sb-') && (cookie.name.includes('auth-token') || cookie.name.includes('refresh-token'))
     )
+    const hasSessionCookies = sessionCookies.length > 0
     
-    // If we have session cookies but getUser failed, it might be a temporary issue
-    // Don't immediately redirect - let the client handle it
-    if (hasSessionCookies && process.env.NODE_ENV === 'development') {
-      console.warn('Session cookies present but getUser failed - may be temporary refresh issue')
+    if (hasSessionCookies) {
+      // Try to refresh the session
+      try {
+        const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
+        if (!refreshError && session?.user) {
+          isAuthenticated = true
+          // Update user from refreshed session
+          const refreshedUser = session.user
+          // Re-check authentication with refreshed session
+          const { data: { user: refreshedUserData } } = await supabase.auth.getUser()
+          if (refreshedUserData) {
+            isAuthenticated = true
+          }
+        }
+      } catch (refreshErr) {
+        // If refresh fails, it's likely the session is truly expired
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Session refresh failed:', refreshErr)
+        }
+      }
     }
   }
 
@@ -152,12 +181,9 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - public folder
+     * Skip: _next/*, favicon, static assets.
+     * Only run middleware for page/API routes.
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next|favicon\\.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
   ],
 }

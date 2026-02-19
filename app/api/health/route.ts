@@ -10,7 +10,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const health: {
+    const healthData: {
       status: string
       timestamp: string
       database: string
@@ -27,22 +27,22 @@ export async function GET() {
       const { error } = await supabase.from('profiles').select('uid').limit(1)
 
       if (error) {
-        health.database = 'unhealthy'
-        health.status = 'degraded'
+        healthData.database = 'unhealthy'
+        healthData.status = 'degraded'
       } else {
-        health.database = 'healthy'
+        healthData.database = 'healthy'
       }
     } catch (error) {
-      health.database = 'unhealthy'
-      health.status = 'unhealthy'
+      healthData.database = 'unhealthy'
+      healthData.status = 'unhealthy'
     }
 
     // Add version info (optional)
-    health.version = process.env.npm_package_version || '1.0.0'
+    healthData.version = process.env.npm_package_version || '1.0.0'
 
-    const statusCode = health.status === 'healthy' ? 200 : health.status === 'degraded' ? 200 : 503
+    const statusCode = healthData.status === 'healthy' ? 200 : healthData.status === 'degraded' ? 200 : 503
 
-    return NextResponse.json(health, { status: statusCode })
+    return NextResponse.json(healthData, { status: statusCode })
   } catch (error) {
     return NextResponse.json(
       {

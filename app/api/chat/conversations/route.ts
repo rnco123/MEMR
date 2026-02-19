@@ -30,8 +30,10 @@ export async function GET(request: NextRequest) {
       .order('last_message_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching conversations:', error)
-      return NextResponse.json({ error: 'Failed to fetch conversations' }, { status: 500 })
+      return NextResponse.json(
+        { error: `Failed to fetch conversations: ${error.message}` },
+        { status: 500 }
+      )
     }
 
     // Get unique participant IDs
@@ -66,9 +68,9 @@ export async function GET(request: NextRequest) {
           email: profile?.email || null,
         }
       }
-    })
+    }) || []
 
-    return NextResponse.json({ conversations: enrichedConversations || [] })
+    return NextResponse.json({ conversations: enrichedConversations })
   } catch (error) {
     console.error('Error in GET /api/chat/conversations:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

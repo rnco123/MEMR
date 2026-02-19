@@ -3,9 +3,11 @@
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { createClient } from '@/lib/supabase/client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
+import { canJoinTelemedicine, getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { UserRole } from '@/lib/roles'
@@ -44,19 +46,43 @@ interface AvailableDoctor {
   is_available?: boolean
 }
 
+const NURSE_FLOWBOARD_CACHE_KEY = 'nurse_flowboard_appointments'
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
+
 function NurseFlowboardPage() {
   const { user, role } = useAuth()
-  const [appointments, setAppointments] = useState<Appointment[]>([])
+  const router = useRouter()
+  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const cached = sessionStorage.getItem(NURSE_FLOWBOARD_CACHE_KEY)
+      return cached ? JSON.parse(cached) : []
+    } catch {
+      return []
+    }
+  })
   const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([])
   const [availableDoctors, setAvailableDoctors] = useState<AvailableDoctor[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return !sessionStorage.getItem(NURSE_FLOWBOARD_CACHE_KEY)
+  })
   const [assigningDoctor, setAssigningDoctor] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [selectedEncounter, setSelectedEncounter] = useState<{ encounterId: number; appointmentId: number; patientId: number } | null>(null)
+  const [pageSize, setPageSize] = useState(25)
+  const [page, setPage] = useState(1)
+  const [selectedEncounter, setSelectedEncounter] = useState<{
+    encounterId: number
+    appointmentId: number
+    patientId: number
+    encounterStatus?: string
+  } | null>(null)
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const initialLoadDone = useRef(false)
   const supabase = useMemo(() => createClient(), [])
 
   const fetchAvailableDoctors = useCallback(async () => {
@@ -103,9 +129,10 @@ function NurseFlowboardPage() {
     }
   }, [supabase])
 
-  const fetchAllAppointments = useCallback(async () => {
+  const fetchAllAppointments = useCallback(async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
+      else setIsRefreshing(true)
 
       const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
@@ -173,6 +200,11 @@ function NurseFlowboardPage() {
 
         setAppointments(appointmentsWithDetails as Appointment[])
         setFilteredAppointments(appointmentsWithDetails as Appointment[])
+        try {
+          sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+        } catch {
+          // ignore storage errors
+        }
       } else {
         setAppointments([])
         setFilteredAppointments([])
@@ -181,18 +213,27 @@ function NurseFlowboardPage() {
       console.error('Error in fetchAllAppointments:', error)
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
   }, [supabase])
 
   useEffect(() => {
-    if (user && (role === 'nurse' || role === 'staff')) {
-      fetchAllAppointments()
+    if (user && (role === 'nurse' || role === 'staff') && !initialLoadDone.current) {
+      initialLoadDone.current = true
+      const hasCache =
+        typeof window !== 'undefined' && !!sessionStorage.getItem(NURSE_FLOWBOARD_CACHE_KEY)
+      fetchAllAppointments(!hasCache)
       fetchAvailableDoctors()
     }
   }, [user, role, fetchAllAppointments, fetchAvailableDoctors])
 
   const handleRefresh = () => {
-    fetchAllAppointments()
+    try {
+      sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+    } catch {
+      // ignore
+    }
+    fetchAllAppointments(true)
     fetchAvailableDoctors()
   }
 
@@ -239,6 +280,14 @@ function NurseFlowboardPage() {
 
     setFilteredAppointments(result)
   }, [appointments, searchQuery, sortBy, filterStatus])
+
+  // Paginate filtered results
+  const paginatedAppointments = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredAppointments.slice(start, start + pageSize)
+  }, [filteredAppointments, page, pageSize])
+
+  const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
 
   const assignDoctorToAppointment = async (appointmentId: number, doctorId: string, appointmentDate?: string, appointmentTime?: string) => {
     setAssigningDoctor(appointmentId.toString())
@@ -396,7 +445,10 @@ function NurseFlowboardPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setPage(1)
+                }}
                 placeholder="Search by patient name, ID, or provider..."
                 className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
               />
@@ -405,10 +457,10 @@ function NurseFlowboardPage() {
             {/* Refresh Button */}
             <button
               onClick={handleRefresh}
-              disabled={loading}
+              disabled={loading || isRefreshing}
               className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
-              <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
@@ -418,7 +470,10 @@ function NurseFlowboardPage() {
               <span className="text-blue-200 text-sm whitespace-nowrap">Sort:</span>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                onChange={(e) => {
+                  setSortBy(e.target.value as typeof sortBy)
+                  setPage(1)
+                }}
                 className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
               >
                 <option value="time">Appointment Time</option>
@@ -432,7 +487,10 @@ function NurseFlowboardPage() {
               <span className="text-blue-200 text-sm whitespace-nowrap">Status:</span>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value)
+                  setPage(1)
+                }}
                 className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
               >
                 <option value="all">All</option>
@@ -447,16 +505,43 @@ function NurseFlowboardPage() {
             </div>
           </div>
 
-          {/* Results count & Available Doctors */}
-          <div className="mt-4 flex items-center justify-between">
+          {/* Results count, page size, and available doctors */}
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-blue-200">
-              Showing <span className="text-white font-medium">{filteredAppointments.length}</span> of <span className="text-white font-medium">{appointments.length}</span> appointments
+              Showing{' '}
+              <span className="text-white font-medium">
+                {filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1}–
+                {Math.min(page * pageSize, filteredAppointments.length)}
+              </span>{' '}
+              of <span className="text-white font-medium">{filteredAppointments.length}</span> appointments
+              {searchQuery || filterStatus !== 'all'
+                ? ` (filtered from ${appointments.length})`
+                : ''}
             </p>
-            {availableDoctors.length > 0 && (
-              <p className="text-sm text-green-300">
-                <span className="font-semibold">{availableDoctors.length}</span> provider(s) available
-              </p>
-            )}
+            <div className="flex items-center gap-4">
+              <label className="text-sm text-blue-200 flex items-center gap-2">
+                Per page:
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setPage(1)
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {availableDoctors.length > 0 && (
+                <p className="text-sm text-green-300">
+                  <span className="font-semibold">{availableDoctors.length}</span> provider(s) available
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -486,7 +571,7 @@ function NurseFlowboardPage() {
             {/* Table Header */}
             <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-4 bg-white/5 border-b border-white/10 text-sm font-medium text-blue-200">
               <div className="col-span-3">Patient</div>
-              <div className="col-span-2">Treatment Type</div>
+              <div className="col-span-2">Status</div>
               <div className="col-span-2">Appointment</div>
               <div className="col-span-2">Provider</div>
               <div className="col-span-3 text-right">Actions</div>
@@ -494,7 +579,7 @@ function NurseFlowboardPage() {
 
             {/* Table Body */}
             <div className="divide-y divide-white/10">
-              {filteredAppointments.map((appointment) => (
+              {paginatedAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
                   onClick={() => {
@@ -503,6 +588,7 @@ function NurseFlowboardPage() {
                         encounterId: appointment.encounter_id,
                         appointmentId: appointment.id,
                         patientId: appointment.patient_id,
+                        encounterStatus: appointment.encounter_status,
                       })
                     }
                   }}
@@ -523,15 +609,37 @@ function NurseFlowboardPage() {
                     </div>
                   </div>
 
-                  {/* Treatment Type */}
+                  {/* Status */}
                   <div className="lg:col-span-2 flex items-center">
-                    <span className={`px-3 py-1 rounded-lg text-xs font-medium ${
-                      appointment.onsite_type === 'telemedicine' 
-                        ? 'bg-purple-500/20 text-purple-300' 
-                        : 'bg-white/10 text-blue-200'
-                    }`}>
-                      {appointment.onsite_type || 'Not specified'}
-                    </span>
+                    {appointment.encounter_status ? (
+                      (() => {
+                        const info = getStatusInfo(appointment.encounter_status as EncounterStatus)
+                        const baseColor =
+                          info?.value === 'appointment_initiated'
+                            ? 'bg-gray-500/20 text-gray-200 border border-gray-500/40'
+                            : info?.value === 'provider_assigned'
+                            ? 'bg-blue-500/20 text-blue-200 border border-blue-500/40'
+                            : info?.value === 'vitals_assessed'
+                            ? 'bg-purple-500/20 text-purple-200 border border-purple-500/40'
+                            : info?.value === 'in_consultation'
+                            ? 'bg-yellow-500/20 text-yellow-200 border border-yellow-500/40'
+                            : info?.value === 'consultation_concluded'
+                            ? 'bg-orange-500/20 text-orange-200 border border-orange-500/40'
+                            : info?.value === 'final_review'
+                            ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40'
+                            : 'bg-green-500/20 text-green-200 border border-green-500/40'
+
+                        return (
+                          <span className={`px-3 py-1 rounded-lg text-xs font-medium ${baseColor}`}>
+                            {info?.label || appointment.encounter_status}
+                          </span>
+                        )
+                      })()
+                    ) : (
+                      <span className="px-3 py-1 rounded-lg text-xs font-medium bg-white/10 text-blue-200 border border-white/20">
+                        Not Started
+                      </span>
+                    )}
                   </div>
 
                   {/* Appointment Time */}
@@ -564,6 +672,7 @@ function NurseFlowboardPage() {
                             encounterId: appointment.encounter_id!,
                             appointmentId: appointment.id,
                             patientId: appointment.patient_id,
+                            encounterStatus: appointment.encounter_status,
                           })
                         }}
                         className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all"
@@ -583,7 +692,22 @@ function NurseFlowboardPage() {
                         Assign Provider
                       </button>
                     )}
-                    {appointment.assigned_doctor && appointment.encounter_id && (
+                    {appointment.assigned_doctor && appointment.encounter_status === 'provider_assigned' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowAssignModal({ appointmentId: appointment.id, appointment })
+                        }}
+                        disabled={assigningDoctor === appointment.id.toString()}
+                        className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-lg text-sm font-medium hover:from-yellow-600 hover:to-amber-600 transition-all disabled:opacity-50"
+                      >
+                        Edit
+                      </button>
+                    )}
+                    {appointment.assigned_doctor &&
+                      appointment.encounter_id &&
+                      (!appointment.encounter_status ||
+                        appointment.encounter_status === 'provider_assigned') && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
@@ -591,7 +715,7 @@ function NurseFlowboardPage() {
                         }}
                         className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all"
                       >
-                        Add Vitals
+                        Vitals
                       </button>
                     )}
                     {availableDoctors.length === 0 && !appointment.assigned_doctor && (
@@ -601,6 +725,35 @@ function NurseFlowboardPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Pagination below table */}
+        {!loading && filteredAppointments.length > 0 && (
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Previous
+            </button>
+            <span className="text-blue-200 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              Next
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
         )}
 
@@ -624,8 +777,14 @@ function NurseFlowboardPage() {
           appointment={showAssignModal.appointment}
           availableDoctors={availableDoctors}
           assigningDoctor={assigningDoctor}
-          onAssign={(doctorId, appointmentDate, appointmentTime) => {
-            assignDoctorToAppointment(showAssignModal.appointmentId, doctorId, appointmentDate, appointmentTime)
+          onAssign={async (doctorId, appointmentDate, appointmentTime) => {
+            await assignDoctorToAppointment(
+              showAssignModal.appointmentId,
+              doctorId,
+              appointmentDate,
+              appointmentTime
+            )
+            setShowAssignModal(null)
           }}
           onClose={() => setShowAssignModal(null)}
         />
@@ -640,9 +799,9 @@ function NurseFlowboardPage() {
           isOpen={!!selectedEncounter}
           onClose={() => setSelectedEncounter(null)}
           onJoinTelemedicine={() => {
-            // Navigate to telemedicine page or open video call
-            window.open(`/video?encounter=${selectedEncounter.encounterId}`, '_blank')
+            router.push(`/video?encounter=${selectedEncounter.encounterId}`)
           }}
+          canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
       )}
     </div>

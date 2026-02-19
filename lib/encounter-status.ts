@@ -95,3 +95,20 @@ export function canTransitionTo(from: EncounterStatus, to: EncounterStatus): boo
   // Can only move forward one step at a time, or stay same
   return toStep === fromStep + 1 || toStep === fromStep
 }
+
+/** Statuses that allow doctor and nurse to join telemedicine (Daily.co) */
+const TELEMEDICINE_ELIGIBLE_STATUSES: EncounterStatus[] = [
+  'vitals_assessed',
+  'in_consultation',
+  'consultation_concluded',
+  'final_review',
+]
+
+/**
+ * Doctor and nurse can join telemedicine when vitals have been assessed.
+ * Doctor must also be assigned to the encounter (checked separately).
+ */
+export function canJoinTelemedicine(status: string | null | undefined): boolean {
+  if (!status) return false
+  return TELEMEDICINE_ELIGIBLE_STATUSES.includes(status as EncounterStatus)
+}

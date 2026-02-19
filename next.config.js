@@ -45,7 +45,8 @@ const nextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            value: 'camera=(self), microphone=(self), geolocation=()',
+            // Allow camera/mic for this app and embedded Daily.co iframes
+            value: 'camera=*, microphone=*, geolocation=()',
           },
           {
             key: 'Content-Security-Policy',
@@ -67,7 +68,8 @@ const nextConfig = {
           },
           {
             key: 'Cross-Origin-Embedder-Policy',
-            value: 'require-corp',
+            // Daily.co video iframe needs to load cross-origin resources
+            value: 'unsafe-none',
           },
           {
             key: 'Cross-Origin-Opener-Policy',
@@ -75,7 +77,7 @@ const nextConfig = {
           },
           {
             key: 'Cross-Origin-Resource-Policy',
-            value: 'same-origin',
+            value: 'cross-origin',
           },
         ],
       },

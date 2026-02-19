@@ -45,21 +45,10 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: true })
 
     if (error) {
-      console.error('Error fetching messages:', error)
-      return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
-    }
-
-    // Mark messages as read (only messages not sent by current user)
-    const unreadMessages = messages?.filter(
-      msg => msg.sender_id !== user.id && !msg.read_at
-    ) || []
-
-    if (unreadMessages.length > 0) {
-      const messageIds = unreadMessages.map(msg => msg.id)
-      await supabase
-        .from('messages')
-        .update({ read_at: new Date().toISOString() })
-        .in('id', messageIds)
+      return NextResponse.json(
+        { error: `Failed to fetch messages: ${error.message}` },
+        { status: 500 }
+      )
     }
 
     // Fetch sender profiles
@@ -79,9 +68,22 @@ export async function GET(request: NextRequest) {
         full_name: profilesMap.get(msg.sender_id)?.full_name || 'Unknown',
         role: profilesMap.get(msg.sender_id)?.role || 'unknown',
       }
-    }))
+    })) || []
 
-    return NextResponse.json({ messages: enrichedMessages || [] })
+    // Mark messages as read (only messages not sent by current user)
+    const unreadMessages = enrichedMessages.filter(
+      msg => msg.sender_id !== user.id && !msg.read_at
+    )
+
+    if (unreadMessages.length > 0) {
+      const messageIds = unreadMessages.map(msg => msg.id)
+      await supabase
+        .from('messages')
+        .update({ read_at: new Date().toISOString() })
+        .in('id', messageIds)
+    }
+
+    return NextResponse.json({ messages: enrichedMessages })
   } catch (error) {
     console.error('Error in GET /api/chat/messages:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

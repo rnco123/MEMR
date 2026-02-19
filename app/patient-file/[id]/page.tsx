@@ -38,7 +38,7 @@ export default function PatientFilePage() {
   const patientId = Number(params.id) // bigint
   const supabase = createClient()
 
-  const [activeTab, setActiveTab] = useState<'encounters' | 'history' | 'medications' | 'documents'>('encounters')
+  const [activeTab, setActiveTab] = useState<'encounters' | 'history' | 'medications' | 'documents' | 'soap'>('encounters')
   const [patient, setPatient] = useState<Patient | null>(null)
   const [loadingPatient, setLoadingPatient] = useState(true)
   
@@ -70,6 +70,10 @@ export default function PatientFilePage() {
   const [medications, setMedications] = useState<any[]>([])
   const [loadingMedications, setLoadingMedications] = useState(false)
 
+  // SOAP Notes state (by encounter)
+  const [soapNotesByEncounter, setSoapNotesByEncounter] = useState<Record<number, { subjective_text: string | null; objective_text: string | null; assessment_text: string | null; plan_text: string | null; created_at: string } | null>>({})
+  const [loadingSoap, setLoadingSoap] = useState(false)
+
   // Fetch patient data
   useEffect(() => {
     const fetchPatient = async () => {
@@ -79,13 +83,13 @@ export default function PatientFilePage() {
       try {
         const { data, error } = await supabase
           .from('patients')
-          .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
+          .select('*')
           .eq('id', patientId)
           .single()
 
         if (error) {
           console.error('Error fetching patient:', error)
-        } else if (data) {
+        } else {
           setPatient(data as Patient)
         }
       } catch (error) {
@@ -105,130 +109,26 @@ export default function PatientFilePage() {
       
       setLoadingEncounters(true)
       try {
-        // Debug: Check if patient_id is correct
-        console.log('Fetching encounters for patient ID:', patientId, 'Type:', typeof patientId)
-        
-        // First, try to fetch encounters without nested joins to see if they exist
-        const { data: encountersData, error } = await supabase
+        // Fetch encounters with related data
+        const { data: encountersData, error: encountersError } = await supabase
           .from('encounters')
-          .select('id, encounter_code, status, created_at, updated_at, appointment_id, doctor_id, patient_id')
+          .select(`
+            *,
+            appointments (*),
+            doctors (*)
+          `)
           .eq('patient_id', patientId)
           .order('created_at', { ascending: false })
 
-        if (error) {
-          console.error('Error fetching encounters:', error)
-          console.error('Error details:', JSON.stringify(error, null, 2))
+        if (encountersError) {
+          console.error('Error fetching encounters:', encountersError)
           setEncounters([])
-          setLoadingEncounters(false)
-          return
-        }
-
-        console.log('Encounters found:', encountersData?.length || 0, 'for patient:', patientId)
-
-        if (encountersData && encountersData.length > 0) {
-          // Fetch appointments separately to avoid RLS issues with nested queries
-          const appointmentIds = encountersData
-            .map(e => e.appointment_id)
-            .filter(id => id !== null && id !== undefined)
-
-          const appointmentsMap: Record<number, any> = {}
-          if (appointmentIds.length > 0) {
-            const { data: appointmentsData, error: appointmentsError } = await supabase
-              .from('appointments')
-              .select('id, appointment_date, appointment_time, onsite_type, service_id')
-              .in('id', appointmentIds)
-
-            if (appointmentsError) {
-              console.error('Error fetching appointments:', appointmentsError)
-            } else if (appointmentsData) {
-              // Fetch services for appointments
-              const serviceIds = appointmentsData
-                .map(a => a.service_id)
-                .filter(id => id !== null && id !== undefined)
-
-              const servicesMap: Record<number, any> = {}
-              if (serviceIds.length > 0) {
-                const { data: servicesData, error: servicesError } = await supabase
-                  .from('services')
-                  .select('id, title_en')
-                  .in('id', serviceIds)
-
-                if (servicesError) {
-                  console.error('Error fetching services:', servicesError)
-                } else if (servicesData) {
-                  servicesData.forEach(service => {
-                    servicesMap[service.id] = service
-                  })
-                }
-              }
-
-              appointmentsData.forEach(appointment => {
-                appointmentsMap[appointment.id] = {
-                  ...appointment,
-                  services: servicesMap[appointment.service_id] || null,
-                }
-              })
-            }
-          }
-          // Fetch doctor information separately if doctor_id exists
-          const doctorIds = encountersData
-            .filter(e => e.doctor_id)
-            .map(e => e.doctor_id)
-            .filter((id, index, self) => self.indexOf(id) === index) // unique IDs
-
-          const doctorsMap: Record<number, any> = {}
-          if (doctorIds.length > 0) {
-            const { data: doctorsData, error: doctorsError } = await supabase
-              .from('doctors')
-              .select('id, full_name, specialty')
-              .in('id', doctorIds)
-
-            if (doctorsError) {
-              console.error('Error fetching doctors:', doctorsError)
-            } else if (doctorsData) {
-              doctorsData.forEach(doctor => {
-                doctorsMap[doctor.id] = doctor
-              })
-            }
-          }
-
-          // Fetch vitals for all encounters
-          const encounterIds = encountersData.map(e => e.id)
-          const vitalsMap: Record<number, any> = {}
-          
-          if (encounterIds.length > 0) {
-            const { data: vitalsData, error: vitalsError } = await supabase
-              .from('vitals')
-              .select('*')
-              .in('encounter_id', encounterIds)
-
-            if (vitalsError) {
-              console.error('Error fetching vitals:', vitalsError)
-            } else if (vitalsData) {
-              vitalsData.forEach(vital => {
-                if (vital.encounter_id) {
-                  vitalsMap[vital.encounter_id] = vital
-                }
-              })
-            }
-          }
-
-          // Combine encounters with appointments, doctors, and vitals
-          const encountersWithData = encountersData.map(encounter => ({
-            ...encounter,
-            appointments: encounter.appointment_id ? appointmentsMap[encounter.appointment_id] || null : null,
-            doctors: encounter.doctor_id ? doctorsMap[encounter.doctor_id] : null,
-            vitals: vitalsMap[encounter.id] || null,
-          }))
-
-          console.log('Final encounters with data:', encountersWithData.length)
-          setEncounters(encountersWithData)
         } else {
-          console.log('No encounters found for patient:', patientId)
-          setEncounters([])
+          setEncounters(encountersData || [])
         }
       } catch (error) {
         console.error('Error in fetchEncounters:', error)
+        setEncounters([])
       } finally {
         setLoadingEncounters(false)
       }
@@ -521,6 +421,12 @@ export default function PatientFilePage() {
     return age
   }
 
+  const cleanSoapSection = (text: string | null, section: 'subjective' | 'objective' | 'assessment' | 'plan'): string | null => {
+    if (!text) return null
+    const pattern = new RegExp(String.raw`^\s*(\*\*)?\s*${section}\s*:?\s*(\*\*)?\s*`, 'i')
+    return text.replace(pattern, '').trim()
+  }
+
   // Fetch documents
   const fetchDocuments = useCallback(async () => {
     if (!patientId || isNaN(patientId)) return
@@ -547,6 +453,61 @@ export default function PatientFilePage() {
       fetchDocuments()
     }
   }, [activeTab, fetchDocuments, patientId])
+
+  // Fetch SOAP notes when SOAP tab is active
+  useEffect(() => {
+    if (activeTab !== 'soap' || !patientId || encounters.length === 0) return
+
+    const fetchSoapNotes = async () => {
+      setLoadingSoap(true)
+      try {
+        const encounterIds = encounters.map((e: any) => e.id)
+        const appointmentIds = encounters.map((e: any) => e.appointment_id).filter(Boolean)
+
+        const result: Record<number, any> = {}
+
+        for (let i = 0; i < encounterIds.length; i++) {
+          const encId = encounterIds[i]
+          const apptId = appointmentIds[i]
+
+          let soap: any = null
+
+          const { data: byEnc, error: encErr } = await supabase
+            .from('ai_soapnotes')
+            .select('subjective_text, objective_text, assessment_text, plan_text, created_at')
+            .eq('encounter_id', encId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (!encErr && byEnc) {
+            soap = byEnc
+          }
+
+          if (!soap && apptId) {
+            const { data: byAppt } = await supabase
+              .from('ai_soapnotes')
+              .select('subjective_text, objective_text, assessment_text, plan_text, created_at')
+              .eq('appointment_id', apptId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle()
+            soap = byAppt
+          }
+
+          result[encId] = soap
+        }
+
+        setSoapNotesByEncounter(result)
+      } catch (e) {
+        console.error('Error fetching SOAP notes:', e)
+      } finally {
+        setLoadingSoap(false)
+      }
+    }
+
+    fetchSoapNotes()
+  }, [activeTab, patientId, encounters, supabase])
 
   // Handle file upload
   const handleFileUpload = async (e: React.FormEvent) => {
@@ -648,7 +609,7 @@ export default function PatientFilePage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800">
       {/* Header */}
-      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-50">
+      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-9 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
@@ -730,6 +691,7 @@ export default function PatientFilePage() {
                   { id: 'history', label: 'Medical History', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
                   { id: 'medications', label: 'Medications', icon: 'M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z' },
                   { id: 'documents', label: 'Documents', icon: 'M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z' },
+                  { id: 'soap', label: 'SOAP Notes', icon: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
                 ].map((tab) => (
                   <button
                     key={tab.id}
@@ -786,12 +748,31 @@ export default function PatientFilePage() {
                                 </div>
                                 {encounter.appointments && (
                                   <div className="text-sm text-blue-200">
-                                    <p>
-                                      {encounter.appointments.appointment_date 
-                                        ? formatDate(encounter.appointments.appointment_date)
-                                        : 'N/A'
-                                      } • {encounter.appointments.onsite_type || 'N/A'}
-                                    </p>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="flex items-center gap-1">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        {encounter.appointments.appointment_date 
+                                          ? formatDate(encounter.appointments.appointment_date)
+                                          : 'N/A'
+                                        }
+                                      </span>
+                                      <span className="flex items-center gap-1">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        {encounter.appointments.appointment_time 
+                                          ? formatTime(encounter.appointments.appointment_time)
+                                          : 'N/A'
+                                        }
+                                      </span>
+                                      {encounter.appointments.onsite_type && (
+                                        <span className="px-2 py-0.5 bg-white/10 rounded text-xs">
+                                          {encounter.appointments.onsite_type}
+                                        </span>
+                                      )}
+                                    </div>
                                     {encounter.appointments.services && (
                                       <p className="text-blue-300/70 mt-1">
                                         {encounter.appointments.services.title_en}
@@ -1232,75 +1213,102 @@ export default function PatientFilePage() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {documents.map((doc) => (
-                          <div key={doc.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
-                            <div className="flex items-start justify-between">
-                              <div className="flex items-start gap-4 flex-1">
-                                <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
-                                  doc.file_type.startsWith('image/') ? 'bg-blue-500/20' : 
-                                  doc.file_type === 'application/pdf' ? 'bg-red-500/20' : 
-                                  'bg-gray-500/20'
-                                }`}>
-                                  <svg className={`w-6 h-6 ${getFileIconColor(doc.file_type)}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={getFileIcon(doc.file_type)} />
-                                  </svg>
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <p className="text-white font-medium">{doc.document_name}</p>
-                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getDocumentLabelColor(doc.document_label)}`}>
-                                      {getDocumentLabelName(doc.document_label)}
-                                    </span>
+                        {documents.map((doc: any) => {
+                          const isDefault = doc.is_default || doc.id?.toString().startsWith('default-')
+                          const hasFile = doc.has_file || doc.file_url
+                          
+                          return (
+                            <div key={doc.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
+                              <div className="flex items-start justify-between">
+                                <div className="flex items-start gap-4 flex-1">
+                                  <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
+                                    doc.file_type?.startsWith('image/') ? 'bg-blue-500/20' : 
+                                    doc.file_type === 'application/pdf' ? 'bg-red-500/20' : 
+                                    'bg-gray-500/20'
+                                  }`}>
+                                    <svg className={`w-6 h-6 ${getFileIconColor(doc.file_type || 'application/pdf')}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={getFileIcon(doc.file_type || 'application/pdf')} />
+                                    </svg>
                                   </div>
-                                  <p className="text-blue-200 text-xs mb-2">
-                                    {formatFileSize(doc.file_size)} • {doc.file_type}
-                                  </p>
-                                  <div className="flex items-center gap-3 text-xs">
-                                    <div className="flex items-center gap-1.5 text-blue-300">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                      </svg>
-                                      <span className="font-medium">Uploaded by:</span>
-                                      <span className="text-white">{doc.uploaded_by_name || 'Unknown'}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <p className="text-white font-medium">{doc.document_name}</p>
+                                      {isDefault && (
+                                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-yellow-500/20 text-yellow-300 border border-yellow-500/50">
+                                          PUBLIC
+                                        </span>
+                                      )}
+                                      {!isDefault && (
+                                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${getDocumentLabelColor(doc.document_label)}`}>
+                                          {getDocumentLabelName(doc.document_label)}
+                                        </span>
+                                      )}
                                     </div>
-                                    <span className="text-blue-300/50">•</span>
-                                    <div className="flex items-center gap-1.5 text-blue-300">
-                                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                      </svg>
-                                      <span className="font-medium">Date:</span>
-                                      <span className="text-white">{formatDateTime(doc.created_at)}</span>
-                                    </div>
+                                    <p className="text-blue-200 text-xs mb-2">
+                                      {hasFile ? (
+                                        <>
+                                          {formatFileSize(doc.file_size || 0)} • {doc.file_type || 'application/pdf'}
+                                        </>
+                                      ) : (
+                                        <span className="text-yellow-300/70">Unset (50 MB)</span>
+                                      )}
+                                    </p>
+                                    {!isDefault && (
+                                      <div className="flex items-center gap-3 text-xs">
+                                        <div className="flex items-center gap-1.5 text-blue-300">
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                          </svg>
+                                          <span className="font-medium">Uploaded by:</span>
+                                          <span className="text-white">{doc.uploaded_by_name || 'Unknown'}</span>
+                                        </div>
+                                        <span className="text-blue-300/50">•</span>
+                                        <div className="flex items-center gap-1.5 text-blue-300">
+                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                          </svg>
+                                          <span className="font-medium">Date:</span>
+                                          <span className="text-white">{formatDateTime(doc.created_at)}</span>
+                                        </div>
+                                      </div>
+                                    )}
+                                    {isDefault && (
+                                      <p className="text-blue-300/70 text-xs">Category: Any</p>
+                                    )}
                                   </div>
                                 </div>
-                              </div>
-                              <div className="flex items-center gap-2 ml-4">
-                                <button
-                                  onClick={() => {
-                                    setViewingDocument(doc)
-                                    setImageLoading(true) // Reset loading when opening new document
-                                  }}
-                                  className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all flex items-center gap-2"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                  </svg>
-                                  View
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteClick(doc.id)}
-                                  className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-300 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-all flex items-center gap-2"
-                                >
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                  Delete
-                                </button>
+                                <div className="flex items-center gap-2 ml-4">
+                                  {hasFile && (
+                                    <button
+                                      onClick={() => {
+                                        setViewingDocument(doc)
+                                        setImageLoading(true)
+                                      }}
+                                      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all flex items-center gap-2"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                      </svg>
+                                      View
+                                    </button>
+                                  )}
+                                  {!isDefault && (
+                                    <button
+                                      onClick={() => handleDeleteClick(doc.id)}
+                                      className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-300 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-all flex items-center gap-2"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     )}
 
@@ -1552,6 +1560,72 @@ export default function PatientFilePage() {
                             </button>
                           </div>
                         </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* SOAP Notes Tab */}
+                {activeTab === 'soap' && (
+                  <div>
+                    {loadingSoap ? (
+                      <div className="text-center py-12">
+                        <LoadingSpinner message="Loading SOAP notes..." />
+                      </div>
+                    ) : encounters.length === 0 ? (
+                      <div className="text-center py-12 bg-white/5 border border-white/10 rounded-xl">
+                        <p className="text-blue-200 text-lg">No encounters found</p>
+                        <p className="text-blue-300/70 text-sm mt-2">SOAP notes appear here once encounters exist</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {encounters.map((encounter: any) => {
+                          const soap = soapNotesByEncounter[encounter.id]
+                          const encDate = encounter.appointments?.appointment_date
+                            ? formatDate(encounter.appointments.appointment_date)
+                            : `Encounter #${encounter.id}`
+
+                          return (
+                            <div key={encounter.id} className="bg-white/5 border border-white/10 rounded-xl p-6">
+                              <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-semibold text-white">
+                                  {encounter.encounter_code || `Encounter #${encounter.id}`}
+                                </h3>
+                                <span className="text-sm text-blue-300">{encDate}</span>
+                              </div>
+                              {soap ? (
+                                <div className="space-y-4">
+                                  <div>
+                                    <p className="text-cyan-200 text-sm font-semibold mb-2">Subjective</p>
+                                    <p className="text-white bg-white/5 p-3 rounded-lg text-sm">
+                                      {cleanSoapSection(soap.subjective_text, 'subjective') || 'Will be updated.'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-cyan-200 text-sm font-semibold mb-2">Objective</p>
+                                    <p className="text-white bg-white/5 p-3 rounded-lg text-sm">
+                                      {cleanSoapSection(soap.objective_text, 'objective') || 'Will be updated.'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-cyan-200 text-sm font-semibold mb-2">Assessment</p>
+                                    <p className="text-white bg-white/5 p-3 rounded-lg text-sm">
+                                      {cleanSoapSection(soap.assessment_text, 'assessment') || 'Will be updated.'}
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-cyan-200 text-sm font-semibold mb-2">Plan</p>
+                                    <p className="text-white bg-white/5 p-3 rounded-lg text-sm">
+                                      {cleanSoapSection(soap.plan_text, 'plan') || 'Will be updated.'}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-blue-200">SOAP notes not available yet for this encounter</p>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>

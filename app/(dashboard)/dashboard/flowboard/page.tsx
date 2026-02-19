@@ -3,11 +3,15 @@
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { createClient } from '@/lib/supabase/client'
-import { useCallback, useEffect, useState, useMemo } from 'react'
+import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { getStatusInfo, type EncounterStatus, ENCOUNTER_STATUSES } from '@/lib/encounter-status'
+import { getStatusInfo, type EncounterStatus, ENCOUNTER_STATUSES, canJoinTelemedicine } from '@/lib/encounter-status'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { UserRole } from '@/lib/roles'
+
+const CACHE_KEY = 'flowboard_appointments'
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 interface Appointment {
   id: number
@@ -31,64 +35,82 @@ interface Appointment {
 
 function FlowboardPage() {
   const { user, role } = useAuth()
-  const [appointments, setAppointments] = useState<Appointment[]>([])
-  const [loading, setLoading] = useState(true)
+  const router = useRouter()
+  const supabase = useMemo(() => createClient(), [])
+  const [appointments, setAppointments] = useState<Appointment[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const cached = sessionStorage.getItem(CACHE_KEY)
+      return cached ? JSON.parse(cached) : []
+    } catch {
+      return []
+    }
+  })
+  const [loading, setLoading] = useState(() => {
+    if (typeof window === 'undefined') return true
+    return !sessionStorage.getItem(CACHE_KEY)
+  })
+  const [viewMode, setViewMode] = useState<'mine' | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [selectedEncounter, setSelectedEncounter] = useState<{ encounterId: number; appointmentId: number; patientId: number } | null>(null)
-  const supabase = createClient()
+  const [pageSize, setPageSize] = useState(25)
+  const [page, setPage] = useState(1)
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [selectedEncounter, setSelectedEncounter] = useState<{
+    encounterId: number
+    appointmentId: number
+    patientId: number
+    encounterStatus?: string
+  } | null>(null)
+  const initialLoadDone = useRef(false)
 
-  const fetchAssignedAppointments = useCallback(async () => {
+  const fetchAssignedAppointments = useCallback(async (showLoading = true) => {
     try {
-      setLoading(true)
+      if (showLoading) setLoading(true)
+      else setIsRefreshing(true)
       
-      // First, get the doctor record for this user
-      const { data: doctorData, error: doctorError } = await supabase
-        .from('doctors')
-        .select('id')
-        .eq('user_id', user?.id)
-        .single()
-
-      if (doctorError || !doctorData) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Error fetching doctor record:', doctorError)
-        }
-        setAppointments([])
-        setLoading(false)
-        return
-      }
-
-      // Fetch encounters assigned to this doctor that are provider_assigned or later (not appointment_initiated or completed)
-      const { data: encounters, error: encountersError } = await supabase
+      let encountersQuery = supabase
         .from('encounters')
         .select('id, appointment_id, patient_id, status, doctor_id')
-        .eq('doctor_id', doctorData.id)
-        .neq('status', 'completed')
-        .neq('status', 'appointment_initiated')
-        .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
+        .limit(1000)
+
+      if (viewMode === 'mine') {
+        const { data: doctorData, error: doctorError } = await supabase
+          .from('doctors')
+          .select('id')
+          .eq('user_id', user?.id)
+          .single()
+
+        if (doctorError || !doctorData) {
+          console.error('Error fetching doctor record:', doctorError)
+          setAppointments([])
+          setLoading(false)
+          setIsRefreshing(false)
+          return
+        }
+        encountersQuery = encountersQuery.eq('doctor_id', doctorData.id)
+      }
+
+      const { data: encounters, error: encountersError } = await encountersQuery
 
       if (encountersError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Error fetching encounters:', encountersError)
-        }
+        console.error('Error fetching encounters:', encountersError)
+        setAppointments([])
         setLoading(false)
+        setIsRefreshing(false)
         return
       }
 
       if (!encounters || encounters.length === 0) {
         setAppointments([])
         setLoading(false)
+        setIsRefreshing(false)
         return
       }
 
-      // Get unique appointment IDs
-      const appointmentIds = [...new Set(encounters.map(e => e.appointment_id))]
-
-      if (appointmentIds.length === 0) {
-        setAppointments([])
-        setLoading(false)
-        return
-      }
+      // Get appointment IDs from encounters
+      const appointmentIds = encounters.map(e => e.appointment_id).filter(Boolean)
 
       // Fetch appointments
       const { data: appointmentsData, error: appointmentsError } = await supabase
@@ -99,55 +121,80 @@ function FlowboardPage() {
         .order('appointment_time', { ascending: true })
 
       if (appointmentsError) {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Error fetching appointments:', appointmentsError)
-        }
+        console.error('Error fetching appointments:', appointmentsError)
+        setAppointments([])
         setLoading(false)
         return
       }
 
-      // Fetch patient details for each appointment
-      if (appointmentsData && appointmentsData.length > 0) {
-        const patientIds = [...new Set(appointmentsData.map(a => a.patient_id))]
-
-        const { data: patientsData, error: patientsError } = await supabase
-          .from('patients')
-          .select('id, first_name, last_name, email, phone')
-          .in('id', patientIds)
-
-        if (patientsError && process.env.NODE_ENV === 'development') {
-          console.error('Error fetching patients:', patientsError)
-        }
-
-        // Combine appointments with patient data and encounter status
-        const appointmentsWithPatients = appointmentsData.map(appointment => {
-          const encounter = encounters.find(e => e.appointment_id === appointment.id)
-          return {
-            ...appointment,
-            patient: patientsData?.find(p => p.id === appointment.patient_id),
-            encounter_status: encounter?.status || null,
-            encounter_id: encounter?.id || null,
-          }
-        })
-
-        setAppointments(appointmentsWithPatients as Appointment[])
-      } else {
+      if (!appointmentsData || appointmentsData.length === 0) {
         setAppointments([])
+        setLoading(false)
+        return
+      }
+
+      // Fetch patient details
+      const patientIds = [...new Set(appointmentsData.map(a => a.patient_id).filter(Boolean))]
+      const { data: patientsData, error: patientsError } = await supabase
+        .from('patients')
+        .select('id, first_name, last_name, email, phone')
+        .in('id', patientIds)
+
+      if (patientsError) {
+        console.error('Error fetching patients:', patientsError)
+      }
+
+      // Combine data
+      const appointmentsWithDetails = appointmentsData.map(appointment => {
+        const encounter = encounters.find(e => e.appointment_id === appointment.id)
+        const patient = patientsData?.find(p => p.id === appointment.patient_id)
+        return {
+          ...appointment,
+          patient: patient ? {
+            id: patient.id,
+            first_name: patient.first_name,
+            last_name: patient.last_name,
+            email: patient.email,
+            phone: patient.phone,
+          } : undefined,
+          encounter_status: encounter?.status || null,
+          encounter_id: encounter?.id || null,
+        }
+      })
+
+      setAppointments(appointmentsWithDetails)
+      try {
+        sessionStorage.setItem(CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+      } catch {
+        // ignore storage errors
       }
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error in fetchAssignedAppointments:', error)
-      }
+      console.error('Error in fetchAssignedAppointments:', error)
+      if (showLoading) setAppointments([])
     } finally {
       setLoading(false)
+      setIsRefreshing(false)
     }
-  }, [user, supabase])
+  }, [user, supabase, viewMode])
 
   useEffect(() => {
-    if (user && role === 'doctor') {
-      fetchAssignedAppointments()
+    if (user && role === 'doctor' && !initialLoadDone.current) {
+      initialLoadDone.current = true
+      const hasCache = typeof window !== 'undefined' && !!sessionStorage.getItem(CACHE_KEY)
+      fetchAssignedAppointments(!hasCache)
     }
   }, [user, role, fetchAssignedAppointments])
+
+  const refreshData = useCallback(() => {
+    try {
+      sessionStorage.removeItem(CACHE_KEY)
+    } catch {
+      // ignore
+    }
+    fetchAssignedAppointments(true)
+    setPage(1)
+  }, [fetchAssignedAppointments])
+
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
@@ -172,7 +219,7 @@ function FlowboardPage() {
     return `${displayHours}:${minutes} ${ampm}`
   }
 
-  // Filter and sort appointments
+  // Filter and sort appointments (search/filter on ALL records)
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
@@ -181,8 +228,8 @@ function FlowboardPage() {
       const query = searchQuery.toLowerCase()
       result = result.filter(appointment => 
         appointment.patient_id.toString().includes(query) ||
-        appointment.patient?.first_name.toLowerCase().includes(query) ||
-        appointment.patient?.last_name.toLowerCase().includes(query) ||
+        appointment.patient?.first_name?.toLowerCase().includes(query) ||
+        appointment.patient?.last_name?.toLowerCase().includes(query) ||
         appointment.patient?.email?.toLowerCase().includes(query) ||
         appointment.patient?.phone?.includes(query)
       )
@@ -193,8 +240,11 @@ function FlowboardPage() {
       result = result.filter(appointment => appointment.encounter_status === filterStatus)
     }
 
-    // Sort by time slot only
+    // Sort by date then time
     result.sort((a, b) => {
+      const dateA = a.appointment_date || ''
+      const dateB = b.appointment_date || ''
+      if (dateA !== dateB) return dateA.localeCompare(dateB)
       const timeA = a.appointment_time || ''
       const timeB = b.appointment_time || ''
       return timeA.localeCompare(timeB)
@@ -203,15 +253,47 @@ function FlowboardPage() {
     return result
   }, [appointments, searchQuery, filterStatus])
 
+  // Paginate filtered results
+  const paginatedAppointments = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredAppointments.slice(start, start + pageSize)
+  }, [filteredAppointments, page, pageSize])
+
+  const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
+
   return (
     <div className="p-6 lg:p-12">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-white mb-2">Flowboard</h1>
-          <p className="text-blue-200 text-lg">
-            Your assigned active encounters
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-white mb-2">Flowboard</h1>
+            <p className="text-blue-200 text-lg">
+              Your assigned active encounters
+            </p>
+          </div>
+          <button
+            onClick={refreshData}
+            disabled={loading || isRefreshing}
+            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isRefreshing ? (
+              <>
+                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </>
+            )}
+          </button>
         </div>
 
         {/* Search and Filters */}
@@ -225,10 +307,32 @@ function FlowboardPage() {
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value)
+                  setPage(1)
+                }}
                 placeholder="Search by patient ID, name, email, or phone..."
                 className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
               />
+            </div>
+
+            {/* View mode: All encounters vs Assigned to me */}
+            <div className="flex items-center gap-2">
+              <span className="text-blue-200 text-sm whitespace-nowrap">View:</span>
+              <select
+                value={viewMode}
+                onChange={(e) => {
+                  const mode = e.target.value as 'mine' | 'all'
+                  setViewMode(mode)
+                  setPage(1)
+                  try { sessionStorage.removeItem(CACHE_KEY) } catch { /* ignore */ }
+                  fetchAssignedAppointments(true)
+                }}
+                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="all">All encounters</option>
+                <option value="mine">Assigned to me</option>
+              </select>
             </div>
 
             {/* Status Filter */}
@@ -236,7 +340,10 @@ function FlowboardPage() {
               <span className="text-blue-200 text-sm whitespace-nowrap">Status:</span>
               <select
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                onChange={(e) => {
+                  setFilterStatus(e.target.value)
+                  setPage(1)
+                }}
                 className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
               >
                 <option value="all">All Statuses</option>
@@ -250,18 +357,40 @@ function FlowboardPage() {
           </div>
 
           {/* Results count */}
-          <div className="mt-4 flex items-center justify-between">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-blue-200">
-              Showing <span className="text-white font-medium">{filteredAppointments.length}</span> of <span className="text-white font-medium">{appointments.length}</span> encounters
+              Showing <span className="text-white font-medium">
+                {filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1}–
+                {Math.min(page * pageSize, filteredAppointments.length)}
+              </span>
+              {' '}of <span className="text-white font-medium">{filteredAppointments.length}</span> encounters
+              {searchQuery || filterStatus !== 'all' ? ` (filtered from ${appointments.length})` : ''}
             </p>
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="text-sm text-blue-300 hover:text-white transition-colors"
-              >
-                Clear search
-              </button>
-            )}
+            <div className="flex items-center gap-4">
+              <label className="text-sm text-blue-200 flex items-center gap-2">
+                Per page:
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value))
+                    setPage(1)
+                  }}
+                  className="px-2 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="text-sm text-blue-300 hover:text-white transition-colors"
+                >
+                  Clear search
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -288,7 +417,7 @@ function FlowboardPage() {
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredAppointments.map((appointment) => (
+            {paginatedAppointments.map((appointment) => (
               <div
                 key={appointment.id}
                 onClick={() => {
@@ -297,6 +426,7 @@ function FlowboardPage() {
                       encounterId: appointment.encounter_id,
                       appointmentId: appointment.id,
                       patientId: appointment.patient_id,
+                      encounterStatus: appointment.encounter_status,
                     })
                   }
                 }}
@@ -364,6 +494,35 @@ function FlowboardPage() {
             ))}
           </div>
         )}
+
+        {/* Pagination - below the list */}
+        {!loading && appointments.length > 0 && filteredAppointments.length > 0 && (
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Previous
+            </button>
+            <span className="text-blue-200 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              Next
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Encounter Detail Modal */}
@@ -375,9 +534,9 @@ function FlowboardPage() {
           isOpen={!!selectedEncounter}
           onClose={() => setSelectedEncounter(null)}
           onJoinTelemedicine={() => {
-            // Navigate to telemedicine page or open video call
-            window.open(`/video?encounter=${selectedEncounter.encounterId}`, '_blank')
+            router.push(`/video?encounter=${selectedEncounter.encounterId}`)
           }}
+          canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
       )}
     </div>

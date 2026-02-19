@@ -65,7 +65,9 @@ export function AssignProviderModal({
     return `${hours}:${minutes}`
   }
 
-  const [selectedDoctorId, setSelectedDoctorId] = useState('')
+  const [selectedDoctorId, setSelectedDoctorId] = useState(
+    appointment.assigned_doctor ? appointment.assigned_doctor.id.toString() : ''
+  )
   const [appointmentDate, setAppointmentDate] = useState(appointment.appointment_date || getTodayDate())
   const [appointmentTime, setAppointmentTime] = useState(appointment.appointment_time || getCurrentTime())
 

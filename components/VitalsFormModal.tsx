@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { config } from '@/lib/config'
 
 interface VitalsFormModalProps {
   encounterId: number
@@ -229,6 +230,27 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
         // Don't fail - vitals were saved
       }
 
+      // Call external Complete SOAP Notes API (fire-and-forget)
+      // This will generate objective/assessment/plan in ai_soapnotes
+      const soapApiUrl = config.soapNotes.apiUrl
+      if (soapApiUrl) {
+        try {
+          // We don't await this call so the nurse isn't blocked by AI processing time
+          void fetch(soapApiUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              encounter_id: encounterId.toString(),
+            }),
+          })
+        } catch (apiError) {
+          // Log but don't interrupt the nurse workflow
+          console.error('Error calling Complete SOAP Notes API:', apiError)
+        }
+      }
+
       onSave()
       // Reset form and errors
       setFormData({
@@ -303,7 +325,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 max={VALIDATION_RANGES.bp_systolic.max}
                 value={formData.bp_systolic}
                 onChange={(e) => handleFieldChange('bp_systolic', e.target.value)}
-                placeholder="120"
+                placeholder={`${VALIDATION_RANGES.bp_systolic.min}-${VALIDATION_RANGES.bp_systolic.max}`}
                 className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                   errors.bp_systolic ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                 }`}
@@ -320,7 +342,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 max={VALIDATION_RANGES.bp_diastolic.max}
                 value={formData.bp_diastolic}
                 onChange={(e) => handleFieldChange('bp_diastolic', e.target.value)}
-                placeholder="80"
+                placeholder={`${VALIDATION_RANGES.bp_diastolic.min}-${VALIDATION_RANGES.bp_diastolic.max}`}
                 className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                   errors.bp_diastolic ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                 }`}
@@ -339,7 +361,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 max={VALIDATION_RANGES.heart_rate.max}
                 value={formData.heart_rate}
                 onChange={(e) => handleFieldChange('heart_rate', e.target.value)}
-                placeholder="72"
+                placeholder={`${VALIDATION_RANGES.heart_rate.min}-${VALIDATION_RANGES.heart_rate.max}`}
                 className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                   errors.heart_rate ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                 }`}
@@ -379,7 +401,11 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                   max={formData.temperature_unit === 'F' ? VALIDATION_RANGES.temperature_f.max : VALIDATION_RANGES.temperature_c.max}
                   value={formData.temperature}
                   onChange={(e) => handleFieldChange('temperature', e.target.value)}
-                  placeholder={formData.temperature_unit === 'F' ? '98.6' : '37.0'}
+                  placeholder={
+                    formData.temperature_unit === 'F'
+                      ? `${VALIDATION_RANGES.temperature_f.min}-${VALIDATION_RANGES.temperature_f.max}`
+                      : `${VALIDATION_RANGES.temperature_c.min}-${VALIDATION_RANGES.temperature_c.max}`
+                  }
                   className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                     errors.temperature ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                   }`}
@@ -414,7 +440,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 max={VALIDATION_RANGES.spo2.max}
                 value={formData.spo2}
                 onChange={(e) => handleFieldChange('spo2', e.target.value)}
-                placeholder="98"
+                placeholder={`${VALIDATION_RANGES.spo2.min}-${VALIDATION_RANGES.spo2.max}`}
                 className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                   errors.spo2 ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                 }`}
@@ -435,7 +461,11 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                   max={formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.max : VALIDATION_RANGES.weight_kg.max}
                   value={formData.weight}
                   onChange={(e) => handleFieldChange('weight', e.target.value)}
-                  placeholder={formData.weight_unit === 'lbs' ? '150' : '70'}
+                  placeholder={
+                    formData.weight_unit === 'lbs'
+                      ? `${VALIDATION_RANGES.weight_lbs.min}-${VALIDATION_RANGES.weight_lbs.max}`
+                      : `${VALIDATION_RANGES.weight_kg.min}-${VALIDATION_RANGES.weight_kg.max}`
+                  }
                   className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                     errors.weight ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                   }`}
@@ -472,7 +502,11 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                   max={formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.max : VALIDATION_RANGES.height_cm.max}
                   value={formData.height}
                   onChange={(e) => handleFieldChange('height', e.target.value)}
-                  placeholder={formData.height_unit === 'in' ? '70' : '175'}
+                  placeholder={
+                    formData.height_unit === 'in'
+                      ? `${VALIDATION_RANGES.height_in.min}-${VALIDATION_RANGES.height_in.max}`
+                      : `${VALIDATION_RANGES.height_cm.min}-${VALIDATION_RANGES.height_cm.max}`
+                  }
                   className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
                     errors.height ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
                   }`}

@@ -37,6 +37,9 @@ export const config = {
   sentry: {
     dsn: getEnvVar('NEXT_PUBLIC_SENTRY_DSN', false), // Optional
   },
+  soapNotes: {
+    apiUrl: getEnvVar('NEXT_PUBLIC_SOAP_NOTES_API_URL', false), // Optional - Complete SOAP Notes API
+  },
 } as const
 
 // Validate critical config on module load (only in production runtime, not during build)

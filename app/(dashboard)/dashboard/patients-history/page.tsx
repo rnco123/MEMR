@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
+import * as Sentry from '@sentry/nextjs'
 
 interface Patient {
   id: number // bigint
@@ -25,104 +26,203 @@ function PatientsHistoryPage() {
   const { user, role } = useAuth()
   const [patients, setPatients] = useState<Patient[]>([])
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([])
+  const [displayedPatients, setDisplayedPatients] = useState<Patient[]>([])
   const [totalPatientCount, setTotalPatientCount] = useState<number | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
+  const [currentPage, setCurrentPage] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'visits'>('name')
   const [filterGender, setFilterGender] = useState<'all' | 'Male' | 'Female'>('all')
   const supabase = useMemo(() => createClient(), [])
+  
+  const PAGE_SIZE = 20 // Load 20 patients at a time
 
-  const fetchAllPatients = useCallback(async () => {
+  // Fetch total count
+  const fetchPatientCount = useCallback(async () => {
+    const { count, error: countError } = await supabase
+      .from('patients')
+      .select('id', { count: 'exact', head: true })
+
+    if (countError) {
+      console.error('Error fetching patient count:', countError)
+      setTotalPatientCount(null)
+    } else {
+      setTotalPatientCount(count ?? 0)
+    }
+  }, [supabase])
+
+  // Fetch patients in batches
+  const fetchPatientsBatch = useCallback(async (page: number, reset: boolean = false) => {
     try {
-      setLoading(true)
-      
-      // First, get the count to verify connection
-      // Use the same query structure as the data fetch to respect RLS
-      const { count, error: countError } = await supabase
-        .from('patients')
-        .select('id', { count: 'exact', head: true })
-
-      if (countError) {
-        console.error('Error fetching patient count:', countError)
-        console.error('Count error details:', JSON.stringify(countError, null, 2))
-        console.log('❌ Database connection test - FAILED')
-        setTotalPatientCount(null)
+      if (reset) {
+        setLoading(true)
+        setCurrentPage(0)
       } else {
-        const patientCount = count ?? 0
-        console.log(`✅ Database connection successful - Found ${patientCount} patients in database`)
-        setTotalPatientCount(patientCount)
+        setLoadingMore(true)
       }
-      
-      const { data: patientsData, error: patientsError } = await supabase
+
+      // Build query with filters
+      let query = supabase
         .from('patients')
         .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
         .order('last_name', { ascending: true })
         .order('first_name', { ascending: true })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+
+      // Apply gender filter if needed
+      if (filterGender !== 'all') {
+        query = query.eq('gender', filterGender)
+      }
+
+      const { data: patientsData, error: patientsError } = await query
 
       if (patientsError) {
         console.error('Error fetching patients:', patientsError)
-        console.error('Patients error details:', JSON.stringify(patientsError, null, 2))
+        Sentry.captureException(patientsError, {
+          tags: {
+            component: 'PatientsHistoryPage',
+            action: 'fetchPatientsBatch',
+            page: page.toString(),
+          },
+          extra: {
+            filterGender,
+            pageSize: PAGE_SIZE,
+          },
+        })
         setLoading(false)
+        setLoadingMore(false)
         return
       }
 
-      // Log how many patients were actually fetched
-      if (patientsData) {
-        console.log(`📊 Fetched ${patientsData.length} patients from database`)
+      if (!patientsData || patientsData.length === 0) {
+        setHasMore(false)
+        setLoading(false)
+        setLoadingMore(false)
+        return
       }
 
-      if (patientsData) {
-        // Try to get encounter counts from encounters table
-        const patientIds = patientsData.map(p => p.id)
-        const encounterCounts: Record<number, number> = {}
-        const lastVisits: Record<number, string> = {}
+      // Check if there are more pages
+      if (patientsData.length < PAGE_SIZE) {
+        setHasMore(false)
+      }
 
-        try {
-          const { data: encountersData } = await supabase
-            .from('encounters')
-            .select('patient_id, created_at')
-            .in('patient_id', patientIds)
+      // Get encounter counts for this batch
+      const patientIds = patientsData.map(p => p.id)
+      const encounterCounts: Record<number, number> = {}
+      const lastVisits: Record<number, string> = {}
 
-          if (encountersData) {
-            encountersData.forEach(encounter => {
-              const patientId = encounter.patient_id
-              encounterCounts[patientId] = (encounterCounts[patientId] || 0) + 1
-              if (!lastVisits[patientId] || encounter.created_at > lastVisits[patientId]) {
-                lastVisits[patientId] = encounter.created_at
-              }
-            })
-          }
-        } catch (error) {
-          // If encounters query fails, continue without counts
+      try {
+        const { data: encountersData } = await supabase
+          .from('encounters')
+          .select('patient_id, created_at')
+          .in('patient_id', patientIds)
+
+        if (encountersData) {
+          encountersData.forEach(encounter => {
+            const patientId = encounter.patient_id
+            encounterCounts[patientId] = (encounterCounts[patientId] || 0) + 1
+            if (!lastVisits[patientId] || encounter.created_at > lastVisits[patientId]) {
+              lastVisits[patientId] = encounter.created_at
+            }
+          })
         }
-
-        const mappedPatients = patientsData.map(patient => ({
-          ...patient,
-          encounter_count: encounterCounts[patient.id] || 0,
-          last_visit: lastVisits[patient.id] || null,
-        }))
-
-        setPatients(mappedPatients as Patient[])
-        setFilteredPatients(mappedPatients as Patient[])
+      } catch (error) {
+        // If encounters query fails, continue without counts
       }
+
+      const mappedPatients = patientsData.map(patient => ({
+        ...patient,
+        encounter_count: encounterCounts[patient.id] || 0,
+        last_visit: lastVisits[patient.id] || null,
+      })) as Patient[]
+
+      if (reset) {
+        setPatients(mappedPatients)
+      } else {
+        setPatients(prev => [...prev, ...mappedPatients])
+      }
+
+      setCurrentPage(page)
     } catch (error) {
-      console.error('Error in fetchAllPatients:', error)
+      console.error('Error in fetchPatientsBatch:', error)
+      Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
+        tags: {
+          component: 'PatientsHistoryPage',
+          action: 'fetchPatientsBatch',
+        },
+        extra: {
+          page,
+          filterGender,
+          reset,
+        },
+      })
     } finally {
       setLoading(false)
+      setLoadingMore(false)
     }
-  }, [supabase])
+  }, [supabase, filterGender, PAGE_SIZE])
 
+  // Initial load
   useEffect(() => {
     if (user && (role === 'doctor' || role === 'nurse' || role === 'staff')) {
-      fetchAllPatients()
+      fetchPatientCount()
+      fetchPatientsBatch(0, true)
     }
-  }, [user, role, fetchAllPatients])
+  }, [user, role, fetchPatientCount, fetchPatientsBatch])
+
+  // Load more patients
+  const loadMore = useCallback(() => {
+    if (!loadingMore && hasMore) {
+      fetchPatientsBatch(currentPage + 1, false)
+    }
+  }, [loadingMore, hasMore, currentPage, fetchPatientsBatch])
+
+  // Intersection Observer for infinite scroll
+  useEffect(() => {
+    if (!hasMore || loadingMore) return undefined
+
+    try {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries[0]?.isIntersecting && hasMore && !loadingMore) {
+            loadMore()
+          }
+        },
+        { threshold: 0.1 }
+      )
+
+      const loadMoreTrigger = document.getElementById('load-more-trigger')
+      if (loadMoreTrigger) {
+        observer.observe(loadMoreTrigger)
+      }
+
+      return () => {
+        if (loadMoreTrigger) {
+          observer.unobserve(loadMoreTrigger)
+        }
+      }
+    } catch (error) {
+      console.error('Error setting up Intersection Observer:', error)
+      Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
+        tags: {
+          component: 'PatientsHistoryPage',
+          action: 'intersectionObserver',
+        },
+      })
+      return undefined
+    }
+  }, [hasMore, loadingMore, loadMore])
 
   const handleRefresh = () => {
-    fetchAllPatients()
+    setHasMore(true)
+    setCurrentPage(0)
+    fetchPatientCount()
+    fetchPatientsBatch(0, true)
   }
 
-  // Filter and sort patients
+  // Filter and sort patients (client-side for loaded patients)
   useEffect(() => {
     let result = [...patients]
 
@@ -136,11 +236,6 @@ function PatientsHistoryPage() {
         p.phone?.includes(query) ||
         p.id.toString().includes(query)
       )
-    }
-
-    // Gender filter
-    if (filterGender !== 'all') {
-      result = result.filter(p => p.gender === filterGender)
     }
 
     // Sort
@@ -162,7 +257,18 @@ function PatientsHistoryPage() {
     }
 
     setFilteredPatients(result)
-  }, [patients, searchQuery, sortBy, filterGender])
+    // Show all filtered patients that have been loaded
+    setDisplayedPatients(result)
+  }, [patients, searchQuery, sortBy])
+
+  // When gender filter changes, reload from database
+  useEffect(() => {
+    if (user && (role === 'doctor' || role === 'nurse' || role === 'staff')) {
+      setHasMore(true)
+      setCurrentPage(0)
+      fetchPatientsBatch(0, true)
+    }
+  }, [filterGender]) // Only trigger on gender filter change
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
@@ -269,7 +375,8 @@ function PatientsHistoryPage() {
           {/* Results count */}
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-blue-200">
-              Showing <span className="text-white font-medium">{filteredPatients.length}</span> of <span className="text-white font-medium">{patients.length}</span> patients
+              Showing <span className="text-white font-medium">{displayedPatients.length}</span> of <span className="text-white font-medium">{totalPatientCount ?? patients.length}</span> patients
+              {searchQuery && ` (${filteredPatients.length} filtered)`}
             </p>
             {searchQuery && (
               <button
@@ -283,11 +390,11 @@ function PatientsHistoryPage() {
         </div>
 
         {/* Patients Table */}
-        {loading ? (
+        {loading && patients.length === 0 ? (
           <div className="flex items-center justify-center py-20">
             <LoadingSpinner message="Loading patients..." />
           </div>
-        ) : filteredPatients.length === 0 ? (
+        ) : displayedPatients.length === 0 ? (
           <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-12 text-center">
             <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -315,7 +422,7 @@ function PatientsHistoryPage() {
 
             {/* Table Body */}
             <div className="divide-y divide-white/10">
-              {filteredPatients.map((patient) => (
+              {displayedPatients.map((patient) => (
                 <div
                   key={patient.id}
                   className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 hover:bg-white/5 transition-colors"
@@ -379,6 +486,33 @@ function PatientsHistoryPage() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Load More Trigger / Button */}
+        {!loading && displayedPatients.length > 0 && (
+          <div className="mt-6 flex justify-center">
+            {hasMore ? (
+              <div id="load-more-trigger" className="w-full">
+                {loadingMore ? (
+                  <div className="flex items-center justify-center py-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+                    <span className="ml-3 text-blue-200">Loading more patients...</span>
+                  </div>
+                ) : (
+                  <button
+                    onClick={loadMore}
+                    className="w-full py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors"
+                  >
+                    Load More Patients
+                  </button>
+                )}
+              </div>
+            ) : (
+              <p className="text-blue-200 text-sm py-4">
+                All patients loaded ({displayedPatients.length} of {totalPatientCount ?? displayedPatients.length})
+              </p>
+            )}
           </div>
         )}
 

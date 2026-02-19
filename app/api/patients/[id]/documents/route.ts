@@ -35,9 +35,96 @@ export async function GET(
       .order('created_at', { ascending: false })
 
     if (error) {
-      console.error('Error fetching documents:', error)
-      return NextResponse.json({ error: 'Failed to fetch documents' }, { status: 500 })
+      return NextResponse.json(
+        { error: `Failed to fetch documents: ${error.message}` },
+        { status: 500 }
+      )
     }
+
+    // Fetch signed forms for all appointments of this patient
+    const { data: appointments } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('patient_id', patientId)
+
+    const appointmentIds = appointments?.map(a => a.id) || []
+    let signedForms: any[] = []
+    
+    if (appointmentIds.length > 0) {
+      const { data: forms } = await supabase
+        .from('signed_form')
+        .select('*')
+        .in('appointment_id', appointmentIds)
+      
+      signedForms = forms || []
+    }
+
+    // Find signed forms with file paths
+    const generalSurgeryForm = signedForms.find(f => f.generalsurgery_form_path)
+    const hipaaForm = signedForms.find(f => f.hipaacompliance_form_path)
+    const telemedicineForm = signedForms.find(f => f.telemedicine_form_path)
+
+    // Generate URLs for signed forms if they exist
+    const generalSurgeryUrl = generalSurgeryForm?.generalsurgery_form_path
+      ? supabase.storage.from('patient-documents').getPublicUrl(generalSurgeryForm.generalsurgery_form_path).data.publicUrl
+      : null
+    
+    const hipaaUrl = hipaaForm?.hipaacompliance_form_path
+      ? supabase.storage.from('patient-documents').getPublicUrl(hipaaForm.hipaacompliance_form_path).data.publicUrl
+      : null
+    
+    const telemedicineUrl = telemedicineForm?.telemedicine_form_path
+      ? supabase.storage.from('patient-documents').getPublicUrl(telemedicineForm.telemedicine_form_path).data.publicUrl
+      : null
+
+    // Create default form documents for every patient
+    const defaultForms = [
+      {
+        id: `default-${patientId}-generalsurgery`,
+        patient_id: patientId,
+        document_name: 'GeneralSurgery_form',
+        document_label: 'other',
+        file_url: generalSurgeryUrl,
+        file_name: 'GeneralSurgery_form',
+        file_size: 0,
+        file_type: 'application/pdf',
+        uploaded_by: null,
+        uploaded_by_name: null,
+        created_at: new Date().toISOString(),
+        is_default: true,
+        has_file: !!generalSurgeryForm,
+      },
+      {
+        id: `default-${patientId}-hipaa`,
+        patient_id: patientId,
+        document_name: 'HIPAACompliance_form',
+        document_label: 'other',
+        file_url: hipaaUrl,
+        file_name: 'HIPAACompliance_form',
+        file_size: 0,
+        file_type: 'application/pdf',
+        uploaded_by: null,
+        uploaded_by_name: null,
+        created_at: new Date().toISOString(),
+        is_default: true,
+        has_file: !!hipaaForm,
+      },
+      {
+        id: `default-${patientId}-telemedicine`,
+        patient_id: patientId,
+        document_name: 'telemedicine_signed_form',
+        document_label: 'other',
+        file_url: telemedicineUrl,
+        file_name: 'telemedicine_signed_form',
+        file_size: 0,
+        file_type: 'application/pdf',
+        uploaded_by: null,
+        uploaded_by_name: null,
+        created_at: new Date().toISOString(),
+        is_default: true,
+        has_file: !!telemedicineForm,
+      },
+    ]
 
     // Transform documents to match frontend interface
     // Schema has: id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at
@@ -83,7 +170,10 @@ export async function GET(
       })
     )
 
-    return NextResponse.json({ documents: transformedDocuments })
+    // Combine regular documents with default forms
+    const allDocuments = [...defaultForms, ...transformedDocuments]
+
+    return NextResponse.json({ documents: allDocuments })
   } catch (error) {
     console.error('Error in GET /api/patients/[id]/documents:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

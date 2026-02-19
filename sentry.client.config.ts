@@ -38,9 +38,8 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
       ...(typeof Sentry.replayIntegration === 'function'
         ? [
             Sentry.replayIntegration({
-              // Mask all text content and user input
-              maskAllText: true,
-              blockAllMedia: true,
+              maskAllText: false,
+              blockAllMedia: false,
             }),
           ]
         : []),

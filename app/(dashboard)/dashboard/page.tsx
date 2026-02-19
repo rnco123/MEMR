@@ -4,14 +4,15 @@ import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { ROLE_PERMISSIONS, getRoleLabel, UserRole } from '@/lib/roles'
 import Link from 'next/link'
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 
 interface UpcomingAppointment {
   id: string
   appointment_date: string
-  appointment_type: string | null
+  appointment_time: string | null
+  onsite_type: string | null
   status: string
   patient: {
     first_name: string
@@ -32,87 +33,77 @@ function DashboardPage() {
 
   const permissions = role ? ROLE_PERMISSIONS[role] : null
 
-  const fetchAvailability = async () => {
+  const fetchAvailability = useCallback(async () => {
     try {
-      const response = await fetch(`/api/doctors/availability?doctor_id=${user?.id}`)
-      if (response.ok) {
-        const { data } = await response.json()
-        setIsAvailable(data?.is_available ?? false)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = {}
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
+      const response = await fetch('/api/doctors/availability', { credentials: 'include', headers })
+      const json = await response.json()
+      if (response.ok && json.data) {
+        setIsAvailable(json.data.is_available ?? false)
+      } else {
+        setIsAvailable(false)
       }
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error fetching availability:', error)
-      }
+      setIsAvailable(false)
     }
-  }
+  }, [supabase])
 
   const toggleAvailability = async () => {
     if (isToggling) return
     
     setIsToggling(true)
     try {
-      const newStatus = !isAvailable
+      const newStatus = !(isAvailable ?? false)
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`
+      }
       const response = await fetch('/api/doctors/availability', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        credentials: 'include',
+        headers,
         body: JSON.stringify({ is_available: newStatus }),
       })
 
-      if (response.ok) {
-        setIsAvailable(newStatus)
+      const json = await response.json()
+      if (response.ok && json.success) {
+        setIsAvailable(json.data?.is_available ?? newStatus)
       } else {
-        if (process.env.NODE_ENV === 'development') {
-          console.error('Failed to update availability')
-        }
+        fetchAvailability()
       }
     } catch (error) {
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Error toggling availability:', error)
-      }
+      fetchAvailability()
     } finally {
       setIsToggling(false)
     }
   }
 
-  // Fetch doctor availability status
-  useEffect(() => {
-    if (role === 'doctor' && user) {
-      fetchAvailability()
+  const fetchStats = useCallback(async () => {
+    if (!user || role !== 'doctor') {
+      setLoadingStats(false)
+      return
     }
-  }, [role, user])
 
-  // Fetch statistics
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!user || role !== 'doctor') {
-        setLoadingStats(false)
-        return
-      }
+    setLoadingStats(true)
+    try {
+      const { data: doctorData } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
 
-      setLoadingStats(true)
-      try {
-        // Get doctor ID
-        const { data: doctorData } = await supabase
-          .from('doctors')
-          .select('id')
-          .eq('user_id', user.id)
-          .single()
+      const { count: patientsCount } = await supabase
+        .from('patients')
+        .select('id', { count: 'exact', head: true })
 
-        if (!doctorData) {
-          setLoadingStats(false)
-          return
-        }
+      setTotalPatients(patientsCount || 0)
 
-        // Fetch total patients count
-        const { count: patientsCount } = await supabase
-          .from('patients')
-          .select('id', { count: 'exact', head: true })
-
-        setTotalPatients(patientsCount || 0)
-
-        // Fetch total consultations (encounters with status consultation_concluded, final_review, or completed)
+      if (doctorData) {
         const { count: consultationsCount } = await supabase
           .from('encounters')
           .select('id', { count: 'exact', head: true })
@@ -120,88 +111,122 @@ function DashboardPage() {
           .in('status', ['consultation_concluded', 'final_review', 'completed'])
 
         setTotalConsultations(consultationsCount || 0)
-      } catch (error) {
-        console.error('Error fetching stats:', error)
-      } finally {
-        setLoadingStats(false)
       }
+    } catch (error) {
+      console.error('Error fetching stats:', error)
+    } finally {
+      setLoadingStats(false)
     }
-
-    fetchStats()
   }, [user, role, supabase])
 
-  // Fetch upcoming appointments for doctors
-  useEffect(() => {
-    const fetchUpcomingAppointments = async () => {
-      if (!user || role !== 'doctor') {
+  const fetchUpcomingAppointments = useCallback(async () => {
+    if (!user || role !== 'doctor') {
+      setUpcomingAppointments([])
+      return
+    }
+
+    setLoadingAppointments(true)
+    try {
+      const { data: doctorData } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.id)
+        .single()
+
+      if (!doctorData) {
         setUpcomingAppointments([])
+        setLoadingAppointments(false)
         return
       }
 
-      setLoadingAppointments(true)
-      try {
-        const now = new Date()
-        const startOfDay = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate(),
-          0,
-          0,
-          0,
-          0
-        )
-        const endOfDay = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate(),
-          23,
-          59,
-          59,
-          999
-        )
+      const { data: encounters } = await supabase
+        .from('encounters')
+        .select('appointment_id')
+        .eq('doctor_id', doctorData.id)
 
-        const { data, error } = await supabase
-          .from('appointments')
-          .select(
-            `id, appointment_date, appointment_type, status, patients:patient_id(first_name, last_name)`
-          )
-          .eq('doctor_id', user.id)
-          .eq('status', 'scheduled')
-          .gte('appointment_date', startOfDay.toISOString())
-          .lte('appointment_date', endOfDay.toISOString())
-          .order('appointment_date', { ascending: true })
-          .limit(5)
-
-        if (error) {
-          console.error('Error fetching upcoming appointments:', error)
-          setUpcomingAppointments([])
-        } else {
-          const mapped =
-            data?.map((row: any) => ({
-              id: row.id as string,
-              appointment_date: row.appointment_date as string,
-              appointment_type: (row.appointment_type as string | null) ?? null,
-              status: row.status as string,
-              patient: row.patients
-                ? {
-                    first_name: row.patients.first_name as string,
-                    last_name: row.patients.last_name as string,
-                  }
-                : null,
-            })) ?? []
-
-          setUpcomingAppointments(mapped)
-        }
-      } catch (error) {
-        console.error('Error in fetchUpcomingAppointments:', error)
+      if (!encounters || encounters.length === 0) {
         setUpcomingAppointments([])
-      } finally {
         setLoadingAppointments(false)
+        return
+      }
+
+      const appointmentIds = encounters.map(e => e.appointment_id).filter(Boolean)
+      const today = new Date().toISOString().split('T')[0]
+
+      const { data: appointmentsData } = await supabase
+        .from('appointments')
+        .select('id, appointment_date, appointment_time, onsite_type, status, patient_id')
+        .in('id', appointmentIds)
+        .gte('appointment_date', today)
+        .order('appointment_date', { ascending: true })
+        .limit(5)
+
+      if (!appointmentsData || appointmentsData.length === 0) {
+        setUpcomingAppointments([])
+        setLoadingAppointments(false)
+        return
+      }
+
+      const patientIds = [...new Set(appointmentsData.map(a => a.patient_id).filter(Boolean))]
+      const { data: patientsData } = await supabase
+        .from('patients')
+        .select('id, first_name, last_name')
+        .in('id', patientIds)
+
+      const appointmentsWithPatients = appointmentsData.map(appointment => ({
+        id: String(appointment.id),
+        appointment_date: appointment.appointment_date,
+        appointment_time: appointment.appointment_time ?? null,
+        onsite_type: appointment.onsite_type ?? null,
+        status: appointment.status,
+        patient: patientsData?.find(p => p.id === appointment.patient_id) || null,
+      }))
+
+      setUpcomingAppointments(appointmentsWithPatients)
+    } catch (error) {
+      console.error('Error in fetchUpcomingAppointments:', error)
+      setUpcomingAppointments([])
+    } finally {
+      setLoadingAppointments(false)
+    }
+  }, [user, role, supabase])
+
+  const refreshAllData = useCallback(() => {
+    if (role === 'doctor' && user) {
+      fetchAvailability()
+      fetchStats()
+      fetchUpcomingAppointments()
+    }
+  }, [role, user, fetchAvailability, fetchStats, fetchUpcomingAppointments])
+
+  // Fetch doctor availability status
+  useEffect(() => {
+    if (role === 'doctor' && user) {
+      fetchAvailability()
+    }
+  }, [role, user, fetchAvailability])
+
+  // Fetch statistics
+  useEffect(() => {
+    fetchStats()
+  }, [fetchStats])
+
+  // Fetch upcoming appointments for doctors
+  useEffect(() => {
+    fetchUpcomingAppointments()
+  }, [fetchUpcomingAppointments])
+
+  // Refetch when tab becomes visible (user returns without page refresh)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && user && role === 'doctor') {
+        refreshAllData()
       }
     }
 
-    fetchUpcomingAppointments()
-  }, [user, role, supabase])
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [user, role, refreshAllData])
 
   return (
     <div className="p-6 lg:p-12">
@@ -218,7 +243,7 @@ function DashboardPage() {
           </p>
         </div>
 
-        {/* Role Badge and Availability Toggle (for doctors) */}
+        {/* Role Badge, Refresh, and Availability Toggle (for doctors) */}
         <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl">
             <div className={`w-3 h-3 rounded-full ${role === 'doctor' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
@@ -227,23 +252,38 @@ function DashboardPage() {
             </span>
           </div>
           
-          {role === 'doctor' && (
-            <button
-              onClick={toggleAvailability}
-              disabled={isToggling}
-              className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${
-                isAvailable
-                  ? 'bg-green-500/20 border border-green-500/50 text-green-200 hover:bg-green-500/30'
-                  : 'bg-gray-500/20 border border-gray-500/50 text-gray-200 hover:bg-gray-500/30'
-              } disabled:opacity-50 disabled:cursor-not-allowed`}
-            >
-              <div className={`w-3 h-3 rounded-full ${isAvailable ? 'bg-green-500' : 'bg-gray-500'}`}></div>
-              <span>{isToggling ? 'Updating...' : isAvailable ? 'Available' : 'Unavailable'}</span>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-              </svg>
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {role === 'doctor' && (
+              <button
+                onClick={refreshAllData}
+                disabled={loadingStats || loadingAppointments}
+                className="px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-blue-200 hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+                title="Refresh data"
+              >
+                <svg className={`w-5 h-5 ${loadingStats || loadingAppointments ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+            )}
+            {role === 'doctor' && (
+              <button
+                onClick={toggleAvailability}
+                disabled={isToggling}
+                className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${
+                  isAvailable
+                    ? 'bg-green-500/20 border border-green-500/50 text-green-200 hover:bg-green-500/30'
+                    : 'bg-gray-500/20 border border-gray-500/50 text-gray-200 hover:bg-gray-500/30'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                <div className={`w-3 h-3 rounded-full ${isAvailable ? 'bg-green-500' : 'bg-gray-500'}`}></div>
+                <span>{isToggling ? 'Updating...' : isAvailable ? 'Available' : 'Unavailable'}</span>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Quick Actions Grid */}
@@ -400,16 +440,18 @@ function DashboardPage() {
             ) : (
               <div className="space-y-3">
                 {upcomingAppointments.map((appt) => {
-                  const date = new Date(appt.appointment_date)
+                  const dateTimeStr = appt.appointment_time
+                    ? `${appt.appointment_date}T${appt.appointment_time}`
+                    : appt.appointment_date
+                  const date = new Date(dateTimeStr)
                   const dateLabel = date.toLocaleDateString(undefined, {
                     weekday: 'short',
                     month: 'short',
                     day: 'numeric',
                   })
-                  const timeLabel = date.toLocaleTimeString(undefined, {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })
+                  const timeLabel = appt.appointment_time
+                    ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+                    : null
 
                   return (
                     <div
@@ -423,11 +465,11 @@ function DashboardPage() {
                             : 'Unknown patient'}
                         </p>
                         <p className="text-blue-200 text-xs">
-                          {dateLabel} • {timeLabel}
+                          {dateLabel}{timeLabel ? ` • ${timeLabel}` : ''}
                         </p>
-                        {appt.appointment_type && (
+                        {appt.onsite_type && (
                           <p className="text-blue-300 text-xs mt-1">
-                            Type: {appt.appointment_type}
+                            Type: {String(appt.onsite_type).replace(/_/g, ' ')}
                           </p>
                         )}
                       </div>

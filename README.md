@@ -69,6 +69,9 @@ You'll need to provide the following environment variables:
 - `NEXT_PUBLIC_DAILY_API_KEY`: Your Daily.co API key (found in your Daily.co dashboard)
 - `NEXT_PUBLIC_DAILY_DOMAIN`: Your Daily.co domain (e.g., `your-domain.daily.co`)
 
+### SOAP Notes API (optional)
+- `NEXT_PUBLIC_SOAP_NOTES_API_URL`: Full URL for the Complete SOAP Notes API (e.g., `https://mcm-soapnotes-production.up.railway.app/api/soap/complete-soapnotes`). When set, triggers AI SOAP completion after vitals are recorded.
+
 ## Usage
 
 1. Start the development server

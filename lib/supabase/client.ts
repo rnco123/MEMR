@@ -10,6 +10,10 @@ export function createClient() {
         autoRefreshToken: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
+        // Ensure refresh happens before expiration
+        // Supabase automatically refreshes tokens, but we want to be proactive
+        storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+        storageKey: 'supabase.auth.token',
       },
     }
   )

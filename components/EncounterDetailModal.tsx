@@ -71,12 +71,13 @@ interface Vitals {
 
 interface SOAPNotes {
   id: number
-  appointment_id: number
-  subjective_text: string
-  objective_text: string
-  assessment_text: string
+  encounter_id: number | null
+  subjective_text: string | null
+  objective_text: string | null
+  assessment_text: string | null
   plan_text: string | null
   created_at: string
+  updated_at: string
 }
 
 interface Encounter {
@@ -96,6 +97,8 @@ interface EncounterDetailModalProps {
   isOpen: boolean
   onClose: () => void
   onJoinTelemedicine?: () => void
+  /** Show Join Telemedicine button only when vitals_assessed or later (doctor + nurse can join) */
+  canJoinTelemedicine?: boolean
 }
 
 export function EncounterDetailModal({
@@ -105,6 +108,7 @@ export function EncounterDetailModal({
   isOpen,
   onClose,
   onJoinTelemedicine,
+  canJoinTelemedicine = false,
 }: EncounterDetailModalProps) {
   const supabase = createClient()
   const [loading, setLoading] = useState(true)
@@ -168,22 +172,41 @@ export function EncounterDetailModal({
           setVitals(vitalsData as Vitals)
         }
 
-        // Fetch SOAP notes
-        const { data: soapData, error: soapError } = await supabase
+        // Fetch SOAP notes by encounter_id (table links to encounters.id)
+        let soapData: SOAPNotes | null = null
+        let soapError: { message: string } | null = null
+
+        const { data: soapByEncounter, error: soapErrEncounter } = await supabase
           .from('ai_soapnotes')
           .select('*')
-          .eq('appointment_id', appointmentId)
+          .eq('encounter_id', encounterId)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle()
 
+        if (soapErrEncounter) {
+          // Fallback: some schemas use appointment_id instead of encounter_id
+          const { data: soapByAppt, error: soapErrAppt } = await supabase
+            .from('ai_soapnotes')
+            .select('*')
+            .eq('appointment_id', appointmentId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+
+          if (!soapErrAppt && soapByAppt) {
+            soapData = soapByAppt as SOAPNotes
+          } else {
+            soapError = soapErrEncounter
+          }
+        } else if (soapByEncounter) {
+          soapData = soapByEncounter as SOAPNotes
+        }
+
         if (soapError) {
           console.error('Error fetching SOAP notes:', soapError)
-        } else if (soapData) {
-          setSoapNotes(soapData as SOAPNotes)
-        } else {
-          setSoapNotes(null)
         }
+        setSoapNotes(soapData)
       } catch (error) {
         console.error('Error fetching encounter details:', error)
       } finally {
@@ -215,6 +238,36 @@ export function EncounterDetailModal({
     })
   }
 
+  // Normalize AI SOAP text so it doesn't repeat headings like "**Subjective:**"
+  const cleanSoapSection = (text: string | null, section: 'subjective' | 'objective' | 'assessment' | 'plan'): string | null => {
+    if (!text) return null
+
+    // Build a label-specific regex that matches patterns like:
+    // "**Subjective:** ", "Subjective:", "subjective  -", etc.
+    let label: string
+    switch (section) {
+      case 'subjective':
+        label = 'subjective'
+        break
+      case 'objective':
+        label = 'objective'
+        break
+      case 'assessment':
+        label = 'assessment'
+        break
+      case 'plan':
+        label = 'plan'
+        break
+    }
+
+    const pattern = new RegExp(
+      String.raw`^\\s*(\\*\\*)?\\s*${label}\\s*:?\\s*(\\*\\*)?\\s*`,
+      'i'
+    )
+
+    return text.replace(pattern, '').trim()
+  }
+
   if (!isOpen) return null
 
   return (
@@ -229,7 +282,7 @@ export function EncounterDetailModal({
             )}
           </div>
           <div className="flex items-center gap-3">
-            {onJoinTelemedicine && (
+            {onJoinTelemedicine && canJoinTelemedicine && (
               <button
                 onClick={onJoinTelemedicine}
                 className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-medium hover:from-purple-600 hover:to-pink-600 transition-all flex items-center gap-2"
@@ -501,22 +554,28 @@ export function EncounterDetailModal({
                   <div className="space-y-4">
                     <div>
                       <p className="text-blue-200 text-sm mb-2 font-semibold">Subjective</p>
-                      <p className="text-white bg-white/5 p-3 rounded-lg">{soapNotes.subjective_text}</p>
+                      <p className="text-white bg-white/5 p-3 rounded-lg">
+                        {cleanSoapSection(soapNotes.subjective_text, 'subjective') || 'Will be updated.'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-blue-200 text-sm mb-2 font-semibold">Objective</p>
-                      <p className="text-white bg-white/5 p-3 rounded-lg">{soapNotes.objective_text}</p>
+                      <p className="text-white bg-white/5 p-3 rounded-lg">
+                        {cleanSoapSection(soapNotes.objective_text, 'objective') || 'Will be updated.'}
+                      </p>
                     </div>
                     <div>
                       <p className="text-blue-200 text-sm mb-2 font-semibold">Assessment</p>
-                      <p className="text-white bg-white/5 p-3 rounded-lg">{soapNotes.assessment_text}</p>
+                      <p className="text-white bg-white/5 p-3 rounded-lg">
+                        {cleanSoapSection(soapNotes.assessment_text, 'assessment') || 'Will be updated.'}
+                      </p>
                     </div>
-                    {soapNotes.plan_text && (
-                      <div>
-                        <p className="text-blue-200 text-sm mb-2 font-semibold">Plan</p>
-                        <p className="text-white bg-white/5 p-3 rounded-lg">{soapNotes.plan_text}</p>
-                      </div>
-                    )}
+                    <div>
+                      <p className="text-blue-200 text-sm mb-2 font-semibold">Plan</p>
+                      <p className="text-white bg-white/5 p-3 rounded-lg">
+                        {cleanSoapSection(soapNotes.plan_text, 'plan') || 'Will be updated.'}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <p className="text-blue-200">SOAP notes not available yet</p>
