@@ -1,18 +1,64 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
+
+// Helper to extract user from custom cookie format
+async function getUserFromCustomCookie(request: NextRequest) {
+  const authCookie = request.cookies.get('supabase.auth.token')
+  if (!authCookie?.value) return null
+
+  try {
+    const base64Part = authCookie.value.replace('base64-', '')
+    const decoded = Buffer.from(base64Part, 'base64').toString('utf-8')
+    const sessionData = JSON.parse(decoded)
+    
+    if (sessionData?.access_token) {
+      const supabase = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          global: {
+            headers: {
+              Authorization: `Bearer ${sessionData.access_token}`,
+            },
+          },
+        }
+      )
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (!error && user) return user
+    }
+  } catch (error) {
+    console.error('Error parsing custom cookie:', error)
+  }
+  return null
+}
 
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Try to get session first (works better with cookies)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let user = session?.user
+    
+    if (!user) {
+      // Fallback to getUser if getSession fails
+      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
+      
+      if (!getUserResult && !authError) {
+        // Try parsing custom cookie format
+        user = await getUserFromCustomCookie(request)
+      } else if (!authError) {
+        user = getUserResult
+      }
+      
+      if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     const { searchParams } = new URL(request.url)
@@ -94,11 +140,25 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
     
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    // Try to get session first (works better with cookies)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    let user = session?.user
+    
+    if (!user) {
+      // Fallback to getUser if getSession fails
+      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
+      
+      if (!getUserResult && !authError) {
+        // Try parsing custom cookie format
+        user = await getUserFromCustomCookie(request)
+      } else if (!authError) {
+        user = getUserResult
+      }
+      
+      if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     const body = await request.json()

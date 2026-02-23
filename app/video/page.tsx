@@ -494,10 +494,10 @@ function VideoPage() {
     } catch (e) {
       console.error('Error ending consultation:', e)
       alert('Failed to end consultation. Please try again.')
-    } finally {
+      } finally {
       setSavingSoap(false)
+      }
     }
-  }
 
   const aiPlaceholder = (section: 'subjective' | 'objective' | 'assessment' | 'plan') => {
     if (!soapNotes) return 'AI note will appear here when available'

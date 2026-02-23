@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { createClient } from '@/lib/supabase/client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
@@ -22,93 +22,91 @@ interface Patient {
   last_visit?: string
 }
 
+const PAGE_SIZE = 10
+
 function PatientsHistoryPage() {
   const { user, role } = useAuth()
   const [patients, setPatients] = useState<Patient[]>([])
-  const [filteredPatients, setFilteredPatients] = useState<Patient[]>([])
-  const [displayedPatients, setDisplayedPatients] = useState<Patient[]>([])
   const [totalPatientCount, setTotalPatientCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
-  const [currentPage, setCurrentPage] = useState(0)
+  const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'visits'>('name')
   const [filterGender, setFilterGender] = useState<'all' | 'Male' | 'Female'>('all')
   const supabase = useMemo(() => createClient(), [])
-  
-  const PAGE_SIZE = 20 // Load 20 patients at a time
+  const prevSearchRef = useRef(debouncedSearch)
+  const prevFilterRef = useRef(filterGender)
 
-  // Fetch total count
-  const fetchPatientCount = useCallback(async () => {
-    const { count, error: countError } = await supabase
-      .from('patients')
-      .select('id', { count: 'exact', head: true })
+  // Debounce search (300ms) to avoid fetch on every keystroke
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300)
+    return () => clearTimeout(t)
+  }, [searchQuery])
 
-    if (countError) {
-      console.error('Error fetching patient count:', countError)
-      setTotalPatientCount(null)
-    } else {
-      setTotalPatientCount(count ?? 0)
-    }
-  }, [supabase])
-
-  // Fetch patients in batches
-  const fetchPatientsBatch = useCallback(async (page: number, reset: boolean = false) => {
-    try {
-      if (reset) {
-        setLoading(true)
-        setCurrentPage(0)
-      } else {
-        setLoadingMore(true)
+  // Build base query with search (searches ALL patients) and gender filter
+  const buildQuery = useCallback(
+    (base: ReturnType<ReturnType<typeof createClient>['from']>) => {
+      let q = base
+      const trimmed = debouncedSearch.trim()
+      if (trimmed) {
+        const term = `%${trimmed}%`
+        const numTerm = parseInt(trimmed, 10)
+        if (!isNaN(numTerm)) {
+          q = q.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
+          )
+        } else {
+          q = q.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
+          )
+        }
       }
+      if (filterGender !== 'all') {
+        q = q.eq('gender', filterGender)
+      }
+      return q
+    },
+    [debouncedSearch, filterGender]
+  )
 
-      // Build query with filters
+  // Fetch patients for current page (search applies to ALL records)
+  const fetchPatients = useCallback(async (pageOverride?: number) => {
+    const pageToUse = pageOverride ?? page
+    try {
+      setLoading(true)
+      const from = (pageToUse - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+
       let query = supabase
         .from('patients')
         .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
         .order('last_name', { ascending: true })
         .order('first_name', { ascending: true })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)
+        .range(from, to)
 
-      // Apply gender filter if needed
-      if (filterGender !== 'all') {
-        query = query.eq('gender', filterGender)
-      }
-
+      query = buildQuery(query)
       const { data: patientsData, error: patientsError } = await query
 
       if (patientsError) {
         console.error('Error fetching patients:', patientsError)
         Sentry.captureException(patientsError, {
-          tags: {
-            component: 'PatientsHistoryPage',
-            action: 'fetchPatientsBatch',
-            page: page.toString(),
-          },
-          extra: {
-            filterGender,
-            pageSize: PAGE_SIZE,
-          },
+          tags: { component: 'PatientsHistoryPage', action: 'fetchPatients' },
         })
-        setLoading(false)
-        setLoadingMore(false)
+        setPatients([])
         return
       }
+
+      // Fetch total count with same filters (search on all)
+      const countQuery = buildQuery(supabase.from('patients').select('id', { count: 'exact', head: true }))
+      const { count, error: countError } = await countQuery
+      setTotalPatientCount(countError ? null : (count ?? 0))
 
       if (!patientsData || patientsData.length === 0) {
-        setHasMore(false)
-        setLoading(false)
-        setLoadingMore(false)
+        setPatients([])
         return
       }
 
-      // Check if there are more pages
-      if (patientsData.length < PAGE_SIZE) {
-        setHasMore(false)
-      }
-
-      // Get encounter counts for this batch
       const patientIds = patientsData.map(p => p.id)
       const encounterCounts: Record<number, number> = {}
       const lastVisits: Record<number, string> = {}
@@ -128,8 +126,8 @@ function PatientsHistoryPage() {
             }
           })
         }
-      } catch (error) {
-        // If encounters query fails, continue without counts
+      } catch {
+        // Continue without counts
       }
 
       const mappedPatients = patientsData.map(patient => ({
@@ -138,137 +136,56 @@ function PatientsHistoryPage() {
         last_visit: lastVisits[patient.id] || null,
       })) as Patient[]
 
-      if (reset) {
-        setPatients(mappedPatients)
-      } else {
-        setPatients(prev => [...prev, ...mappedPatients])
+      // Client-side sort for current page (encounter_count, last_visit need post-fetch)
+      const sorted = [...mappedPatients]
+      switch (sortBy) {
+        case 'name':
+          sorted.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
+          break
+        case 'recent':
+          sorted.sort((a, b) => {
+            if (!a.last_visit && !b.last_visit) return 0
+            if (!a.last_visit) return 1
+            if (!b.last_visit) return -1
+            return new Date(b.last_visit).getTime() - new Date(a.last_visit).getTime()
+          })
+          break
+        case 'visits':
+          sorted.sort((a, b) => (b.encounter_count || 0) - (a.encounter_count || 0))
+          break
       }
-
-      setCurrentPage(page)
+      setPatients(sorted)
     } catch (error) {
-      console.error('Error in fetchPatientsBatch:', error)
+      console.error('Error in fetchPatients:', error)
       Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
-        tags: {
-          component: 'PatientsHistoryPage',
-          action: 'fetchPatientsBatch',
-        },
-        extra: {
-          page,
-          filterGender,
-          reset,
-        },
+        tags: { component: 'PatientsHistoryPage', action: 'fetchPatients' },
       })
+      setPatients([])
     } finally {
       setLoading(false)
-      setLoadingMore(false)
     }
-  }, [supabase, filterGender, PAGE_SIZE])
+  }, [supabase, buildQuery, page, sortBy])
 
-  // Initial load
+  // Fetch when page, search, filters, or sort change
   useEffect(() => {
-    if (user && (role === 'doctor' || role === 'nurse' || role === 'staff')) {
-      fetchPatientCount()
-      fetchPatientsBatch(0, true)
+    if (!user || (role !== 'doctor' && role !== 'nurse' && role !== 'staff')) return
+    const searchOrFilterChanged = debouncedSearch !== prevSearchRef.current || filterGender !== prevFilterRef.current
+    if (searchOrFilterChanged) {
+      prevSearchRef.current = debouncedSearch
+      prevFilterRef.current = filterGender
+      setPage(1)
+      fetchPatients(1)
+    } else {
+      fetchPatients()
     }
-  }, [user, role, fetchPatientCount, fetchPatientsBatch])
-
-  // Load more patients
-  const loadMore = useCallback(() => {
-    if (!loadingMore && hasMore) {
-      fetchPatientsBatch(currentPage + 1, false)
-    }
-  }, [loadingMore, hasMore, currentPage, fetchPatientsBatch])
-
-  // Intersection Observer for infinite scroll
-  useEffect(() => {
-    if (!hasMore || loadingMore) return undefined
-
-    try {
-      const observer = new IntersectionObserver(
-        (entries) => {
-          if (entries[0]?.isIntersecting && hasMore && !loadingMore) {
-            loadMore()
-          }
-        },
-        { threshold: 0.1 }
-      )
-
-      const loadMoreTrigger = document.getElementById('load-more-trigger')
-      if (loadMoreTrigger) {
-        observer.observe(loadMoreTrigger)
-      }
-
-      return () => {
-        if (loadMoreTrigger) {
-          observer.unobserve(loadMoreTrigger)
-        }
-      }
-    } catch (error) {
-      console.error('Error setting up Intersection Observer:', error)
-      Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
-        tags: {
-          component: 'PatientsHistoryPage',
-          action: 'intersectionObserver',
-        },
-      })
-      return undefined
-    }
-  }, [hasMore, loadingMore, loadMore])
+  }, [user, role, debouncedSearch, filterGender, page, sortBy, fetchPatients])
 
   const handleRefresh = () => {
-    setHasMore(true)
-    setCurrentPage(0)
-    fetchPatientCount()
-    fetchPatientsBatch(0, true)
+    setPage(1)
+    fetchPatients(1)
   }
 
-  // Filter and sort patients (client-side for loaded patients)
-  useEffect(() => {
-    let result = [...patients]
-
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(p => 
-        p.first_name.toLowerCase().includes(query) ||
-        p.last_name.toLowerCase().includes(query) ||
-        p.email?.toLowerCase().includes(query) ||
-        p.phone?.includes(query) ||
-        p.id.toString().includes(query)
-      )
-    }
-
-    // Sort
-    switch (sortBy) {
-      case 'name':
-        result.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
-        break
-      case 'recent':
-        result.sort((a, b) => {
-          if (!a.last_visit && !b.last_visit) return 0
-          if (!a.last_visit) return 1
-          if (!b.last_visit) return -1
-          return new Date(b.last_visit).getTime() - new Date(a.last_visit).getTime()
-        })
-        break
-      case 'visits':
-        result.sort((a, b) => (b.encounter_count || 0) - (a.encounter_count || 0))
-        break
-    }
-
-    setFilteredPatients(result)
-    // Show all filtered patients that have been loaded
-    setDisplayedPatients(result)
-  }, [patients, searchQuery, sortBy])
-
-  // When gender filter changes, reload from database
-  useEffect(() => {
-    if (user && (role === 'doctor' || role === 'nurse' || role === 'staff')) {
-      setHasMore(true)
-      setCurrentPage(0)
-      fetchPatientsBatch(0, true)
-    }
-  }, [filterGender]) // Only trigger on gender filter change
+  const totalPages = Math.ceil((totalPatientCount ?? 0) / PAGE_SIZE) || 1
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
@@ -375,10 +292,15 @@ function PatientsHistoryPage() {
           {/* Results count */}
           <div className="mt-4 flex items-center justify-between">
             <p className="text-sm text-blue-200">
-              Showing <span className="text-white font-medium">{displayedPatients.length}</span> of <span className="text-white font-medium">{totalPatientCount ?? patients.length}</span> patients
-              {searchQuery && ` (${filteredPatients.length} filtered)`}
+              Showing{' '}
+              <span className="text-white font-medium">
+                {patients.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, totalPatientCount ?? 0)}
+              </span>{' '}
+              of <span className="text-white font-medium">{totalPatientCount ?? 0}</span> patients
+              {debouncedSearch.trim() && ' (search on all)'}
             </p>
-            {searchQuery && (
+            {searchQuery.trim() && (
               <button
                 onClick={() => setSearchQuery('')}
                 className="text-sm text-blue-300 hover:text-white transition-colors"
@@ -394,7 +316,7 @@ function PatientsHistoryPage() {
           <div className="flex items-center justify-center py-20">
             <LoadingSpinner message="Loading patients..." />
           </div>
-        ) : displayedPatients.length === 0 ? (
+        ) : patients.length === 0 ? (
           <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-12 text-center">
             <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
               <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -422,7 +344,7 @@ function PatientsHistoryPage() {
 
             {/* Table Body */}
             <div className="divide-y divide-white/10">
-              {displayedPatients.map((patient) => (
+              {patients.map((patient) => (
                 <div
                   key={patient.id}
                   className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 hover:bg-white/5 transition-colors"
@@ -489,57 +411,45 @@ function PatientsHistoryPage() {
           </div>
         )}
 
-        {/* Load More Trigger / Button */}
-        {!loading && displayedPatients.length > 0 && (
-          <div className="mt-6 flex justify-center">
-            {hasMore ? (
-              <div id="load-more-trigger" className="w-full">
-                {loadingMore ? (
-                  <div className="flex items-center justify-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                    <span className="ml-3 text-blue-200">Loading more patients...</span>
-                  </div>
-                ) : (
-                  <button
-                    onClick={loadMore}
-                    className="w-full py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors"
-                  >
-                    Load More Patients
-                  </button>
-                )}
-              </div>
-            ) : (
-              <p className="text-blue-200 text-sm py-4">
-                All patients loaded ({displayedPatients.length} of {totalPatientCount ?? displayedPatients.length})
-              </p>
-            )}
+        {/* Pagination */}
+        {!loading && patients.length > 0 && (
+          <div className="mt-6 flex items-center justify-center gap-4">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+              Previous
+            </button>
+            <span className="text-blue-200 font-medium">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+            >
+              Next
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
         )}
 
         {/* Stats Cards */}
-        {!loading && patients.length > 0 && (
+        {!loading && totalPatientCount !== null && totalPatientCount > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
             <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
               <p className="text-blue-200 text-sm">Total Patients</p>
+              <p className="text-2xl font-bold text-white">{totalPatientCount}</p>
+            </div>
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
+              <p className="text-blue-200 text-sm">On This Page</p>
               <p className="text-2xl font-bold text-white">{patients.length}</p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Total Encounters</p>
-              <p className="text-2xl font-bold text-white">
-                {patients.reduce((sum, p) => sum + (p.encounter_count || 0), 0)}
-              </p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Active Patients</p>
-              <p className="text-2xl font-bold text-white">
-                {patients.filter(p => (p.encounter_count || 0) > 0).length}
-              </p>
-            </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">New (No Visits)</p>
-              <p className="text-2xl font-bold text-white">
-                {patients.filter(p => (p.encounter_count || 0) === 0).length}
-              </p>
             </div>
           </div>
         )}

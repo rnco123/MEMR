@@ -65,15 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (result === null) {
         // Timeout occurred - retry once if we haven't already
         if (retryCount < 1) {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('Role fetch timed out, retrying...')
-          }
           await new Promise(resolve => setTimeout(resolve, 1000))
           return fetchUserRole(userId, retryCount + 1)
         }
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Role fetch timed out after retry')
-        }
+        // Silently return null on timeout - role will be fetched on next auth state change
         return null
       }
 

@@ -63,7 +63,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     if (!user) return
     
     try {
-      const response = await fetch('/api/chat/conversations')
+      const response = await fetch('/api/chat/conversations', {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         setConversations(data.conversations || [])
@@ -80,7 +82,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     if (!user) return
     
     try {
-      const response = await fetch('/api/chat/users')
+      const response = await fetch('/api/chat/users', {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         console.log('Fetched users:', data.users?.length || 0)
@@ -99,7 +103,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     if (!user) return
     
     try {
-      const response = await fetch(`/api/chat/messages?conversation_id=${conversationId}`)
+      const response = await fetch(`/api/chat/messages?conversation_id=${conversationId}`, {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         setMessages(data.messages || [])
@@ -117,6 +123,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     try {
       const response = await fetch('/api/chat/messages', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           conversation_id: selectedConversation.id,
@@ -158,6 +165,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       // Create new conversation
       const response = await fetch('/api/chat/conversations', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participant2_id: userId }),
       })
@@ -165,7 +173,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       if (response.ok) {
         const data = await response.json()
         // Fetch updated conversations list
-        const updatedResponse = await fetch('/api/chat/conversations')
+        const updatedResponse = await fetch('/api/chat/conversations', {
+          credentials: 'include',
+        })
         if (updatedResponse.ok) {
           const updatedData = await updatedResponse.json()
           const newConv = updatedData.conversations?.find(
@@ -403,7 +413,13 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                         <button
                           onClick={async () => {
                             try {
-                              const response = await fetch('/api/chat/sync-profiles', { method: 'POST' })
+                              const response = await fetch('/api/chat/sync-profiles', { 
+                                method: 'POST',
+                                credentials: 'include',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                }
+                              })
                               const data = await response.json()
                               if (response.ok) {
                                 alert(data.message || 'Profiles synced successfully!')
@@ -413,7 +429,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                               }
                             } catch (error) {
                               console.error('Error syncing profiles:', error)
-                              alert('Error syncing profiles')
+                              alert('Error syncing profiles: ' + (error instanceof Error ? error.message : 'Unknown error'))
                             }
                           }}
                           className="px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded-lg text-sm hover:bg-blue-500/30 transition-all"
