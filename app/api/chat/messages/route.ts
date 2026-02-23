@@ -51,9 +51,9 @@ export async function GET(request: NextRequest) {
       
       if (!getUserResult && !authError) {
         // Try parsing custom cookie format
-        user = await getUserFromCustomCookie(request)
+        user = (await getUserFromCustomCookie(request)) ?? undefined
       } else if (!authError) {
-        user = getUserResult
+        user = getUserResult ?? undefined
       }
       
       if (!user) {
@@ -151,9 +151,9 @@ export async function POST(request: NextRequest) {
       
       if (!getUserResult && !authError) {
         // Try parsing custom cookie format
-        user = await getUserFromCustomCookie(request)
+        user = (await getUserFromCustomCookie(request)) ?? undefined
       } else if (!authError) {
-        user = getUserResult
+        user = getUserResult ?? undefined
       }
       
       if (!user) {

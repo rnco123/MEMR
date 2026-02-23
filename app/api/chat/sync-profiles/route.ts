@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/22fc7079-8256-4e49-b92c-672ebbf118b4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-profiles/route.ts:73',message:'trying custom cookie parse as fallback',data:{authError:authError?.message},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion
-        user = await getUserFromCustomCookie(request)
+        user = (await getUserFromCustomCookie(request)) ?? undefined
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/22fc7079-8256-4e49-b92c-672ebbf118b4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-profiles/route.ts:76',message:'custom cookie parse result',data:{gotUser:!!user,userId:user?.id},timestamp:Date.now(),runId:'run1',hypothesisId:'A'})}).catch(()=>{});
         // #endregion

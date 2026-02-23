@@ -44,32 +44,6 @@ function PatientsHistoryPage() {
     return () => clearTimeout(t)
   }, [searchQuery])
 
-  // Build base query with search (searches ALL patients) and gender filter
-  const buildQuery = useCallback(
-    (base: ReturnType<ReturnType<typeof createClient>['from']>) => {
-      let q = base
-      const trimmed = debouncedSearch.trim()
-      if (trimmed) {
-        const term = `%${trimmed}%`
-        const numTerm = parseInt(trimmed, 10)
-        if (!isNaN(numTerm)) {
-          q = q.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
-          )
-        } else {
-          q = q.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
-          )
-        }
-      }
-      if (filterGender !== 'all') {
-        q = q.eq('gender', filterGender)
-      }
-      return q
-    },
-    [debouncedSearch, filterGender]
-  )
-
   // Fetch patients for current page (search applies to ALL records)
   const fetchPatients = useCallback(async (pageOverride?: number) => {
     const pageToUse = pageOverride ?? page
@@ -78,15 +52,34 @@ function PatientsHistoryPage() {
       const from = (pageToUse - 1) * PAGE_SIZE
       const to = from + PAGE_SIZE - 1
 
+      const trimmed = debouncedSearch.trim()
+
+      // Build base query; filters must be applied before .order()/.range() so .or() is available
       let query = supabase
         .from('patients')
         .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
+
+      if (trimmed) {
+        const term = `%${trimmed}%`
+        const numTerm = parseInt(trimmed, 10)
+        if (!isNaN(numTerm)) {
+          query = query.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
+          )
+        } else {
+          query = query.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
+          )
+        }
+      }
+      if (filterGender !== 'all') {
+        query = query.eq('gender', filterGender)
+      }
+
+      const { data: patientsData, error: patientsError } = await query
         .order('last_name', { ascending: true })
         .order('first_name', { ascending: true })
         .range(from, to)
-
-      query = buildQuery(query)
-      const { data: patientsData, error: patientsError } = await query
 
       if (patientsError) {
         console.error('Error fetching patients:', patientsError)
@@ -98,7 +91,23 @@ function PatientsHistoryPage() {
       }
 
       // Fetch total count with same filters (search on all)
-      const countQuery = buildQuery(supabase.from('patients').select('id', { count: 'exact', head: true }))
+      let countQuery = supabase.from('patients').select('id', { count: 'exact', head: true })
+      if (trimmed) {
+        const term = `%${trimmed}%`
+        const numTerm = parseInt(trimmed, 10)
+        if (!isNaN(numTerm)) {
+          countQuery = countQuery.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
+          )
+        } else {
+          countQuery = countQuery.or(
+            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
+          )
+        }
+      }
+      if (filterGender !== 'all') {
+        countQuery = countQuery.eq('gender', filterGender)
+      }
       const { count, error: countError } = await countQuery
       setTotalPatientCount(countError ? null : (count ?? 0))
 
@@ -164,7 +173,7 @@ function PatientsHistoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, buildQuery, page, sortBy])
+  }, [supabase, debouncedSearch, filterGender, page, sortBy])
 
   // Fetch when page, search, filters, or sort change
   useEffect(() => {

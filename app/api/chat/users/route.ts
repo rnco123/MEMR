@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
         user = getUserResult
       } else {
         // If getUser also failed, try parsing custom cookie format as last resort
-        user = await getUserFromCustomCookie(request)
+        user = (await getUserFromCustomCookie(request)) ?? undefined
       }
       
       if (!user) {
