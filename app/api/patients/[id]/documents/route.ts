@@ -242,13 +242,15 @@ export async function POST(
     }
 
     // Get user profile for name
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('uid', user.id)
-      .single()
-
-    const userName = profile?.full_name || user.user_metadata?.full_name || user.email || 'Unknown'
+    let userName = 'Unknown'
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('uid', user.id)
+        .single()
+      userName = profile?.full_name || user.user_metadata?.full_name || user.email || 'Unknown'
+    }
 
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -342,7 +344,7 @@ export async function POST(
         file_name: documentName.trim(), // Use the document name the user typed, not the file name
         file_size: file.size,
         file_type: file.type,
-        uploaded_by: user.id,
+        uploaded_by: user?.id ?? null,
       })
       .select()
       .single()
