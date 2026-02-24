@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
-import { config } from '@/lib/config'
+import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 
 interface VitalsFormModalProps {
   encounterId: number
@@ -228,27 +229,48 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       if (encounterError) {
         console.error('Error updating encounter status:', encounterError)
         // Don't fail - vitals were saved
+      } else {
+        // Record who updated status in status_timeline
+        const { data: { user } } = await supabase.auth.getUser()
+        const profileId = user ? await getProfileId(supabase, user.id) : null
+        await insertStatusTimeline(supabase, {
+          encounterId,
+          status: 'vitals_assessed',
+          profileId,
+        })
       }
 
-      // Call external Complete SOAP Notes API (fire-and-forget)
-      // This will generate objective/assessment/plan in ai_soapnotes
-      const soapApiUrl = config.soapNotes.apiUrl
-      if (soapApiUrl) {
-        try {
-          // We don't await this call so the nurse isn't blocked by AI processing time
-          void fetch(soapApiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              encounter_id: encounterId.toString(),
-            }),
+      // Trigger SOAP completion via our API route (proxies to external API; avoids CORS and env)
+      toast.info('AI is completing SOAP note…', {
+        description: 'Objective, assessment, and plan will appear when ready.',
+      })
+      try {
+        const soapRes = await fetch('/api/soap/complete-soap', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ encounter_id: encounterId.toString() }),
+        })
+
+        const soapJson = await soapRes.json().catch(() => ({} as any))
+
+        if (!soapRes.ok || !soapJson?.success) {
+          console.error('SOAP complete-soap failed:', soapRes.status, soapJson)
+          toast.error('SOAP note could not be started', {
+            description:
+              soapJson?.error ||
+              soapJson?.message ||
+              `Server returned ${soapRes.status}. Check console.`,
           })
-        } catch (apiError) {
-          // Log but don't interrupt the nurse workflow
-          console.error('Error calling Complete SOAP Notes API:', apiError)
+        } else {
+          toast.success('SOAP note saved successfully', {
+            description: soapJson.message || 'SOAP data stored successfully.',
+          })
         }
+      } catch (apiError) {
+        console.error('Error calling SOAP complete-soap:', apiError)
+        toast.error('SOAP note could not be started', {
+          description: apiError instanceof Error ? apiError.message : 'Network or server error.',
+        })
       }
 
       onSave()

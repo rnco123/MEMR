@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Toaster } from "sonner";
 // Import Sentry client-side configuration
 import "../sentry.client.config";
 
@@ -36,6 +37,7 @@ export default function RootLayout({
         <ErrorBoundary>
           <AuthProvider>{children}</AuthProvider>
         </ErrorBoundary>
+        <Toaster richColors position="top-center" />
       </body>
     </html>
   );

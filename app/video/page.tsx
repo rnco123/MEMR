@@ -8,6 +8,9 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { getStatusInfo } from '@/lib/encounter-status'
+import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
+import { config } from '@/lib/config'
+import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
 
 interface Patient {
   id: number
@@ -28,6 +31,7 @@ interface Encounter {
   appointment_id: number
   patient_id: number
   intake_id: number | null
+  pharmacy_id: number | null
   status: string
   encounter_code: string | null
 }
@@ -85,13 +89,6 @@ interface DoctorSOAPNotes {
   plan_text: string | null
 }
 
-interface TranscriptEntry {
-  id: number
-  speaker_role: string
-  speaker_name: string
-  message: string
-  created_at: string
-}
 
 function cleanSoapSection(
   text: string | null,
@@ -132,8 +129,13 @@ function VideoPage() {
   const encounterId = searchParams.get('encounter')
   const supabase = useMemo(() => createClient(), [])
   const [error, setError] = useState<string | null>(null)
+  const [roomToken, setRoomToken] = useState<string | null>(null)
+  const [roomName, setRoomName] = useState<string | null>(null)
   const [roomUrl, setRoomUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [showConnectionModal, setShowConnectionModal] = useState(true)
+  const [isConnected, setIsConnected] = useState(false)
+  const [dailyIframeSrc, setDailyIframeSrc] = useState<string | null>(null)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
@@ -143,7 +145,7 @@ function VideoPage() {
   const [doctorSoap, setDoctorSoap] = useState<DoctorSOAPNotes | null>(null)
   const [doctorId, setDoctorId] = useState<number | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(true)
-  const [detailsTab, setDetailsTab] = useState<'patient' | 'intake' | 'vitals' | 'soap' | 'transcript'>('patient')
+  const [detailsTab, setDetailsTab] = useState<'patient' | 'intake' | 'vitals' | 'soap'>('patient')
   const [soapForm, setSoapForm] = useState<DoctorSOAPNotes>({
     subjective_text: '',
     objective_text: '',
@@ -153,10 +155,7 @@ function VideoPage() {
   const [savingSoap, setSavingSoap] = useState(false)
   const [sessionEnded, setSessionEnded] = useState(false)
   const [endMessage, setEndMessage] = useState<string | null>(null)
-  const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([])
-  const [speakerName, setSpeakerName] = useState<string>('')
-  const [newTranscriptMessage, setNewTranscriptMessage] = useState('')
-  const [addingTranscript, setAddingTranscript] = useState(false)
+  const [userName, setUserName] = useState<string>('')
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -165,13 +164,23 @@ function VideoPage() {
   }, [user, authLoading, router])
 
   useEffect(() => {
-    if (!encounterId || !user || authLoading) return
+    if (!encounterId || !user || authLoading) {
+      setIsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    const timeoutMs = 15000
 
     const fetchRoom = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
+      setIsLoading(true)
+      setError(null)
 
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error('Connection timed out. Please try again.')), timeoutMs)
+      })
+
+      const work = async () => {
         const { data: { session } } = await supabase.auth.getSession()
         const headers: Record<string, string> = { 'Content-Type': 'application/json' }
         if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
@@ -181,33 +190,48 @@ function VideoPage() {
           headers,
           body: JSON.stringify({ encounterId: Number(encounterId) }),
         })
-
         const room = await response.json()
+        return { response, room }
+      }
+
+      try {
+        const { response, room } = await Promise.race([
+          work(),
+          timeoutPromise,
+        ])
+
+        if (cancelled) return
 
         if (!response.ok) {
           throw new Error(room?.error || 'Failed to join video room')
         }
 
-        const baseUrl: string | undefined = room?.url
-        if (!baseUrl || !baseUrl.startsWith('http')) {
-          throw new Error('Invalid room URL')
+        if (!room?.name) {
+          throw new Error('Invalid room data')
         }
 
-        const displayName =
-          role === 'doctor' ? 'Doctor' : role === 'nurse' || role === 'staff' ? 'Nurse' : 'Staff'
+        if (!room?.token) {
+          throw new Error('Could not get join token. Please try again.')
+        }
 
-        const url = new URL(baseUrl)
-        url.searchParams.set('userName', displayName)
-        setRoomUrl(url.toString())
+        setRoomName(room.name)
+        setRoomToken(room.token)
+        setRoomUrl(room.room_url ?? null)
+        setIsLoading(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to join video room')
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : 'Failed to join video room')
+        }
       } finally {
-            setIsLoading(false)
-          }
+        setIsLoading(false)
+      }
     }
 
     fetchRoom()
-  }, [encounterId, user, authLoading, role, supabase])
+    return () => {
+      cancelled = true
+    }
+  }, [encounterId, user, authLoading])
 
   useEffect(() => {
     if (!encounterId || !supabase) return
@@ -228,28 +252,47 @@ function VideoPage() {
 
         setEncounter(enc as Encounter)
 
-        const { data: pat } = await supabase
-          .from('patients')
-          .select('*')
-          .eq('id', enc.patient_id)
-          .single()
-        setPatient(pat as Patient)
+        if (enc.patient_id != null && enc.patient_id !== undefined) {
+          const { data: pat } = await supabase
+            .from('patients')
+            .select('*')
+            .eq('id', enc.patient_id)
+            .maybeSingle()
+          setPatient(pat as Patient)
+        } else {
+          setPatient(null)
+        }
 
-        const { data: appt } = await supabase
-          .from('appointments')
-          .select('id, appointment_date, appointment_time, onsite_type')
-          .eq('id', enc.appointment_id)
-          .single()
-        setAppointment(appt as Appointment)
+        if (enc.appointment_id != null && enc.appointment_id !== undefined) {
+          const { data: appt } = await supabase
+            .from('appointments')
+            .select('id, appointment_date, appointment_time, onsite_type')
+            .eq('id', enc.appointment_id)
+            .maybeSingle()
+          setAppointment(appt as Appointment)
+        } else {
+          setAppointment(null)
+        }
 
+        // Intake: try encounter.intake_id first, then by appointment_id
+        let intakeResult: IntakeForm | null = null
         if (enc.intake_id) {
           const { data: int } = await supabase
             .from('intake_form')
             .select('chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use')
             .eq('id', enc.intake_id)
             .maybeSingle()
-          setIntake(int as IntakeForm)
+          intakeResult = int as IntakeForm
         }
+        if (!intakeResult && enc.appointment_id) {
+          const { data: int } = await supabase
+            .from('intake_form')
+            .select('chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use')
+            .eq('appointment_id', enc.appointment_id)
+            .maybeSingle()
+          intakeResult = int as IntakeForm
+        }
+        if (intakeResult) setIntake(intakeResult)
 
         const { data: vit } = await supabase
           .from('vitals')
@@ -329,18 +372,7 @@ function VideoPage() {
             .eq('uid', authUser.id)
             .maybeSingle()
           const name = profile?.full_name || authUser.email?.split('@')[0] || 'User'
-          setSpeakerName(name)
-        }
-
-        const { data: transcriptRows, error: transcriptErr } = await supabase
-          .from('telemedicine_transcripts')
-          .select('id, speaker_role, speaker_name, message, created_at')
-          .eq('encounter_id', Number(encounterId))
-          .order('created_at', { ascending: true })
-        if (!transcriptErr && transcriptRows) {
-          setTranscripts(transcriptRows as TranscriptEntry[])
-        } else {
-          setTranscripts([])
+          setUserName(name)
         }
       } catch (e) {
         console.error('Error fetching patient details:', e)
@@ -387,6 +419,30 @@ function VideoPage() {
 
     return () => clearInterval(interval)
   }, [encounterId, supabase, role, sessionEnded, router])
+
+  const handleConnect = () => {
+    if (!roomToken) return
+    const baseUrl = roomUrl || (() => {
+      const rawDomain = (config.daily.domain || '').trim() || 'demo.daily.co'
+      const d = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
+      return `https://${d}/${roomName}`
+    })()
+    const sep = baseUrl.includes('?') ? '&' : '?'
+    setDailyIframeSrc(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    setShowConnectionModal(false)
+    setError(null)
+    setIsConnected(true)
+  }
+
+  const handleEndCall = async () => {
+    setDailyIframeSrc(null)
+    setIsConnected(false)
+    if (role === 'doctor' && encounterId && doctorId) {
+      await handleEndConsultation()
+    } else {
+      router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+    }
+  }
 
   const validateDoctorSoap = (): boolean => {
     const fields: Array<keyof typeof soapForm> = [
@@ -475,6 +531,15 @@ function VideoPage() {
 
       if (encounterError) throw encounterError
 
+      if (user?.id) {
+        const profileId = await getProfileId(supabase, user.id)
+        await insertStatusTimeline(supabase, {
+          encounterId: encounterIdNum,
+          status: 'consultation_concluded',
+          profileId,
+        })
+      }
+
       // Best-effort: tell backend to delete the Daily.co room for this encounter
       try {
         await fetch('/api/daily/end-room', {
@@ -494,10 +559,10 @@ function VideoPage() {
     } catch (e) {
       console.error('Error ending consultation:', e)
       alert('Failed to end consultation. Please try again.')
-      } finally {
+    } finally {
       setSavingSoap(false)
-      }
     }
+  }
 
   const aiPlaceholder = (section: 'subjective' | 'objective' | 'assessment' | 'plan') => {
     if (!soapNotes) return 'AI note will appear here when available'
@@ -508,53 +573,6 @@ function VideoPage() {
     return text || 'Will be updated.'
   }
 
-  const handleAddTranscript = async () => {
-    const msg = newTranscriptMessage.trim()
-    if (!msg || !encounterId || !role) return
-    const roleKey = role === 'doctor' ? 'doctor' : role === 'nurse' || role === 'staff' ? 'nurse' : 'staff'
-    setAddingTranscript(true)
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
-
-      const res = await fetch('/api/transcripts/save', {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({
-          encounterId: Number(encounterId),
-          items: [{
-            speaker_role: roleKey,
-            speaker_name: speakerName || 'User',
-            message: msg,
-          }],
-        }),
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json?.error || 'Failed to save transcript')
-
-      const entry: TranscriptEntry = {
-        id: Date.now(),
-        speaker_role: roleKey,
-        speaker_name: speakerName || 'User',
-        message: msg,
-        created_at: new Date().toISOString(),
-      }
-      setTranscripts((prev) => [...prev, entry])
-      setNewTranscriptMessage('')
-    } catch (e) {
-      console.error('Error adding transcript:', e)
-      alert('Failed to add transcript. Please try again.')
-    } finally {
-      setAddingTranscript(false)
-    }
-  }
-
-  const formatTranscriptLabel = (entry: TranscriptEntry) => {
-    const roleLabel = entry.speaker_role.charAt(0).toUpperCase() + entry.speaker_role.slice(1)
-    return `${roleLabel} (${entry.speaker_name}):`
-  }
 
   if (!encounterId && !authLoading && user) {
     return (
@@ -582,7 +600,7 @@ function VideoPage() {
 
   if (!user) return null
 
-  if (error) {
+  if (error && !showConnectionModal) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <div className="text-red-500 mb-4 text-center max-w-md">Error: {error}</div>
@@ -596,8 +614,19 @@ function VideoPage() {
     )
   }
 
+  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'nurse' ? 'Nurse' : 'Staff'
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-black">
+      {/* Connection Modal */}
+      <TelemedicineConnectionModal
+        isOpen={showConnectionModal && !isLoading && !!roomToken}
+        userName={userName || 'User'}
+        userRole={roleLabel}
+        onConnect={handleConnect}
+        onCancel={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+      />
+
       {/* Global session-ended overlay for nurses/staff */}
       {endMessage && role !== 'doctor' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
@@ -606,7 +635,8 @@ function VideoPage() {
           </div>
         </div>
       )}
-      {/* Top fixed header - Back to EMR */}
+
+      {/* Top fixed header */}
       <header className="sticky top-0 z-50 flex-shrink-0 h-14 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 gap-4">
         <button
           onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
@@ -620,279 +650,254 @@ function VideoPage() {
         <span className="text-gray-400 text-sm">
           {patient ? `${patient.first_name} ${patient.last_name}` : 'Telemedicine Session'}
         </span>
+        {isConnected && (
+          <button
+            onClick={handleEndCall}
+            className="ml-auto px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center gap-1"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M16 8l2 2m0 0l2 2m-2-2l-2 2m2-2l-2-2" />
+            </svg>
+            End Call
+          </button>
+        )}
       </header>
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
-        <div className="flex-1 bg-black flex items-center justify-center">
+        {/* Video: plain iframe with Daily room URL + token */}
+        <div className="flex-1 bg-black flex items-center justify-center relative min-h-0">
           {isLoading && (
             <div className="flex flex-col items-center justify-center h-full">
               <LoadingSpinner message="Loading video call..." showPercentage={false} />
             </div>
           )}
-          {!isLoading && roomUrl && (
+          {!isLoading && !isConnected && !showConnectionModal && (
+            <div className="flex flex-col items-center justify-center h-full text-white">
+              <p className="text-lg mb-4">Preparing video call...</p>
+            </div>
+          )}
+          {dailyIframeSrc && (
             <iframe
-              src={roomUrl}
-              className="w-full h-full border-0"
+              src={dailyIframeSrc}
+              className="absolute inset-x-0 top-2 bottom-0 w-full h-full border-0"
               allow="camera; microphone; fullscreen; display-capture"
+              title="Daily video call"
             />
           )}
         </div>
 
-      <div className="w-full max-w-md bg-gray-900 border-l border-gray-800 text-white flex flex-col overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-800 flex-shrink-0">
-          <h2 className="text-lg font-semibold">Patient Details</h2>
-          {encounter && (
-            <span className="text-xs text-gray-400 block mt-0.5">
-              {getStatusInfo(encounter.status as any)?.label || encounter.status}
-            </span>
-          )}
-        </div>
-        {!detailsLoading && (
-          <div className="flex border-b border-gray-800 flex-shrink-0 overflow-x-auto">
-            {(['patient', 'intake', 'vitals', 'soap', 'transcript'] as const).map((tab) => (
-              <button
-                key={tab}
-                onClick={() => setDetailsTab(tab)}
-                className={`flex-shrink-0 px-2 py-2 text-xs font-medium capitalize transition-colors ${
-                  detailsTab === tab ? 'text-white border-b-2 border-blue-500 bg-white/5' : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                {tab === 'soap' ? 'SOAP' : tab === 'transcript' ? 'Transcript' : tab}
-              </button>
-            ))}
+        {/* Sidebar */}
+        <div className="w-full max-w-md bg-gray-900 border-l border-gray-800 text-white flex flex-col overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-800 flex-shrink-0">
+            <h2 className="text-lg font-semibold">Patient Details</h2>
+            {encounter && (
+              <span className="text-xs text-gray-400 block mt-0.5">
+                {getStatusInfo(encounter.status as any)?.label || encounter.status}
+              </span>
+            )}
           </div>
-        )}
-        <div className="flex-1 overflow-auto p-4 text-sm">
-          {detailsLoading ? (
-            <LoadingSpinner message="Loading details..." showPercentage={false} size="sm" />
-          ) : (
-            <>
-              {detailsTab === 'patient' && (
-                <div className="space-y-4">
-                  {patient && (
-                    <div className="space-y-1 text-gray-300">
-                      <p className="font-medium text-white">{patient.first_name} {patient.last_name}</p>
-                      <p>Code: {patient.patient_code || 'N/A'}</p>
-                      <p>Age: {calculateAge(patient.date_of_birth)}</p>
-                      <p>DOB: {formatDate(patient.date_of_birth)}</p>
-                      <p>Gender: {patient.gender || 'N/A'}</p>
-                      <p>Email: {patient.email || 'N/A'}</p>
-                      <p>Phone: {patient.phone || 'N/A'}</p>
-                      {(patient.street_address || patient.state || patient.zip_code) && (
-                        <p>Address: {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')}</p>
-                      )}
-                    </div>
-                  )}
-                  {appointment && (
-                    <div className="pt-3 border-t border-gray-700">
-                      <p className="text-blue-300 font-semibold mb-2">Appointment</p>
-                      <p>Date: {formatDate(appointment.appointment_date)}</p>
-                      <p>Time: {appointment.appointment_time || 'N/A'}</p>
-                      <p>Type: {appointment.onsite_type || 'N/A'}</p>
-                    </div>
-                  )}
-                </div>
-              )}
-              {detailsTab === 'intake' && (
-                <div className="space-y-1 text-gray-300">
-                  {intake ? (
-                    <>
-                      <p>Chief Complaint: {intake.chief_complaint || 'N/A'}</p>
-                      {intake.symptoms_description && <p>Symptoms: {intake.symptoms_description}</p>}
-                      {intake.location && <p>Location: {intake.location}</p>}
-                      {intake.severity != null && <p>Severity: {intake.severity}/10</p>}
-                      {intake.onset && <p>Onset: {formatDate(intake.onset)}</p>}
-                      {intake.medical_conditions && (
-                        <p>Conditions: {Array.isArray(intake.medical_conditions) ? intake.medical_conditions.join(', ') : 'N/A'}</p>
-                      )}
-                      {intake.allergies && (
-                        <p>Allergies: {Array.isArray(intake.allergies) ? intake.allergies.join(', ') : 'N/A'}</p>
-                      )}
-                      {intake.current_medications && (
-                        <p>Meds: {Array.isArray(intake.current_medications) ? intake.current_medications.join(', ') : 'N/A'}</p>
-                      )}
-                      <p>Tobacco: {intake.tobacco_use ? 'Yes' : 'No'} | Alcohol: {intake.alcohol_use ? 'Yes' : 'No'} | Drugs: {intake.drug_use ? 'Yes' : 'No'}</p>
-                    </>
-                  ) : (
-                    <p className="text-gray-400">Intake not available</p>
-                  )}
-                </div>
-              )}
-              {detailsTab === 'vitals' && (
-                <div className="grid grid-cols-2 gap-2 text-gray-300">
-                  {vitals ? (
-                    <>
-                      <p>BP: {vitals.bp_systolic && vitals.bp_diastolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : 'N/A'}</p>
-                      <p>HR: {vitals.heart_rate ? `${vitals.heart_rate} bpm` : 'N/A'}</p>
-                      <p>Temp: {vitals.temperature ? `${vitals.temperature}°${vitals.temperature_unit || 'F'}` : 'N/A'}</p>
-                      <p>SpO2: {vitals.spo2 ? `${vitals.spo2}%` : 'N/A'}</p>
-                      <p>RR: {vitals.respiratory_rate ? `${vitals.respiratory_rate}/min` : 'N/A'}</p>
-                      <p>Weight: {vitals.weight ? `${vitals.weight} ${vitals.weight_unit || 'lbs'}` : 'N/A'}</p>
-                      <p>Height: {vitals.height ? `${vitals.height} ${vitals.height_unit || 'in'}` : 'N/A'}</p>
-                      <p>BMI: {vitals.bmi ? vitals.bmi.toFixed(1) : 'N/A'}</p>
-                      {vitals.notes && <p className="col-span-2">Notes: {vitals.notes}</p>}
-                    </>
-                  ) : (
-                    <p className="text-gray-400 col-span-2">Not recorded</p>
-                  )}
-                </div>
-              )}
-              {detailsTab === 'soap' && (
-                <div className="space-y-3">
-                  {role === 'doctor' && doctorId ? (
-                    <>
-                      <p className="text-cyan-200 text-xs mb-2">Add your SOAP note. Placeholders show AI suggestions.</p>
-                      <div>
-                        <label className="text-cyan-200 text-xs font-medium block mb-1">Subjective</label>
-                        <textarea
-                          value={soapForm.subjective_text ?? ''}
-                          onChange={(e) => setSoapForm((f) => ({ ...f, subjective_text: e.target.value }))}
-                          placeholder={aiPlaceholder('subjective')}
-                          rows={3}
-                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                        />
+          {!detailsLoading && (
+            <div className="flex border-b border-gray-800 flex-shrink-0 overflow-x-auto">
+              {(['patient', 'intake', 'vitals', 'soap'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setDetailsTab(tab)}
+                  className={`flex-shrink-0 px-2 py-2 text-xs font-medium capitalize transition-colors ${
+                    detailsTab === tab ? 'text-white border-b-2 border-blue-500 bg-white/5' : 'text-gray-400 hover:text-white'
+                  }`}
+                >
+                  {tab === 'soap' ? 'SOAP' : tab}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="flex-1 overflow-auto p-4 text-sm">
+            {detailsLoading ? (
+              <LoadingSpinner message="Loading details..." showPercentage={false} size="sm" />
+            ) : (
+              <>
+                {detailsTab === 'patient' && (
+                  <div className="space-y-4">
+                    {patient && (
+                      <div className="space-y-1 text-gray-300">
+                        <p className="font-medium text-white">{patient.first_name} {patient.last_name}</p>
+                        <p>Code: {patient.patient_code || 'N/A'}</p>
+                        <p>Age: {calculateAge(patient.date_of_birth)}</p>
+                        <p>DOB: {formatDate(patient.date_of_birth)}</p>
+                        <p>Gender: {patient.gender || 'N/A'}</p>
+                        <p>Email: {patient.email || 'N/A'}</p>
+                        <p>Phone: {patient.phone || 'N/A'}</p>
+                        {(patient.street_address || patient.state || patient.zip_code) && (
+                          <p>Address: {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')}</p>
+                        )}
                       </div>
-                      <div>
-                        <label className="text-cyan-200 text-xs font-medium block mb-1">Objective</label>
-                        <textarea
-                          value={soapForm.objective_text ?? ''}
-                          onChange={(e) => setSoapForm((f) => ({ ...f, objective_text: e.target.value }))}
-                          placeholder={aiPlaceholder('objective')}
-                          rows={3}
-                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                        />
+                    )}
+                    {appointment && (
+                      <div className="pt-3 border-t border-gray-700">
+                        <p className="text-blue-300 font-semibold mb-2">Appointment</p>
+                        <p>Date: {formatDate(appointment.appointment_date)}</p>
+                        <p>Time: {appointment.appointment_time || 'N/A'}</p>
+                        <p>Type: {appointment.onsite_type || 'N/A'}</p>
                       </div>
-                      <div>
-                        <label className="text-cyan-200 text-xs font-medium block mb-1">Assessment</label>
-                        <textarea
-                          value={soapForm.assessment_text ?? ''}
-                          onChange={(e) => setSoapForm((f) => ({ ...f, assessment_text: e.target.value }))}
-                          placeholder={aiPlaceholder('assessment')}
-                          rows={3}
-                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-cyan-200 text-xs font-medium block mb-1">Plan</label>
-                        <textarea
-                          value={soapForm.plan_text ?? ''}
-                          onChange={(e) => setSoapForm((f) => ({ ...f, plan_text: e.target.value }))}
-                          placeholder={aiPlaceholder('plan')}
-                          rows={3}
-                          className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                        />
-                      </div>
-                      <div className="flex gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={handleSaveDoctorSoap}
-                          disabled={savingSoap}
-                          className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          {savingSoap ? 'Saving...' : 'Save SOAP Note'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleEndConsultation}
-                          disabled={savingSoap}
-                          className="flex-1 py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
-                        >
-                          {savingSoap ? 'Ending...' : 'End Consultation'}
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="space-y-3 text-gray-300">
-                      {(doctorSoap || soapNotes) ? (
-                        <>
-                          <div>
-                            <p className="text-cyan-200 text-xs font-medium mb-1">Subjective</p>
-                            <p className="bg-white/5 p-2 rounded text-xs">
-                              {(doctorSoap?.subjective_text && doctorSoap.subjective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.subjective_text, 'subjective') || 'Will be updated.')) || 'Not available yet'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-cyan-200 text-xs font-medium mb-1">Objective</p>
-                            <p className="bg-white/5 p-2 rounded text-xs">
-                              {(doctorSoap?.objective_text && doctorSoap.objective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.objective_text, 'objective') || 'Will be updated.')) || 'Not available yet'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-cyan-200 text-xs font-medium mb-1">Assessment</p>
-                            <p className="bg-white/5 p-2 rounded text-xs">
-                              {(doctorSoap?.assessment_text && doctorSoap.assessment_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.assessment_text, 'assessment') || 'Will be updated.')) || 'Not available yet'}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-cyan-200 text-xs font-medium mb-1">Plan</p>
-                            <p className="bg-white/5 p-2 rounded text-xs">
-                              {(doctorSoap?.plan_text && doctorSoap.plan_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.plan_text, 'plan') || 'Will be updated.')) || 'Not available yet'}
-                            </p>
-                          </div>
-                        </>
-                      ) : (
-                        <p className="text-gray-400">SOAP notes not available yet</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
-              {detailsTab === 'transcript' && (
-                <div className="space-y-3 flex flex-col h-full">
-                  <div className="flex-1 overflow-auto space-y-2 min-h-0">
-                    {transcripts.length === 0 ? (
-                      <p className="text-gray-400 text-xs">No transcript yet. Add entries as the session progresses.</p>
-                    ) : (
-                      transcripts.map((entry) => (
-                        <div key={entry.id} className="bg-white/5 rounded p-2 text-xs">
-                          <p className="text-cyan-200 font-medium mb-0.5">
-                            {formatTranscriptLabel(entry)}
-                          </p>
-                          <p className="text-gray-300">{entry.message}</p>
-                          <p className="text-gray-500 text-[10px] mt-1">
-                            {new Date(entry.created_at).toLocaleTimeString()}
-                          </p>
-                        </div>
-                      ))
                     )}
                   </div>
-                  <div className="flex-shrink-0 pt-2 border-t border-gray-700">
-                    <p className="text-cyan-200 text-xs font-medium mb-1">
-                      Add as {role === 'doctor' ? 'Doctor' : 'Nurse'} ({speakerName || 'You'})
-                    </p>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newTranscriptMessage}
-                        onChange={(e) => setNewTranscriptMessage(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddTranscript()}
-                        placeholder="Type message and press Enter..."
-                        className="flex-1 bg-white/5 border border-white/10 rounded px-2 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddTranscript}
-                        disabled={addingTranscript || !newTranscriptMessage.trim()}
-                        className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-medium rounded transition-colors"
-                      >
-                        {addingTranscript ? '...' : 'Add'}
-                      </button>
-                    </div>
+                )}
+                {detailsTab === 'intake' && (
+                  <div className="space-y-1 text-gray-300">
+                    {intake ? (
+                      <>
+                        <p>Chief Complaint: {intake.chief_complaint || 'N/A'}</p>
+                        {intake.symptoms_description && <p>Symptoms: {intake.symptoms_description}</p>}
+                        {intake.location && <p>Location: {intake.location}</p>}
+                        {intake.severity != null && <p>Severity: {intake.severity}/10</p>}
+                        {intake.onset && <p>Onset: {formatDate(intake.onset)}</p>}
+                        {intake.medical_conditions && (
+                          <p>Conditions: {Array.isArray(intake.medical_conditions) ? intake.medical_conditions.join(', ') : 'N/A'}</p>
+                        )}
+                        {intake.allergies && (
+                          <p>Allergies: {Array.isArray(intake.allergies) ? intake.allergies.join(', ') : 'N/A'}</p>
+                        )}
+                        {intake.current_medications && (
+                          <p>Meds: {Array.isArray(intake.current_medications) ? intake.current_medications.join(', ') : 'N/A'}</p>
+                        )}
+                        <p>Tobacco: {intake.tobacco_use ? 'Yes' : 'No'} | Alcohol: {intake.alcohol_use ? 'Yes' : 'No'} | Drugs: {intake.drug_use ? 'Yes' : 'No'}</p>
+                      </>
+                    ) : (
+                      <p className="text-gray-400">Intake not available</p>
+                    )}
                   </div>
-                </div>
-              )}
-            </>
-          )}
+                )}
+                {detailsTab === 'vitals' && (
+                  <div className="grid grid-cols-2 gap-2 text-gray-300">
+                    {vitals ? (
+                      <>
+                        <p>BP: {vitals.bp_systolic && vitals.bp_diastolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : 'N/A'}</p>
+                        <p>HR: {vitals.heart_rate ? `${vitals.heart_rate} bpm` : 'N/A'}</p>
+                        <p>Temp: {vitals.temperature ? `${vitals.temperature}°${vitals.temperature_unit || 'F'}` : 'N/A'}</p>
+                        <p>SpO2: {vitals.spo2 ? `${vitals.spo2}%` : 'N/A'}</p>
+                        <p>RR: {vitals.respiratory_rate ? `${vitals.respiratory_rate}/min` : 'N/A'}</p>
+                        <p>Weight: {vitals.weight ? `${vitals.weight} ${vitals.weight_unit || 'lbs'}` : 'N/A'}</p>
+                        <p>Height: {vitals.height ? `${vitals.height} ${vitals.height_unit || 'in'}` : 'N/A'}</p>
+                        <p>BMI: {vitals.bmi ? vitals.bmi.toFixed(1) : 'N/A'}</p>
+                        {vitals.notes && <p className="col-span-2">Notes: {vitals.notes}</p>}
+                      </>
+                    ) : (
+                      <p className="text-gray-400 col-span-2">Not recorded</p>
+                    )}
+                  </div>
+                )}
+                {detailsTab === 'soap' && (
+                  <div className="space-y-3">
+                    {role === 'doctor' && doctorId ? (
+                      <>
+                        <p className="text-cyan-200 text-xs mb-2">Add your SOAP note. Placeholders show AI suggestions.</p>
+                        <div>
+                          <label className="text-cyan-200 text-xs font-medium block mb-1">Subjective</label>
+                          <textarea
+                            value={soapForm.subjective_text ?? ''}
+                            onChange={(e) => setSoapForm((f) => ({ ...f, subjective_text: e.target.value }))}
+                            placeholder={aiPlaceholder('subjective')}
+                            rows={3}
+                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-cyan-200 text-xs font-medium block mb-1">Objective</label>
+                          <textarea
+                            value={soapForm.objective_text ?? ''}
+                            onChange={(e) => setSoapForm((f) => ({ ...f, objective_text: e.target.value }))}
+                            placeholder={aiPlaceholder('objective')}
+                            rows={3}
+                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-cyan-200 text-xs font-medium block mb-1">Assessment</label>
+                          <textarea
+                            value={soapForm.assessment_text ?? ''}
+                            onChange={(e) => setSoapForm((f) => ({ ...f, assessment_text: e.target.value }))}
+                            placeholder={aiPlaceholder('assessment')}
+                            rows={3}
+                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-cyan-200 text-xs font-medium block mb-1">Plan</label>
+                          <textarea
+                            value={soapForm.plan_text ?? ''}
+                            onChange={(e) => setSoapForm((f) => ({ ...f, plan_text: e.target.value }))}
+                            placeholder={aiPlaceholder('plan')}
+                            rows={3}
+                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                          />
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={handleSaveDoctorSoap}
+                            disabled={savingSoap}
+                            className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            {savingSoap ? 'Saving...' : 'Save SOAP Note'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleEndConsultation}
+                            disabled={savingSoap}
+                            className="flex-1 py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                          >
+                            {savingSoap ? 'Ending...' : 'End Consultation'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-3 text-gray-300">
+                        {(doctorSoap || soapNotes) ? (
+                          <>
+                            <div>
+                              <p className="text-cyan-200 text-xs font-medium mb-1">Subjective</p>
+                              <p className="bg-white/5 p-2 rounded text-xs">
+                                {(doctorSoap?.subjective_text && doctorSoap.subjective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.subjective_text, 'subjective') || 'Will be updated.')) || 'Not available yet'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-cyan-200 text-xs font-medium mb-1">Objective</p>
+                              <p className="bg-white/5 p-2 rounded text-xs">
+                                {(doctorSoap?.objective_text && doctorSoap.objective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.objective_text, 'objective') || 'Will be updated.')) || 'Not available yet'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-cyan-200 text-xs font-medium mb-1">Assessment</p>
+                              <p className="bg-white/5 p-2 rounded text-xs">
+                                {(doctorSoap?.assessment_text && doctorSoap.assessment_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.assessment_text, 'assessment') || 'Will be updated.')) || 'Not available yet'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-cyan-200 text-xs font-medium mb-1">Plan</p>
+                              <p className="bg-white/5 p-2 rounded text-xs">
+                                {(doctorSoap?.plan_text && doctorSoap.plan_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.plan_text, 'plan') || 'Will be updated.')) || 'Not available yet'}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <p className="text-gray-400">SOAP notes not available yet</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0">
+            <button
+              onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+              className="text-sm text-blue-400 hover:text-blue-300"
+            >
+              ← Back to EMR
+            </button>
+          </div>
         </div>
-        <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0">
-          <button
-            onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
-            className="text-sm text-blue-400 hover:text-blue-300"
-          >
-            ← Back to EMR
-          </button>
-        </div>
-      </div>
       </div>
     </div>
   )

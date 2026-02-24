@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canJoinTelemedicine } from '@/lib/encounter-status'
+import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { config } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
@@ -63,14 +64,16 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Get user role from profiles
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('uid', user.id)
-        .single()
+      // Get user role from profiles (id = auth user id in production; fallback uid)
+      let profile: { role?: string } | null = null
+      const byId = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
+      if (byId.data) profile = byId.data
+      if (!profile) {
+        const byUid = await supabase.from('profiles').select('role').eq('uid', user.id).maybeSingle()
+        if (byUid.data) profile = byUid.data
+      }
 
-      const role = profile?.role as string | null
+      const role = (profile?.role as string) ?? null
       const isDoctor = role === 'doctor'
       const isNurse = role === 'nurse' || role === 'staff'
 
@@ -130,6 +133,7 @@ export async function POST(request: NextRequest) {
         enable_knocking: true,
         start_video_off: true,
         start_audio_off: true,
+        enable_transcription: true,
       },
     }
 
@@ -202,6 +206,12 @@ export async function POST(request: NextRequest) {
               updated_at: new Date().toISOString(),
             })
             .eq('id', encounterIdNum)
+          const profileId = await getProfileId(supabase, user.id)
+          await insertStatusTimeline(supabase, {
+            encounterId: encounterIdNum,
+            status: 'in_consultation',
+            profileId,
+          })
         }
       } catch (updateError) {
         if (process.env.NODE_ENV === 'development') {
@@ -211,7 +221,59 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json(roomData)
+    // Generate a meeting token for SDK usage (profiles.id then uid)
+    let profileForToken: { full_name?: string | null; role?: string } | null = null
+    const profileById = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
+    if (profileById.data) profileForToken = profileById.data
+    if (!profileForToken) {
+      const profileByUid = await supabase.from('profiles').select('full_name, role').eq('uid', user.id).maybeSingle()
+      if (profileByUid.data) profileForToken = profileByUid.data
+    }
+
+    const userRole = (profileForToken?.role as string) ?? ''
+    const displayName = userRole === 'doctor' ? 'Doctor' : userRole === 'nurse' || userRole === 'staff' ? 'Nurse' : 'Staff'
+    const userName = profileForToken?.full_name || displayName
+
+    // Meeting token: room_name required; exp recommended by Daily
+    const exp = Math.floor(Date.now() / 1000) + 2 * 60 * 60 // 2 hours
+    const tokenPayload = {
+      properties: {
+        room_name: roomData.name,
+        user_id: user.id.slice(0, 36), // Daily limit 36 chars
+        user_name: userName ?? undefined,
+        is_owner: userRole === 'doctor',
+        exp,
+      },
+    }
+
+    const tokenResponse = await fetch('https://api.daily.co/v1/meeting-tokens', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify(tokenPayload),
+    })
+
+    let token: string | null = null
+    if (tokenResponse.ok) {
+      const tokenData = await tokenResponse.json()
+      token = tokenData.token ?? null
+    } else if (process.env.NODE_ENV === 'development') {
+      const errText = await tokenResponse.text()
+      console.error('Daily meeting-token error:', tokenResponse.status, errText)
+    }
+
+    // Build room URL with same domain as backend (so client joins the account that created the room)
+    const rawDomain = (process.env.NEXT_PUBLIC_DAILY_DOMAIN || '').trim() || 'demo.daily.co'
+    const dailyDomain = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
+    const roomUrl = roomData.name ? `https://${dailyDomain}/${roomData.name}` : undefined
+
+    return NextResponse.json({
+      ...roomData,
+      token, // Include token for SDK usage
+      room_url: roomUrl, // Use this URL on the client so domain matches the account that created the room
+    })
   } catch (error) {
     return NextResponse.json(
       {

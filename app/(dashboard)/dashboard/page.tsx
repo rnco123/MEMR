@@ -13,7 +13,7 @@ interface UpcomingAppointment {
   appointment_date: string
   appointment_time: string | null
   onsite_type: string | null
-  status: string
+  status?: string | null
   patient: {
     first_name: string
     last_name: string
@@ -155,7 +155,7 @@ function DashboardPage() {
 
       const { data: appointmentsData } = await supabase
         .from('appointments')
-        .select('id, appointment_date, appointment_time, onsite_type, status, patient_id')
+        .select('id, appointment_date, appointment_time, onsite_type, patient_id')
         .in('id', appointmentIds)
         .gte('appointment_date', today)
         .order('appointment_date', { ascending: true })
@@ -177,8 +177,7 @@ function DashboardPage() {
         id: String(appointment.id),
         appointment_date: appointment.appointment_date,
         appointment_time: appointment.appointment_time ?? null,
-        onsite_type: appointment.onsite_type ?? null,
-        status: appointment.status,
+        onsite_type: (appointment as { onsite_type?: string | null }).onsite_type ?? null,
         patient: patientsData?.find(p => p.id === appointment.patient_id) || null,
       }))
 
@@ -474,7 +473,7 @@ function DashboardPage() {
                         )}
                       </div>
                       <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-200 border border-emerald-500/40">
-                        {appt.status === 'scheduled'
+                        {!appt.status || appt.status === 'scheduled'
                           ? 'Scheduled'
                           : appt.status.charAt(0).toUpperCase() + appt.status.slice(1)}
                       </span>

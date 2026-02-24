@@ -32,6 +32,15 @@ interface Patient {
   created_at: string
 }
 
+interface Pharmacy {
+  id: number
+  name?: string | null
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+  [key: string]: unknown
+}
+
 export default function PatientFilePage() {
   const { user } = useAuth()
   const params = useParams()
@@ -69,6 +78,9 @@ export default function PatientFilePage() {
   // Medications state
   const [medications, setMedications] = useState<any[]>([])
   const [loadingMedications, setLoadingMedications] = useState(false)
+
+  // Pharmacy state (latest pharmacy based on most recent encounter with pharmacy_id)
+  const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
 
   // SOAP Notes state (by encounter)
   const [soapNotesByEncounter, setSoapNotesByEncounter] = useState<Record<number, { subjective_text: string | null; objective_text: string | null; assessment_text: string | null; plan_text: string | null; created_at: string } | null>>({})
@@ -109,7 +121,28 @@ export default function PatientFilePage() {
       
       setLoadingEncounters(true)
       try {
-        // Fetch encounters with related data
+        // First get all appointments for this patient
+        const { data: appointments, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patientId)
+
+        if (appointmentsError) {
+          console.error('Error fetching appointments for encounters:', appointmentsError)
+          setEncounters([])
+          setLoadingEncounters(false)
+          return
+        }
+
+        if (!appointments || appointments.length === 0) {
+          setEncounters([])
+          setLoadingEncounters(false)
+          return
+        }
+
+        const appointmentIds = appointments.map(a => a.id)
+
+        // Fetch encounters for those appointments with related data
         const { data: encountersData, error: encountersError } = await supabase
           .from('encounters')
           .select(`
@@ -117,7 +150,7 @@ export default function PatientFilePage() {
             appointments (*),
             doctors (*)
           `)
-          .eq('patient_id', patientId)
+          .in('appointment_id', appointmentIds)
           .order('created_at', { ascending: false })
 
         if (encountersError) {
@@ -144,14 +177,34 @@ export default function PatientFilePage() {
       
       setLoadingHistory(true)
       try {
-        // Get all encounters for this patient
+        // Get all appointments for this patient
+        const { data: appointments, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patientId)
+
+        if (appointmentsError) {
+          console.error('Error fetching appointments for medical history:', appointmentsError)
+          setLoadingHistory(false)
+          return
+        }
+
+        if (!appointments || appointments.length === 0) {
+          setMedicalHistory(null)
+          setLoadingHistory(false)
+          return
+        }
+
+        const appointmentIds = appointments.map(a => a.id)
+
+        // Get all encounters for these appointments
         const { data: encounters, error: encountersError } = await supabase
           .from('encounters')
           .select('id, appointment_id')
-          .eq('patient_id', patientId)
+          .in('appointment_id', appointmentIds)
 
         if (encountersError) {
-          console.error('Error fetching encounters:', encountersError)
+          console.error('Error fetching encounters for medical history:', encountersError)
           setLoadingHistory(false)
           return
         }
@@ -163,7 +216,6 @@ export default function PatientFilePage() {
         }
 
         const encounterIds = encounters.map(e => e.id)
-        const appointmentIds = encounters.map(e => e.appointment_id).filter(id => id)
 
         // Get intake forms for these appointments
         let intakeForms: any[] = []
@@ -259,6 +311,73 @@ export default function PatientFilePage() {
     fetchMedicalHistory()
   }, [patientId, supabase])
 
+  // Fetch latest pharmacy based on most recent encounter with a pharmacy_id for this patient
+  useEffect(() => {
+    const fetchPharmacy = async () => {
+      if (!patientId || isNaN(patientId)) return
+
+      try {
+        // Get all appointments for this patient
+        const { data: appointments, error: appointmentsError } = await supabase
+          .from('appointments')
+          .select('id')
+          .eq('patient_id', patientId)
+
+        if (appointmentsError) {
+          console.error('Error fetching appointments for pharmacy:', appointmentsError)
+          setPharmacy(null)
+          return
+        }
+
+        if (!appointments || appointments.length === 0) {
+          setPharmacy(null)
+          return
+        }
+
+        const appointmentIds = appointments.map(a => a.id)
+
+        const { data: encounterWithPharmacy, error: encounterError } = await supabase
+          .from('encounters')
+          .select('pharmacy_id, appointment_id, created_at')
+          .in('appointment_id', appointmentIds)
+          .not('pharmacy_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (encounterError) {
+          console.error('Error fetching encounter pharmacy for patient:', encounterError)
+          setPharmacy(null)
+          return
+        }
+
+        if (!encounterWithPharmacy?.pharmacy_id) {
+          setPharmacy(null)
+          return
+        }
+
+        const { data: pharmacyData, error: pharmacyError } = await supabase
+          .from('pharmacy')
+          .select('*')
+          .eq('id', encounterWithPharmacy.pharmacy_id)
+          .maybeSingle()
+
+        if (pharmacyError) {
+          console.error('Error fetching pharmacy for patient:', pharmacyError)
+          setPharmacy(null)
+          return
+        }
+
+        setPharmacy(pharmacyData as Pharmacy)
+      } catch (error) {
+        console.error('Error in fetchPharmacy:', error)
+        setPharmacy(null)
+      }
+    }
+
+    fetchPharmacy()
+  }, [patientId, supabase])
+
   // Fetch medications from intake forms
   useEffect(() => {
     const fetchMedications = async () => {
@@ -302,8 +421,15 @@ export default function PatientFilePage() {
           intakeForms.forEach(form => {
             if (form.current_medications && Array.isArray(form.current_medications)) {
               form.current_medications.forEach((med: any) => {
+                const normalized =
+                  typeof med === 'string'
+                    ? { name: med }
+                    : med && typeof med === 'object'
+                    ? med
+                    : { name: String(med) }
+
                 allMedications.push({
-                  ...med,
+                  ...normalized,
                   added_date: form.created_at,
                   appointment_id: form.appointment_id,
                 })
@@ -678,6 +804,54 @@ export default function PatientFilePage() {
                   <p className="text-white">{patient.email || 'N/A'}</p>
                 </div>
               </div>
+            </div>
+
+            {/* Pharmacy (from latest encounter with selected pharmacy) */}
+            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6">
+              <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+                <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+                  />
+                </svg>
+                Pharmacy
+              </h3>
+              {pharmacy ? (
+                <div className="space-y-3 text-sm">
+                  {pharmacy.name && (
+                    <div>
+                      <span className="text-blue-300 text-xs">Name</span>
+                      <p className="text-white font-semibold">{pharmacy.name}</p>
+                    </div>
+                  )}
+                  {pharmacy.address && (
+                    <div>
+                      <span className="text-blue-300 text-xs">Address</span>
+                      <p className="text-white">{pharmacy.address}</p>
+                    </div>
+                  )}
+                  {pharmacy.phone && (
+                    <div>
+                      <span className="text-blue-300 text-xs">Phone</span>
+                      <p className="text-white">{pharmacy.phone}</p>
+                    </div>
+                  )}
+                  {pharmacy.email && (
+                    <div>
+                      <span className="text-blue-300 text-xs">Email</span>
+                      <p className="text-white">{pharmacy.email}</p>
+                    </div>
+                  )}
+                  {!pharmacy.name && !pharmacy.address && !pharmacy.phone && !pharmacy.email && (
+                    <p className="text-blue-200">Pharmacy #{pharmacy.id} (no details available)</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-blue-200 text-sm">No pharmacy on file yet.</p>
+              )}
             </div>
           </div>
 
@@ -1186,11 +1360,14 @@ export default function PatientFilePage() {
                   </div>
                 )}
 
-                {/* Documents Tab */}
+                {/* Documents Tab - for doctors and nurses to upload and manage patient documents */}
                 {activeTab === 'documents' && (
                   <div className="space-y-4">
                     <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-semibold text-white">Patient Documents</h3>
+                      <div>
+                        <h3 className="text-lg font-semibold text-white">Patient Documents</h3>
+                        <p className="text-blue-300/80 text-sm mt-0.5">Upload and manage documents for this patient (doctors &amp; nurses)</p>
+                      </div>
                       <button
                         onClick={() => setShowUploadModal(true)}
                         className="px-3 py-1.5 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all"
@@ -1218,7 +1395,14 @@ export default function PatientFilePage() {
                           const hasFile = doc.has_file || doc.file_url
                           
                           return (
-                            <div key={doc.id} className="bg-white/5 border border-white/10 rounded-xl p-4">
+                            <div
+                              key={doc.id}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => { setViewingDocument(doc); setImageLoading(true) }}
+                              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setViewingDocument(doc); setImageLoading(true) } }}
+                              className="bg-white/5 border border-white/10 rounded-xl p-4 cursor-pointer hover:bg-white/10 transition-colors"
+                            >
                               <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-4 flex-1">
                                   <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${
@@ -1280,7 +1464,9 @@ export default function PatientFilePage() {
                                 <div className="flex items-center gap-2 ml-4">
                                   {hasFile && (
                                     <button
-                                      onClick={() => {
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
                                         setViewingDocument(doc)
                                         setImageLoading(true)
                                       }}
@@ -1295,7 +1481,8 @@ export default function PatientFilePage() {
                                   )}
                                   {!isDefault && (
                                     <button
-                                      onClick={() => handleDeleteClick(doc.id)}
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteClick(doc.id) }}
                                       className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-300 rounded-lg text-sm font-medium hover:bg-red-500/30 transition-all flex items-center gap-2"
                                     >
                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1458,14 +1645,24 @@ export default function PatientFilePage() {
                             <div className="flex-1 min-w-0 pr-12">
                               <h3 className="text-base font-semibold text-white truncate">{viewingDocument.document_name}</h3>
                               <p className="text-xs text-blue-300 mt-0.5 truncate">
-                                {formatFileSize(viewingDocument.file_size)}
+                                {viewingDocument.file_url || viewingDocument.has_file
+                                  ? formatFileSize(viewingDocument.file_size ?? 0)
+                                  : 'No file uploaded'}
                               </p>
                             </div>
                           </div>
 
                           {/* Scrollable Viewer Content */}
                           <div className="flex-1 overflow-y-auto overflow-x-auto p-3 min-h-0">
-                            {viewingDocument.file_type === 'application/pdf' ? (
+                            {!(viewingDocument.file_url || viewingDocument.has_file) ? (
+                              <div className="flex flex-col items-center justify-center h-full text-center py-20">
+                                <svg className="w-16 h-16 text-blue-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                </svg>
+                                <p className="text-blue-200 mb-2">No file has been uploaded for this document yet.</p>
+                                <p className="text-blue-300/80 text-sm">This slot will show the file once it’s available (e.g. signed form).</p>
+                              </div>
+                            ) : viewingDocument.file_type === 'application/pdf' ? (
                               <iframe
                                 src={viewingDocument.file_url}
                                 className="w-full h-full min-h-[600px] rounded-lg border border-white/10"

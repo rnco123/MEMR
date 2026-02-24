@@ -13,6 +13,13 @@ import { UserRole } from '@/lib/roles'
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
+function formatDob(dateString: string | null | undefined): string | null {
+  if (!dateString) return null
+  const d = new Date(dateString + 'T00:00:00')
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+}
+
 interface Appointment {
   id: number
   patient_id: number
@@ -30,6 +37,7 @@ interface Appointment {
     last_name: string
     email: string | null
     phone: string | null
+    date_of_birth: string | null
   }
 }
 
@@ -53,6 +61,7 @@ function FlowboardPage() {
   const [viewMode, setViewMode] = useState<'mine' | 'all'>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -69,67 +78,33 @@ function FlowboardPage() {
       if (showLoading) setLoading(true)
       else setIsRefreshing(true)
       
-      let encountersQuery = supabase
-        .from('encounters')
-        .select('id, appointment_id, patient_id, status, doctor_id')
-        .order('id', { ascending: true })
-        .limit(1000)
-
-      if (viewMode === 'mine') {
-        const { data: doctorData, error: doctorError } = await supabase
-          .from('doctors')
-          .select('id')
-          .eq('user_id', user?.id)
-          .single()
-
-        if (doctorError || !doctorData) {
-          console.error('Error fetching doctor record:', doctorError)
-          setAppointments([])
-          setLoading(false)
-          setIsRefreshing(false)
-          return
-        }
-        encountersQuery = encountersQuery.eq('doctor_id', doctorData.id)
-      }
-
-      const { data: encounters, error: encountersError } = await encountersQuery
-
-      if (encountersError) {
-        console.error('Error fetching encounters:', encountersError)
-        setAppointments([])
-        setLoading(false)
-        setIsRefreshing(false)
-        return
-      }
-
-      if (!encounters || encounters.length === 0) {
-        setAppointments([])
-        setLoading(false)
-        setIsRefreshing(false)
-        return
-      }
-
-      // Get appointment IDs from encounters
-      const appointmentIds = encounters.map(e => e.appointment_id).filter(Boolean)
-
-      // Fetch appointments
+      // Fetch ALL appointments first (not just those with encounters)
+      console.log('[Flowboard] Fetching appointments...', { viewMode, userId: user?.id, role })
       const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('id, patient_id, appointment_date, appointment_time, onsite_type, status, notes, created_at')
-        .in('id', appointmentIds)
+        .select('id, patient_id, appointment_date, appointment_time, onsite_type, created_at')
         .order('appointment_date', { ascending: true })
         .order('appointment_time', { ascending: true })
 
+      console.log('[Flowboard] Appointments query result:', { 
+        data: appointmentsData, 
+        error: appointmentsError,
+        count: appointmentsData?.length || 0
+      })
+
       if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError)
+        console.error('[Flowboard] Error fetching appointments:', appointmentsError)
         setAppointments([])
         setLoading(false)
+        setIsRefreshing(false)
         return
       }
 
       if (!appointmentsData || appointmentsData.length === 0) {
+        console.log('[Flowboard] No appointments found in database')
         setAppointments([])
         setLoading(false)
+        setIsRefreshing(false)
         return
       }
 
@@ -137,30 +112,68 @@ function FlowboardPage() {
       const patientIds = [...new Set(appointmentsData.map(a => a.patient_id).filter(Boolean))]
       const { data: patientsData, error: patientsError } = await supabase
         .from('patients')
-        .select('id, first_name, last_name, email, phone')
+        .select('id, first_name, last_name, email, phone, date_of_birth')
         .in('id', patientIds)
 
       if (patientsError) {
         console.error('Error fetching patients:', patientsError)
       }
 
-      // Combine data
-      const appointmentsWithDetails = appointmentsData.map(appointment => {
-        const encounter = encounters.find(e => e.appointment_id === appointment.id)
-        const patient = patientsData?.find(p => p.id === appointment.patient_id)
-        return {
-          ...appointment,
-          patient: patient ? {
-            id: patient.id,
-            first_name: patient.first_name,
-            last_name: patient.last_name,
-            email: patient.email,
-            phone: patient.phone,
-          } : undefined,
-          encounter_status: encounter?.status || null,
-          encounter_id: encounter?.id || null,
+      // Fetch encounters for these appointments
+      const appointmentIds = appointmentsData.map(a => a.id)
+      const { data: encountersData, error: encountersError } = await supabase
+        .from('encounters')
+        .select('id, appointment_id, patient_id, status, doctor_id')
+        .in('appointment_id', appointmentIds)
+
+      if (encountersError) {
+        console.error('Error fetching encounters:', encountersError)
+      }
+
+      // Get doctor ID if filtering by "mine"
+      let doctorId: number | null = null
+      if (viewMode === 'mine' && user?.id) {
+        const { data: doctorData, error: doctorError } = await supabase
+          .from('doctors')
+          .select('id')
+          .eq('user_id', user.id)
+          .maybeSingle()
+
+        if (doctorError) {
+          console.error('Error fetching doctor record:', doctorError)
+        } else if (doctorData) {
+          doctorId = doctorData.id
         }
-      })
+      }
+
+      // Combine data
+      const appointmentsWithDetails = appointmentsData
+        .map(appointment => {
+          const encounter = encountersData?.find(e => e.appointment_id === appointment.id)
+          const patient = patientsData?.find(p => p.id === appointment.patient_id)
+          
+          return {
+            ...appointment,
+            patient: patient ? {
+              id: patient.id,
+              first_name: patient.first_name,
+              last_name: patient.last_name,
+              email: patient.email,
+              phone: patient.phone,
+              date_of_birth: (patient as { date_of_birth?: string | null }).date_of_birth ?? null,
+            } : undefined,
+            encounter_status: encounter?.status || null,
+            encounter_id: encounter?.id || null,
+          }
+        })
+        // Filter by doctor assignment if "mine" mode
+        .filter(appointment => {
+          if (viewMode === 'mine' && doctorId !== null) {
+            const encounter = encountersData?.find(e => e.appointment_id === appointment.id)
+            return encounter?.doctor_id === doctorId
+          }
+          return true
+        })
 
       setAppointments(appointmentsWithDetails)
       try {
@@ -223,15 +236,16 @@ function FlowboardPage() {
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    // Search filter - by patient ID, name, email, or phone
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(appointment => 
-        appointment.patient_id.toString().includes(query) ||
-        appointment.patient?.first_name?.toLowerCase().includes(query) ||
-        appointment.patient?.last_name?.toLowerCase().includes(query) ||
-        appointment.patient?.email?.toLowerCase().includes(query) ||
-        appointment.patient?.phone?.includes(query)
+    // Search filter - by patient ID, name, email, phone (null-safe)
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(
+        (appointment) =>
+          appointment.patient_id.toString().includes(query) ||
+          (appointment.patient?.first_name ?? '').toLowerCase().includes(query) ||
+          (appointment.patient?.last_name ?? '').toLowerCase().includes(query) ||
+          (appointment.patient?.email ?? '').toLowerCase().includes(query) ||
+          (appointment.patient?.phone ?? '').includes(query)
       )
     }
 
@@ -240,18 +254,29 @@ function FlowboardPage() {
       result = result.filter(appointment => appointment.encounter_status === filterStatus)
     }
 
-    // Sort by date then time
-    result.sort((a, b) => {
-      const dateA = a.appointment_date || ''
-      const dateB = b.appointment_date || ''
-      if (dateA !== dateB) return dateA.localeCompare(dateB)
-      const timeA = a.appointment_time || ''
-      const timeB = b.appointment_time || ''
-      return timeA.localeCompare(timeB)
-    })
+    // Sort (copy then sort so we return a new array and React updates the list)
+    switch (sortBy) {
+      case 'time':
+        result = [...result].sort((a, b) => {
+          const dateA = a.appointment_date && a.appointment_time ? new Date(`${a.appointment_date}T${a.appointment_time}`) : new Date(0)
+          const dateB = b.appointment_date && b.appointment_time ? new Date(`${b.appointment_date}T${b.appointment_time}`) : new Date(0)
+          return dateA.getTime() - dateB.getTime()
+        })
+        break
+      case 'name':
+        result = [...result].sort((a, b) => {
+          const nameA = `${a.patient?.last_name ?? ''} ${a.patient?.first_name ?? ''}`.trim()
+          const nameB = `${b.patient?.last_name ?? ''} ${b.patient?.first_name ?? ''}`.trim()
+          return nameA.localeCompare(nameB)
+        })
+        break
+      case 'treatment':
+        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
+        break
+    }
 
     return result
-  }, [appointments, searchQuery, filterStatus])
+  }, [appointments, searchQuery, filterStatus, sortBy])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -269,7 +294,7 @@ function FlowboardPage() {
           <div>
             <h1 className="text-4xl font-bold text-white mb-2">Flowboard</h1>
             <p className="text-blue-200 text-lg">
-              Your assigned active encounters
+              {viewMode === 'all' ? 'All active encounters' : 'Your assigned active encounters'}
             </p>
           </div>
           <button
@@ -316,6 +341,35 @@ function FlowboardPage() {
               />
             </div>
 
+            {/* Refresh Button */}
+            <button
+              type="button"
+              onClick={refreshData}
+              disabled={loading || isRefreshing}
+              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              <svg className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+
+            {/* Sort */}
+            <div className="flex items-center gap-2">
+              <span className="text-blue-200 text-sm whitespace-nowrap">Sort:</span>
+              <select
+                value={sortBy}
+                onChange={(e) => {
+                  setSortBy(e.target.value as 'time' | 'name' | 'treatment')
+                  setPage(1)
+                }}
+                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              >
+                <option value="time">Appointment Time</option>
+                <option value="name">Patient Name</option>
+                <option value="treatment">Treatment Type</option>
+              </select>
+            </div>
+
             {/* View mode: All encounters vs Assigned to me */}
             <div className="flex items-center gap-2">
               <span className="text-blue-200 text-sm whitespace-nowrap">View:</span>
@@ -346,8 +400,8 @@ function FlowboardPage() {
                 }}
                 className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
               >
-                <option value="all">All Statuses</option>
-                {ENCOUNTER_STATUSES.filter(s => s.value !== 'completed' && s.value !== 'appointment_initiated').map((status) => (
+                <option value="all">All</option>
+                {ENCOUNTER_STATUSES.map((status) => (
                   <option key={status.value} value={status.value}>
                     {status.label}
                   </option>
@@ -363,7 +417,7 @@ function FlowboardPage() {
                 {filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1}–
                 {Math.min(page * pageSize, filteredAppointments.length)}
               </span>
-              {' '}of <span className="text-white font-medium">{filteredAppointments.length}</span> encounters
+              {' '}of <span className="text-white font-medium">{filteredAppointments.length}</span> appointments
               {searchQuery || filterStatus !== 'all' ? ` (filtered from ${appointments.length})` : ''}
             </p>
             <div className="flex items-center gap-4">
@@ -384,10 +438,13 @@ function FlowboardPage() {
               </label>
               {searchQuery && (
                 <button
-                  onClick={() => setSearchQuery('')}
+                  onClick={() => {
+                    setSearchQuery('')
+                    setPage(1)
+                  }}
                   className="text-sm text-blue-300 hover:text-white transition-colors"
                 >
-                  Clear search
+                  Clear filters
                 </button>
               )}
             </div>
@@ -441,6 +498,9 @@ function FlowboardPage() {
                         </svg>
                       </div>
                       <div>
+                        <p className="text-sm text-blue-300/90 mb-0.5">
+                          DOB: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
+                        </p>
                         <h3 className="text-xl font-bold text-white">
                           {appointment.patient
                             ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
@@ -488,6 +548,40 @@ function FlowboardPage() {
                         {getStatusInfo(appointment.encounter_status as EncounterStatus)?.label || appointment.encounter_status}
                       </div>
                     )}
+                    <button
+                      type="button"
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        if (appointment.encounter_id) {
+                          setSelectedEncounter({
+                            encounterId: appointment.encounter_id,
+                            appointmentId: appointment.id,
+                            patientId: appointment.patient_id,
+                            encounterStatus: appointment.encounter_status,
+                          })
+                          return
+                        }
+                        // Fallback: fetch encounter by appointment_id (in case batch query missed it)
+                        const { data: encounter } = await supabase
+                          .from('encounters')
+                          .select('id, status')
+                          .eq('appointment_id', appointment.id)
+                          .maybeSingle()
+                        if (encounter?.id) {
+                          setSelectedEncounter({
+                            encounterId: encounter.id,
+                            appointmentId: appointment.id,
+                            patientId: appointment.patient_id,
+                            encounterStatus: encounter.status ?? undefined,
+                          })
+                        } else {
+                          alert('You are not assigned to this patient.')
+                        }
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all shrink-0"
+                    >
+                      View
+                    </button>
                   </div>
                 </div>
               </div>

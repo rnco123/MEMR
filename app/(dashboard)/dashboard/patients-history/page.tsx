@@ -118,7 +118,8 @@ function PatientsHistoryPage() {
 
       const patientIds = patientsData.map(p => p.id)
       const encounterCounts: Record<number, number> = {}
-      const lastVisits: Record<number, string> = {}
+      const encounterLastVisits: Record<number, string> = {}
+      const appointmentLastVisits: Record<number, string> = {}
 
       try {
         const { data: encountersData } = await supabase
@@ -130,20 +131,58 @@ function PatientsHistoryPage() {
           encountersData.forEach(encounter => {
             const patientId = encounter.patient_id
             encounterCounts[patientId] = (encounterCounts[patientId] || 0) + 1
-            if (!lastVisits[patientId] || encounter.created_at > lastVisits[patientId]) {
-              lastVisits[patientId] = encounter.created_at
+            if (!encounterLastVisits[patientId] || encounter.created_at > encounterLastVisits[patientId]) {
+              encounterLastVisits[patientId] = encounter.created_at
             }
           })
         }
       } catch {
-        // Continue without counts
+        // Continue without encounter counts
       }
 
-      const mappedPatients = patientsData.map(patient => ({
-        ...patient,
-        encounter_count: encounterCounts[patient.id] || 0,
-        last_visit: lastVisits[patient.id] || null,
-      })) as Patient[]
+      try {
+        const { data: appointmentsData } = await supabase
+          .from('appointments')
+          .select('patient_id, appointment_date, appointment_time')
+          .in('patient_id', patientIds)
+
+        if (appointmentsData) {
+          appointmentsData.forEach(appointment => {
+            if (!appointment.patient_id || !appointment.appointment_date) return
+            const dateTimeString = appointment.appointment_time
+              ? `${appointment.appointment_date}T${appointment.appointment_time}`
+              : appointment.appointment_date
+
+            const existing = appointmentLastVisits[appointment.patient_id]
+            if (!existing || new Date(dateTimeString).getTime() > new Date(existing).getTime()) {
+              appointmentLastVisits[appointment.patient_id] = dateTimeString
+            }
+          })
+        }
+      } catch {
+        // Continue without appointment-based last visits
+      }
+
+      const mappedPatients = patientsData.map(patient => {
+        const encounterDate = encounterLastVisits[patient.id] || null
+        const appointmentDate = appointmentLastVisits[patient.id] || null
+
+        let lastVisit: string | null = null
+        if (encounterDate && appointmentDate) {
+          lastVisit =
+            new Date(encounterDate).getTime() >= new Date(appointmentDate).getTime()
+              ? encounterDate
+              : appointmentDate
+        } else {
+          lastVisit = encounterDate || appointmentDate || null
+        }
+
+        return {
+          ...patient,
+          encounter_count: encounterCounts[patient.id] || 0,
+          last_visit: lastVisit,
+        }
+      }) as Patient[]
 
       // Client-side sort for current page (encounter_count, last_visit need post-fetch)
       const sorted = [...mappedPatients]

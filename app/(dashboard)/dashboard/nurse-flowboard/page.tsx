@@ -7,9 +7,12 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
+import { FinalReviewModal } from '@/components/FinalReviewModal'
 import { canJoinTelemedicine, getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
+import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
+import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
 import { UserRole } from '@/lib/roles'
 
 interface Appointment {
@@ -34,6 +37,7 @@ interface Appointment {
     last_name: string
     email: string | null
     phone: string | null
+    date_of_birth: string | null
   }
 }
 
@@ -49,6 +53,23 @@ interface AvailableDoctor {
 const NURSE_FLOWBOARD_CACHE_KEY = 'nurse_flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
+function formatDob(dateString: string | null | undefined): string | null {
+  if (!dateString) return null
+  const d = new Date(dateString + 'T00:00:00')
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+}
+
+function dobForSearch(dateString: string | null | undefined): string {
+  if (!dateString) return ''
+  const d = new Date(dateString + 'T00:00:00')
+  if (isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 function NurseFlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
@@ -61,7 +82,6 @@ function NurseFlowboardPage() {
       return []
     }
   })
-  const [filteredAppointments, setFilteredAppointments] = useState<Appointment[]>([])
   const [availableDoctors, setAvailableDoctors] = useState<AvailableDoctor[]>([])
   const [loading, setLoading] = useState(() => {
     if (typeof window === 'undefined') return true
@@ -69,6 +89,9 @@ function NurseFlowboardPage() {
   })
   const [assigningDoctor, setAssigningDoctor] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [dobYear, setDobYear] = useState('')
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [pageSize, setPageSize] = useState(25)
@@ -81,6 +104,11 @@ function NurseFlowboardPage() {
   } | null>(null)
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
+  const [showFinalReview, setShowFinalReview] = useState<{
+    encounterId: number
+    appointmentId: number
+    patientId: number
+  } | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const initialLoadDone = useRef(false)
   const supabase = useMemo(() => createClient(), [])
@@ -136,7 +164,7 @@ function NurseFlowboardPage() {
 
       const { data: appointmentsData, error: appointmentsError } = await supabase
         .from('appointments')
-        .select('id, patient_id, appointment_date, appointment_time, onsite_type, status, notes, created_at')
+        .select('id, patient_id, appointment_date, appointment_time, onsite_type, created_at')
         .order('appointment_date', { ascending: true })
         .order('appointment_time', { ascending: true })
 
@@ -151,7 +179,7 @@ function NurseFlowboardPage() {
 
         const { data: patientsData, error: patientsError } = await supabase
           .from('patients')
-          .select('id, first_name, last_name, email, phone')
+          .select('id, first_name, last_name, email, phone, date_of_birth')
           .in('id', patientIds)
 
         if (patientsError) {
@@ -199,7 +227,6 @@ function NurseFlowboardPage() {
         })
 
         setAppointments(appointmentsWithDetails as Appointment[])
-        setFilteredAppointments(appointmentsWithDetails as Appointment[])
         try {
           sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
         } catch {
@@ -207,7 +234,6 @@ function NurseFlowboardPage() {
         }
       } else {
         setAppointments([])
-        setFilteredAppointments([])
       }
     } catch (error) {
       console.error('Error in fetchAllAppointments:', error)
@@ -237,18 +263,27 @@ function NurseFlowboardPage() {
     fetchAvailableDoctors()
   }
 
-  // Filter and sort appointments
-  useEffect(() => {
+  // Filter and sort appointments (useMemo so sort/filter updates immediately)
+  const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(a => 
-        a.patient?.first_name.toLowerCase().includes(query) ||
-        a.patient?.last_name.toLowerCase().includes(query) ||
-        a.patient_id.toString().includes(query) ||
-        a.assigned_doctor?.full_name.toLowerCase().includes(query)
+    if (dobYear || dobMonth || dobDay) {
+      result = result.filter((a) =>
+        matchDob(a.patient?.date_of_birth, dobYear, dobMonth, dobDay)
+      )
+    }
+
+    // Search filter (null-safe) — name, ID, provider, email, phone. DOB is via dropdowns.
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim()
+      result = result.filter(
+        (a) =>
+          (a.patient?.first_name ?? '').toLowerCase().includes(query) ||
+          (a.patient?.last_name ?? '').toLowerCase().includes(query) ||
+          a.patient_id.toString().includes(query) ||
+          (a.assigned_doctor?.full_name ?? '').toLowerCase().includes(query) ||
+          (a.patient?.email ?? '').toLowerCase().includes(query) ||
+          (a.patient?.phone ?? '').includes(query)
       )
     }
 
@@ -257,29 +292,29 @@ function NurseFlowboardPage() {
       result = result.filter(a => a.encounter_status === filterStatus)
     }
 
-    // Sort
+    // Sort (copy then sort so we return a new array and React updates the list)
     switch (sortBy) {
       case 'time':
-        result.sort((a, b) => {
+        result = [...result].sort((a, b) => {
           const dateA = a.appointment_date && a.appointment_time ? new Date(`${a.appointment_date}T${a.appointment_time}`) : new Date(0)
           const dateB = b.appointment_date && b.appointment_time ? new Date(`${b.appointment_date}T${b.appointment_time}`) : new Date(0)
           return dateA.getTime() - dateB.getTime()
         })
         break
       case 'name':
-        result.sort((a, b) => {
-          const nameA = `${a.patient?.last_name || ''} ${a.patient?.first_name || ''}`
-          const nameB = `${b.patient?.last_name || ''} ${b.patient?.first_name || ''}`
+        result = [...result].sort((a, b) => {
+          const nameA = `${a.patient?.last_name ?? ''} ${a.patient?.first_name ?? ''}`.trim()
+          const nameB = `${b.patient?.last_name ?? ''} ${b.patient?.first_name ?? ''}`.trim()
           return nameA.localeCompare(nameB)
         })
         break
       case 'treatment':
-        result.sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
+        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
         break
     }
 
-    setFilteredAppointments(result)
-  }, [appointments, searchQuery, sortBy, filterStatus])
+    return result
+  }, [appointments, dobYear, dobMonth, dobDay, searchQuery, sortBy, filterStatus])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -295,12 +330,6 @@ function NurseFlowboardPage() {
       const doctorIdNum = parseInt(doctorId)
       if (isNaN(doctorIdNum)) {
         alert('Invalid doctor ID')
-        return
-      }
-
-      const appointment = appointments.find(a => a.id === appointmentId)
-      if (!appointment) {
-        alert('Appointment not found')
         return
       }
 
@@ -327,6 +356,7 @@ function NurseFlowboardPage() {
         .eq('appointment_id', appointmentId)
         .maybeSingle()
 
+      let encounterIdForTimeline: number
       if (existingEncounter) {
         // Update encounter with doctor_id and set status to provider_assigned
         const { error } = await supabase
@@ -343,22 +373,36 @@ function NurseFlowboardPage() {
           alert('Failed to assign doctor. Please try again.')
           return
         }
+        encounterIdForTimeline = existingEncounter.id
       } else {
         // Create new encounter with doctor_id and status provider_assigned
-        const { error } = await supabase
+        // Note: patient_id is not needed - it can be retrieved via appointment_id foreign key
+        const { data: inserted, error } = await supabase
           .from('encounters')
           .insert({
             appointment_id: appointmentId,
-            patient_id: appointment.patient_id,
             doctor_id: doctorIdNum,
             status: 'provider_assigned',
           })
+          .select('id')
+          .single()
 
         if (error) {
           console.error('Error creating encounter:', error)
-          alert('Failed to assign doctor. Please try again.')
+          console.error('Encounter data:', { appointment_id: appointmentId, doctor_id: doctorIdNum, status: 'provider_assigned' })
+          alert(`Failed to assign doctor: ${error.message}`)
           return
         }
+        encounterIdForTimeline = inserted?.id ?? 0
+      }
+
+      if (encounterIdForTimeline && user?.id) {
+        const profileId = await getProfileId(supabase, user.id)
+        await insertStatusTimeline(supabase, {
+          encounterId: encounterIdForTimeline,
+          status: 'provider_assigned',
+          profileId,
+        })
       }
 
       // Update appointment status to in_progress
@@ -505,6 +549,19 @@ function NurseFlowboardPage() {
             </div>
           </div>
 
+            {/* Search by DOB — Year, then Month, then Day */}
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <SearchByDobDropdowns
+                year={dobYear}
+                month={dobMonth}
+                day={dobDay}
+                onYearChange={(v) => { setDobYear(v); setPage(1) }}
+                onMonthChange={(v) => { setDobMonth(v); setPage(1) }}
+                onDayChange={(v) => { setDobDay(v); setPage(1) }}
+              />
+            </div>
+          </div>
+
           {/* Results count, page size, and available doctors */}
           <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-blue-200">
@@ -514,7 +571,7 @@ function NurseFlowboardPage() {
                 {Math.min(page * pageSize, filteredAppointments.length)}
               </span>{' '}
               of <span className="text-white font-medium">{filteredAppointments.length}</span> appointments
-              {searchQuery || filterStatus !== 'all'
+              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
                 ? ` (filtered from ${appointments.length})`
                 : ''}
             </p>
@@ -541,9 +598,23 @@ function NurseFlowboardPage() {
                   <span className="font-semibold">{availableDoctors.length}</span> provider(s) available
                 </p>
               )}
+              {(searchQuery || dobYear || dobMonth || dobDay) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setDobYear('')
+                    setDobMonth('')
+                    setDobDay('')
+                    setPage(1)
+                  }}
+                  className="text-sm text-blue-300 hover:text-white transition-colors"
+                >
+                  Clear filters
+                </button>
+              )}
             </div>
           </div>
-        </div>
 
         {/* Appointments Table */}
         {loading ? (
@@ -558,11 +629,11 @@ function NurseFlowboardPage() {
               </svg>
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">
-              {searchQuery || filterStatus !== 'all' ? 'No Results Found' : 'No Appointments'}
+              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay ? 'No Results Found' : 'No Appointments'}
             </h3>
             <p className="text-blue-200">
-              {searchQuery || filterStatus !== 'all' 
-                ? 'Try adjusting your search or filters.' 
+              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
+                ? 'Try adjusting your search or filters.'
                 : 'No appointments have been created yet.'}
             </p>
           </div>
@@ -600,6 +671,9 @@ function NurseFlowboardPage() {
                       {appointment.patient?.first_name?.charAt(0) || '?'}{appointment.patient?.last_name?.charAt(0) || ''}
                     </div>
                     <div>
+                      <p className="text-blue-300/90 text-xs mb-0.5">
+                        DOB: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
+                      </p>
                       <h3 className="text-white font-semibold text-sm">
                         {appointment.patient
                           ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
@@ -718,6 +792,22 @@ function NurseFlowboardPage() {
                         Vitals
                       </button>
                     )}
+                    {appointment.encounter_status === 'consultation_concluded' &&
+                      appointment.encounter_id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setShowFinalReview({
+                            encounterId: appointment.encounter_id!,
+                            appointmentId: appointment.id,
+                            patientId: appointment.patient_id,
+                          })
+                        }}
+                        className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg text-sm font-medium hover:from-cyan-600 hover:to-blue-600 transition-all"
+                      >
+                        Final Review
+                      </button>
+                    )}
                     {availableDoctors.length === 0 && !appointment.assigned_doctor && (
                       <span className="text-red-300 text-xs">No providers available</span>
                     )}
@@ -769,10 +859,10 @@ function NurseFlowboardPage() {
             fetchAllAppointments()
           }}
         />
-      )}
+        )}
 
-      {/* Assign Provider Modal */}
-      {showAssignModal && (
+        {/* Assign Provider Modal */}
+        {showAssignModal && (
         <AssignProviderModal
           appointment={showAssignModal.appointment}
           availableDoctors={availableDoctors}
@@ -788,10 +878,10 @@ function NurseFlowboardPage() {
           }}
           onClose={() => setShowAssignModal(null)}
         />
-      )}
+        )}
 
-      {/* Encounter Detail Modal */}
-      {selectedEncounter && (
+        {/* Encounter Detail Modal */}
+        {selectedEncounter && (
         <EncounterDetailModal
           encounterId={selectedEncounter.encounterId}
           appointmentId={selectedEncounter.appointmentId}
@@ -803,7 +893,21 @@ function NurseFlowboardPage() {
           }}
           canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
-      )}
+        )}
+
+        {/* Final Review Modal */}
+        {showFinalReview && (
+        <FinalReviewModal
+          encounterId={showFinalReview.encounterId}
+          appointmentId={showFinalReview.appointmentId}
+          patientId={showFinalReview.patientId}
+          isOpen={!!showFinalReview}
+          onClose={() => setShowFinalReview(null)}
+          onComplete={() => {
+            fetchAllAppointments()
+          }}
+        />
+        )}
     </div>
   )
 }

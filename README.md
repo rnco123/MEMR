@@ -70,7 +70,7 @@ You'll need to provide the following environment variables:
 - `NEXT_PUBLIC_DAILY_DOMAIN`: Your Daily.co domain (e.g., `your-domain.daily.co`)
 
 ### SOAP Notes API (optional)
-- `NEXT_PUBLIC_SOAP_NOTES_API_URL`: Full URL for the Complete SOAP Notes API (e.g., `https://mcm-soapnotes-production.up.railway.app/api/soap/complete-soapnotes`). When set, triggers AI SOAP completion after vitals are recorded.
+- `NEXT_PUBLIC_SOAP_NOTES_API_URL`: Full URL for the Complete SOAP Notes API (e.g., `https://mcm-soapnotes-production.up.railway.app/api/soap/complete-soap`). When set, triggers AI SOAP completion after vitals are recorded.
 
 ## Usage
 

@@ -6,6 +6,7 @@ import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import type { UserRole } from './roles'
 import { isValidRole, mapRoleToEnum } from './roles'
+import { fetchUserRole } from './fetch-user-role'
 
 interface AuthContextType {
   user: User | null
@@ -46,64 +47,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fetch role from Supabase profiles table (matches existing schema)
-  const fetchUserRole = async (userId: string, retryCount = 0): Promise<UserRole | null> => {
+  // Fetch role from Supabase (uses shared helper with uid/id fallback)
+  const fetchUserRoleWithRetry = async (userId: string, retryCount = 0): Promise<UserRole | null> => {
     try {
-      // Add timeout to prevent hanging
       const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), 5000) // 5 second timeout
+        setTimeout(() => resolve(null), 5000)
       })
-
-      const queryPromise = supabase
-        .from('profiles')
-        .select('role')
-        .eq('uid', userId)
-        .single()
-
-      const result = await Promise.race([queryPromise, timeoutPromise])
+      const fetchPromise = fetchUserRole(supabase, userId)
+      const result = await Promise.race([fetchPromise, timeoutPromise])
 
       if (result === null) {
-        // Timeout occurred - retry once if we haven't already
         if (retryCount < 1) {
           await new Promise(resolve => setTimeout(resolve, 1000))
-          return fetchUserRole(userId, retryCount + 1)
-        }
-        // Silently return null on timeout - role will be fetched on next auth state change
-        return null
-      }
-
-      const { data, error } = result as Awaited<typeof queryPromise>
-
-      if (error || !data) {
-        // Retry once if it's a network error
-        if (retryCount < 1 && error?.code === 'PGRST116') {
-          if (process.env.NODE_ENV === 'development') {
-            console.warn('Role fetch error, retrying...', error?.message)
-          }
-          await new Promise(resolve => setTimeout(resolve, 1000))
-          return fetchUserRole(userId, retryCount + 1)
-        }
-        // Fallback to user metadata if profile doesn't exist
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Error fetching role from profiles:', error?.message || 'No data')
+          return fetchUserRoleWithRetry(userId, retryCount + 1)
         }
         return null
       }
 
-      // Map role to enum (staff maps to nurse)
-      const mappedRole = mapRoleToEnum(data.role)
-      if (mappedRole) {
-        return mappedRole
-      }
-      return null
+      const mappedRole = mapRoleToEnum(result.role)
+      return mappedRole || null
     } catch (error) {
-      // Retry once on unexpected errors
       if (retryCount < 1) {
         if (process.env.NODE_ENV === 'development') {
           console.warn('Unexpected error fetching role, retrying...', error)
         }
         await new Promise(resolve => setTimeout(resolve, 1000))
-        return fetchUserRole(userId, retryCount + 1)
+        return fetchUserRoleWithRetry(userId, retryCount + 1)
       }
       if (process.env.NODE_ENV === 'development') {
         console.error('Error fetching user role:', error)
@@ -123,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // If no role in metadata, fetch from database
-    const dbRole = await fetchUserRole(user.id)
+    const dbRole = await fetchUserRoleWithRetry(user.id)
     if (dbRole) {
       // Update user metadata with role for faster access
       // Store in user metadata to avoid repeated queries
@@ -143,6 +112,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let retryCount = 0
     const maxRetries = 2
     let sessionRefreshInterval: NodeJS.Timeout | null = null
+
+    // Safety: never leave loading true forever (e.g. if extractRole or getSession hangs)
+    const loadingSafetyTimeout = setTimeout(() => {
+      if (isMounted) {
+        setLoading(false)
+      }
+    }, 12000)
     
     // Get initial session with timeout and retry logic
     const initAuth = async () => {
@@ -327,6 +303,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             updateRole(userRole, true) // Preserve role on temporary failures
           }
         }
+        if (isMounted) {
+          setLoading(false)
+        }
         // Setup periodic refresh if we have a session
         setupPeriodicRefresh()
       } else {
@@ -409,6 +388,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false
+      clearTimeout(loadingSafetyTimeout)
       if (sessionRefreshInterval) {
         clearInterval(sessionRefreshInterval)
       }

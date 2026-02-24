@@ -40,7 +40,7 @@ NEXT_PUBLIC_SENTRY_DSN=your_sentry_dsn
 SENTRY_ORG=myclinicmd
 SENTRY_PROJECT=javascript-nextjs
 SENTRY_AUTH_TOKEN=your_sentry_auth_token (for source maps)
-NEXT_PUBLIC_SOAP_NOTES_API_URL=https://mcm-soapnotes-production.up.railway.app/api/soap/complete-soapnotes
+NEXT_PUBLIC_SOAP_NOTES_API_URL=https://mcm-soapnotes-production.up.railway.app/api/soap/complete-soap
 ```
 
 **Important:**

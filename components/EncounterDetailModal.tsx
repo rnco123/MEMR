@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
+import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 
 interface Patient {
   id: number
@@ -85,9 +86,26 @@ interface Encounter {
   appointment_id: number
   patient_id: number
   intake_id: number | null
+  pharmacy_id: number | null
   status: string
   encounter_code: string | null
   created_at: string
+}
+
+interface Appointment {
+  id: number
+  appointment_date: string | null
+  appointment_time: string | null
+  onsite_type: string
+}
+
+interface Pharmacy {
+  id: number
+  name?: string | null
+  address?: string | null
+  phone?: string | null
+  email?: string | null
+  [key: string]: unknown
 }
 
 interface EncounterDetailModalProps {
@@ -117,6 +135,8 @@ export function EncounterDetailModal({
   const [vitals, setVitals] = useState<Vitals | null>(null)
   const [soapNotes, setSoapNotes] = useState<SOAPNotes | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
+  const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
+  const [appointment, setAppointment] = useState<Appointment | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -142,19 +162,39 @@ export function EncounterDetailModal({
 
         setEncounter(encounterData as Encounter)
 
-        // Fetch intake form if intake_id exists
+        // Fetch appointment to get onsite_type
+        const { data: appointmentData } = await supabase
+          .from('appointments')
+          .select('id, appointment_date, appointment_time, onsite_type')
+          .eq('id', appointmentId)
+          .single()
+
+        if (appointmentData) {
+          setAppointment(appointmentData as Appointment)
+        }
+
+        // Fetch intake form: try encounter.intake_id first, then by appointment_id (intake_form links to appointment)
+        let intakeData: unknown = null
         if (encounterData?.intake_id) {
-          const { data: intakeData, error: intakeError } = await supabase
+          const res = await supabase
             .from('intake_form')
             .select('*')
             .eq('id', encounterData.intake_id)
             .maybeSingle()
-
-          if (intakeError) {
-            console.error('Error fetching intake form:', intakeError)
-          } else if (intakeData) {
-            setIntake(intakeData as IntakeForm)
-          }
+          if (res.error) console.error('Error fetching intake form by id:', res.error)
+          intakeData = res.data
+        }
+        if (!intakeData && appointmentId) {
+          const res = await supabase
+            .from('intake_form')
+            .select('*')
+            .eq('appointment_id', appointmentId)
+            .maybeSingle()
+          if (res.error) console.error('Error fetching intake form by appointment:', res.error)
+          intakeData = res.data
+        }
+        if (intakeData) {
+          setIntake(intakeData as IntakeForm)
         }
 
         // Fetch vitals
@@ -207,6 +247,21 @@ export function EncounterDetailModal({
           console.error('Error fetching SOAP notes:', soapError)
         }
         setSoapNotes(soapData)
+
+        // Fetch pharmacy if pharmacy_id exists
+        if (encounterData?.pharmacy_id) {
+          const { data: pharmacyData, error: pharmacyError } = await supabase
+            .from('pharmacy')
+            .select('*')
+            .eq('id', encounterData.pharmacy_id)
+            .maybeSingle()
+
+          if (pharmacyError) {
+            console.error('Error fetching pharmacy:', pharmacyError)
+          } else if (pharmacyData) {
+            setPharmacy(pharmacyData as Pharmacy)
+          }
+        }
       } catch (error) {
         console.error('Error fetching encounter details:', error)
       } finally {
@@ -275,10 +330,26 @@ export function EncounterDetailModal({
       <div className="bg-slate-800 border border-white/20 rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-white/10 bg-slate-800 flex-shrink-0">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 flex-wrap">
             <h2 className="text-2xl font-bold text-white">Encounter Details</h2>
             {encounter?.encounter_code && (
               <span className="text-sm text-blue-300 font-mono">#{encounter.encounter_code}</span>
+            )}
+            {encounter?.status && (
+              <span
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium text-white border ${
+                  encounter.status === 'appointment_initiated' ? 'bg-gray-500/20 border-gray-500/50' :
+                  encounter.status === 'provider_assigned' ? 'bg-blue-500/20 border-blue-500/50' :
+                  encounter.status === 'vitals_assessed' ? 'bg-purple-500/20 border-purple-500/50' :
+                  encounter.status === 'in_consultation' ? 'bg-yellow-500/20 border-yellow-500/50' :
+                  encounter.status === 'consultation_concluded' ? 'bg-orange-500/20 border-orange-500/50' :
+                  encounter.status === 'final_review' ? 'bg-cyan-500/20 border-cyan-500/50' :
+                  encounter.status === 'completed' ? 'bg-green-500/20 border-green-500/50' :
+                  'bg-white/10 border-white/20'
+                }`}
+              >
+                {getStatusInfo(encounter.status as EncounterStatus)?.label ?? encounter.status}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -312,6 +383,48 @@ export function EncounterDetailModal({
             </div>
           ) : (
             <div className="space-y-6">
+              {/* Appointment Details */}
+              {appointment && (
+                <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                  <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    Appointment Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-blue-200 text-sm mb-1">Date</p>
+                      <p className="text-white font-semibold">{formatDate(appointment.appointment_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-blue-200 text-sm mb-1">Time</p>
+                      <p className="text-white font-semibold">
+                        {appointment.appointment_time 
+                          ? new Date(`2000-01-01T${appointment.appointment_time}`).toLocaleTimeString('en-US', { 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true 
+                            })
+                          : 'N/A'}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-blue-200 text-sm mb-1">Type</p>
+                      <p className="text-white font-semibold">
+                        <span className={`px-3 py-1 rounded-lg text-sm ${
+                          appointment.onsite_type === 'onsite' 
+                            ? 'bg-green-500/20 text-green-300 border border-green-500/50' 
+                            : 'bg-blue-500/20 text-blue-300 border border-blue-500/50'
+                        }`}>
+                          {appointment.onsite_type === 'onsite' ? 'Onsite' : 'Offsite'}
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Patient Details */}
               <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                 <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -579,6 +692,49 @@ export function EncounterDetailModal({
                   </div>
                 ) : (
                   <p className="text-blue-200">SOAP notes not available yet</p>
+                )}
+              </div>
+
+              {/* Pharmacy */}
+              <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                  </svg>
+                  Pharmacy
+                </h3>
+                {pharmacy ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {pharmacy.name && (
+                      <div>
+                        <p className="text-blue-200 text-sm mb-1">Name</p>
+                        <p className="text-white font-semibold">{pharmacy.name}</p>
+                      </div>
+                    )}
+                    {pharmacy.address && (
+                      <div>
+                        <p className="text-blue-200 text-sm mb-1">Address</p>
+                        <p className="text-white">{pharmacy.address}</p>
+                      </div>
+                    )}
+                    {pharmacy.phone && (
+                      <div>
+                        <p className="text-blue-200 text-sm mb-1">Phone</p>
+                        <p className="text-white">{pharmacy.phone}</p>
+                      </div>
+                    )}
+                    {pharmacy.email && (
+                      <div>
+                        <p className="text-blue-200 text-sm mb-1">Email</p>
+                        <p className="text-white">{pharmacy.email}</p>
+                      </div>
+                    )}
+                    {!pharmacy.name && !pharmacy.address && !pharmacy.phone && !pharmacy.email && (
+                      <p className="text-blue-200">Pharmacy #{pharmacy.id} (no details available)</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-blue-200">No pharmacy assigned</p>
                 )}
               </div>
             </div>
