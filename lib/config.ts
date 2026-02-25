@@ -42,12 +42,13 @@ export const config = {
   },
 } as const
 
-// Validate critical config on module load (only in production runtime, not during build)
-const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || 
-                     process.env.NEXT_PHASE === 'phase-development-build' ||
-                     process.env.NEXT_PHASE === 'phase-export'
+// Validate critical config on module load — server only (client never has SERVICE_ROLE or ADMIN_SIGNUP_PIN)
+const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' ||
+                    process.env.NEXT_PHASE === 'phase-development-build' ||
+                    process.env.NEXT_PHASE === 'phase-export'
+const isServer = typeof window === 'undefined'
 
-if (config.app.isProduction && !isBuildTime) {
+if (config.app.isProduction && !isBuildTime && isServer) {
   const requiredVars = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
