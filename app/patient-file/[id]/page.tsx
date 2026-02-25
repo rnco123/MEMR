@@ -1392,7 +1392,7 @@ export default function PatientFilePage() {
                       <div className="space-y-3">
                         {documents.map((doc: any) => {
                           const isDefault = doc.is_default || doc.id?.toString().startsWith('default-')
-                          const hasFile = doc.has_file || doc.file_url
+                          const hasFile = doc.file_url
                           
                           return (
                             <div
@@ -1645,7 +1645,7 @@ export default function PatientFilePage() {
                             <div className="flex-1 min-w-0 pr-12">
                               <h3 className="text-base font-semibold text-white truncate">{viewingDocument.document_name}</h3>
                               <p className="text-xs text-blue-300 mt-0.5 truncate">
-                                {viewingDocument.file_url || viewingDocument.has_file
+                                {viewingDocument.file_url
                                   ? formatFileSize(viewingDocument.file_size ?? 0)
                                   : 'No file uploaded'}
                               </p>
@@ -1654,7 +1654,7 @@ export default function PatientFilePage() {
 
                           {/* Scrollable Viewer Content */}
                           <div className="flex-1 overflow-y-auto overflow-x-auto p-3 min-h-0">
-                            {!(viewingDocument.file_url || viewingDocument.has_file) ? (
+                            {!viewingDocument.file_url ? (
                               <div className="flex flex-col items-center justify-center h-full text-center py-20">
                                 <svg className="w-16 h-16 text-blue-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />

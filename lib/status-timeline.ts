@@ -24,7 +24,7 @@ export async function getProfileId(
   authUserId: string
 ): Promise<string | null> {
   // Try profiles.id (production schema)
-  let result = await supabase
+  const result = await supabase
     .from('profiles')
     .select('id')
     .eq('id', authUserId)
@@ -39,13 +39,13 @@ export async function getProfileId(
 
   if (result.error && isSchemaError) {
     // Fallback: profiles.uid as PK (id may not exist; use uid as profile id)
-    result = await supabase
+    const fallback = await supabase
       .from('profiles')
       .select('uid')
       .eq('uid', authUserId)
       .maybeSingle()
-    if (result.data) {
-      return (result.data as { uid: string }).uid
+    if (fallback.data) {
+      return (fallback.data as { uid: string }).uid
     }
   }
 
