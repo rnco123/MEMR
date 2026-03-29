@@ -1,3 +1,5 @@
+'use client'
+
 import Image from 'next/image'
 
 export type BrandLogoVariant = 'header' | 'hero' | 'inline'

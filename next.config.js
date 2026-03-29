@@ -7,11 +7,11 @@ const nextConfig = {
   swcMinify: true,
   // Enable type checking in production builds
   typescript: {
-    ignoreBuildErrors: process.env.NODE_ENV === 'development',
+    // Opt in with NEXT_IGNORE_TYPECHECK=1 (e.g. emergency CI); never tie to NODE_ENV — .env NODE_ENV breaks builds
+    ignoreBuildErrors: process.env.NEXT_IGNORE_TYPECHECK === '1',
   },
   eslint: {
-    // Enable ESLint in production builds
-    ignoreDuringBuilds: process.env.NODE_ENV === 'development',
+    ignoreDuringBuilds: process.env.NEXT_IGNORE_ESLINT === '1',
   },
   // Security headers
   async headers() {

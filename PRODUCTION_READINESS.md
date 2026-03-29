@@ -80,7 +80,7 @@ Set these in your hosting platform:
 - `NEXT_PUBLIC_DAILY_API_KEY`
 - `NEXT_PUBLIC_DAILY_DOMAIN`
 - `ADMIN_SIGNUP_PIN` (secure 4-digit PIN)
-- `NODE_ENV=production`
+- `NODE_ENV=production` for the **runtime** service (or omit and rely on the platform). **Do not** set `NODE_ENV=development` in Railway or in a committed `.env` — it is loaded during `next build` and breaks the build (prerender `useContext` errors). The `npm run build` script forces `NODE_ENV=production` for the compile step.
 
 **Optional:**
 - `NEXT_PUBLIC_SENTRY_DSN` (for error tracking)
