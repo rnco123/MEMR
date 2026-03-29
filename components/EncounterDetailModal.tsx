@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
+import { EncounterRoomingPanel } from './EncounterRoomingPanel'
 
 interface Patient {
   id: number
@@ -90,6 +91,12 @@ interface Encounter {
   status: string
   encounter_code: string | null
   created_at: string
+  identity_verified_at?: string | null
+  prescribing_location_ack_at?: string | null
+  ma_supervision_ack_at?: string | null
+  ready_for_doctor_at?: string | null
+  ma_exam_findings?: string | null
+  consent_ack?: Record<string, string> | null
 }
 
 interface Appointment {
@@ -137,6 +144,7 @@ export function EncounterDetailModal({
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
+  const [pharmacies, setPharmacies] = useState<{ id: number; name: string | null }[]>([])
 
   useEffect(() => {
     if (!isOpen) return
@@ -161,6 +169,9 @@ export function EncounterDetailModal({
           .single()
 
         setEncounter(encounterData as Encounter)
+
+        const { data: pharmList } = await supabase.from('pharmacy').select('id, name').order('name')
+        setPharmacies((pharmList as { id: number; name: string | null }[]) ?? [])
 
         // Fetch appointment to get onsite_type
         const { data: appointmentData } = await supabase
@@ -476,6 +487,22 @@ export function EncounterDetailModal({
                   <p className="text-blue-200">Patient information not available</p>
                 )}
               </div>
+
+              {encounter && (
+                <EncounterRoomingPanel
+                  encounterId={encounterId}
+                  encounter={encounter}
+                  pharmacies={pharmacies}
+                  onUpdated={async () => {
+                    const { data: enc } = await supabase
+                      .from('encounters')
+                      .select('*')
+                      .eq('id', encounterId)
+                      .single()
+                    if (enc) setEncounter(enc as Encounter)
+                  }}
+                />
+              )}
 
               {/* Intake Form */}
               <div className="bg-white/5 border border-white/10 rounded-xl p-6">

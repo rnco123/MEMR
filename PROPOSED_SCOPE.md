@@ -1,120 +1,82 @@
 # Hybrid Telemedicine EMR Workflow - Implementation Status
 
-## STAGE 1: DIGITAL CHECK-IN — ~30% complete
+**Excluded from MEMR (other products):** unified QR/public intake portal, payment gateway/checkout, presales POS.
+
+## STAGE 1: DIGITAL CHECK-IN — improved
 
 ### Implemented:
-- ✅ Intake form (chief complaint, history, meds, allergies) — intake_form table exists
-- ✅ Basic appointment/appointment flow
+- ✅ Intake form (chief complaint, history, meds, allergies) — `intake_form`
+- ✅ Basic appointment/encounter flow
+- ✅ **Rooming & compliance panel** on encounter detail — identity / location / MA supervision / ready-for-doctor timestamps, pharmacy selection, consent acknowledgments (JSON), MA exam findings (`EncounterRoomingPanel`, `/api/encounters/[id]/rooming`)
+- ✅ **Pre-visit summary** on telemedicine sidebar — rule-based summary from intake (`PreVisitSummary`)
 
-### Missing:
-- ❌ OTP identity verification
-- ❌ Consent bundle signing workflow (table exists but no UI/workflow)
-- ❌ Pharmacy selection
-- ❌ MA dashboard for check-in monitoring (nurse-flowboard exists but not check-in specific)
-- ❌ AI-structured intake review
-- ❌ Doctor preview of patient queue (flowboard exists but not check-in preview)
+### Missing / partial:
+- ❌ OTP identity verification (optional product)
+- ❌ AI document autofill from PDF/image
+- ❌ Dedicated “check-in only” MA board (flowboard + encounter modal used instead)
 
-## STAGE 2: ROOMING — ~60% complete
-
-### Implemented:
-- ✅ Vitals recording (BP, Temp, Pulse, O2, Weight) — VitalsFormModal component
-- ✅ Encrypted telemedicine session — Daily.co integration
-- ✅ Encounter status management — status transitions exist
-
-### Missing:
-- ❌ Identity confirmation step
-- ❌ Physical location confirmation (for legal prescribing)
-- ❌ MA statement that they will remain in room
-- ❌ "Ready for Doctor" status (closest is vitals_assessed)
-- ❌ Doctor notification when patient is ready
-
-## STAGE 3: TELEMEDICINE CONSULT — ~85% complete
+## STAGE 2: ROOMING — improved
 
 ### Implemented:
-- ✅ Secure video session — Daily.co integration
-- ✅ Doctor reviews intake — displayed on video page
-- ✅ Doctor asks questions — video call functionality
-- ✅ AI-generated SOAP note — ai_soapnotes table
-- ✅ Doctor edits SOAP note — doctor_soapnotes table with editing UI
-- ✅ Doctor signs encounter — handleEndConsultation sets status to consultation_concluded
-- ✅ Treatment plan — SOAP plan section
+- ✅ Vitals, Daily.co, encounter status
+- ✅ **Rooming attestations** (DB + UI): `identity_verified_at`, `prescribing_location_ack_at`, `ma_supervision_ack_at`, `ready_for_doctor_at`, `pharmacy_id` on encounter
+
+### Missing / partial:
+- ❌ Push notification to doctor when “ready” (can add later)
+- ❌ Separate enum value `ready_for_doctor` — **timestamp `ready_for_doctor_at` used** instead
+
+## STAGE 3: TELEMEDICINE CONSULT — improved
+
+### Implemented:
+- ✅ Video, intake, AI SOAP, doctor SOAP, consultation end
+- ✅ **Pre-visit summary** card (structured from intake)
 
 ### Missing:
-- ❌ AI-generated pre-visit summary (intake exists but not structured as summary)
-- ❌ MA physical exam maneuvers UI (no UI for MA to report findings during exam)
-- ❌ MA reports findings aloud (no structured reporting mechanism)
+- ❌ Automated differential / ICD-10 / drug–drug (not in scope of this app layer)
 
-## STAGE 4: ORDERS EXECUTION — 0% complete
+## STAGE 4: ORDERS EXECUTION — implemented (MVP)
 
-### Missing:
-- ❌ Orders system (lab draws, injections, rapid testing, referrals)
-- ❌ MA order execution interface
-- ❌ Order tracking/status
-- ❌ Patient remains in room tracking
+### Implemented:
+- ✅ **`encounter_orders`** table — lab_draw, injection, immunization, poc_test, referral, other
+- ✅ **`/dashboard/orders`** — list, filter, log order by encounter, MA status (start/done)
+- ✅ **API:** `GET/POST /api/encounters/[id]/orders`, `PATCH /api/orders/[orderId]`
 
-## STAGE 5: CHECKOUT / PAYMENT GATE — 0% complete
+## STAGE 5: CHECKOUT / PAYMENT GATE — excluded
 
-### Missing:
-- ❌ Payment processing (Cash, Credit, Debit, Zelle)
-- ❌ Receipt generation
-- ❌ Care plan delivery
-- ❌ Payment confirmation workflow
-- ❌ Prescription release (after payment)
-- ❌ Encounter auto-lock (after payment)
+Payment, receipts, pay-to-release Rx handled **outside MEMR** per product split.
 
-## STAGE 6: POST-VISIT MONITORING — 0% complete
+### Optional in MEMR later:
+- Encounter lock strictly after payment — **not enforced** (no payment here)
 
-### Missing:
-- ❌ Follow-up reminders
-- ❌ Lab notifications
-- ❌ Prescription notifications
-- ❌ MA abnormal lab monitoring
-- ❌ Follow-up calls tracking
-- ❌ Escalation to doctor workflow
+## STAGE 6: POST-VISIT MONITORING — implemented (MVP)
 
-## Overall Completion: ~35%
+### Implemented:
+- ✅ **`post_visit_tasks`** — follow-up, lab review, Rx review, escalation, callback
+- ✅ **`/dashboard/follow-ups`** — create tasks, status updates
+- ✅ **API:** `GET/POST /api/post-visit-tasks`, `PATCH /api/post-visit-tasks/[taskId]`
 
-### Summary by Stage:
+### Missing (future):
+- ❌ Automated lab/Rx polling, SMS/email reminders (integrate when backend ready)
 
-| Stage | Completion | Critical Missing Items |
-|-------|------------|------------------------|
-| Stage 1: Digital Check-In | 30% | OTP, Consent, Pharmacy Selection |
-| Stage 2: Rooming | 60% | Identity/Location Confirmation, Notifications |
-| Stage 3: Telemedicine Consult | 85% | Pre-visit Summary, MA Exam Reporting |
-| Stage 4: Orders Execution | 0% | Entire orders system |
-| Stage 5: Checkout/Payment | 0% | Entire payment system |
-| Stage 6: Post-Visit | 0% | Entire monitoring system |
+## E-PRESCRIBE / PRESCRIPTIONS — implemented (MVP)
 
-## Critical Gaps:
+- ✅ **`prescriptions`** table — `prescriber_doctor_id`, `patient_id`, optional **`encounter_id`**, `external_rx_id` for future network sync
+- ✅ **`/dashboard/prescriptions`** (doctors only) — list + manual entry
+- ✅ **API:** `GET/POST /api/prescriptions`
+- ✅ **RLS:** prescribers see **only their own** rows
 
-1. **Payment system (Stage 5)** — blocks prescription release and encounter locking
-2. **Orders system (Stage 4)** — needed for MA to execute doctor orders
-3. **Check-in workflow (Stage 1)** — OTP, consent, pharmacy selection
-4. **Post-visit monitoring (Stage 6)** — follow-ups, notifications, escalations
+---
 
-## What Works:
+## Overall completion (MEMR-only scope): **~70%** functional MVP
 
-- Core telemedicine video functionality
-- Vitals recording
-- SOAP note generation and editing
-- Encounter status management
-- Basic intake form structure
+Apply migration: `supabase/migrations/033_memr_workflow_scope.sql`
 
-## Database Enums
+## Database (new in 033)
 
-### Schema: `public`
+| Table | Purpose |
+|-------|---------|
+| `prescriptions` | Doctor prescriptions; optional link to encounter |
+| `encounter_orders` | Clinical orders per encounter |
+| `post_visit_tasks` | Post-visit follow-up tasks |
 
-| Enum Name | Values |
-|-----------|--------|
-| `gender_enum` | `male`, `female`, `other` |
-| `onsite_enum` | `onsite`, `offsite` |
-| `screening_status_enum` | `dont_remember`, `never`, `month_year` |
-| `encounter_status_enum` | `appointment_initiated`, `provider_assigned`, `vitals_assessed`, `in_consultation`, `consultation_concluded`, `final_review`, `completed` |
-| `transaction_type` | `topup`, `order` |
-| `birth_control_enum` | `Yes`, `No`, `Not Applicable` |
-| `pre_sale_status` | `initiated`, `partially_completed`, `completed` |
-| `credit_type` | `topup`, `order` |
-
-## Summary
-
-The system has a solid foundation for the telemedicine consult (Stage 3) but is missing the check-in, orders, payment, and post-visit workflows.
+**`encounters` columns added:** rooming timestamps, `ma_exam_findings`, `consent_ack` jsonb, `pharmacy_id` (if missing)

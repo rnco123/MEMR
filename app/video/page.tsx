@@ -11,6 +11,7 @@ import { getStatusInfo } from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
+import { PreVisitSummary } from '@/components/PreVisitSummary'
 
 interface Patient {
   id: number
@@ -718,6 +719,12 @@ function VideoPage() {
               <>
                 {detailsTab === 'patient' && (
                   <div className="space-y-4">
+                    {intake && patient && (
+                      <PreVisitSummary
+                        intake={intake}
+                        patientName={`${patient.first_name} ${patient.last_name}`}
+                      />
+                    )}
                     {patient && (
                       <div className="space-y-1 text-gray-300">
                         <p className="font-medium text-white">{patient.first_name} {patient.last_name}</p>

@@ -127,3 +127,60 @@ export const appointmentSchema = z.object({
 })
 
 export type AppointmentInput = z.infer<typeof appointmentSchema>
+
+/** Doctor-recorded prescription (e-prescribe sync can populate external_rx_id) */
+export const prescriptionCreateSchema = z.object({
+  patient_id: z.number().int().positive(),
+  encounter_id: z.number().int().positive().optional().nullable(),
+  medication_name: z.string().min(1).max(500),
+  dosage: z.string().max(500).optional().nullable(),
+  instructions: z.string().max(2000).optional().nullable(),
+  quantity: z.string().max(100).optional().nullable(),
+  refills: z.number().int().min(0).max(99).optional().default(0),
+  status: z.enum(['recorded', 'sent', 'cancelled']).optional(),
+  external_rx_id: z.string().max(200).optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+})
+
+export type PrescriptionCreateInput = z.infer<typeof prescriptionCreateSchema>
+
+export const roomingPatchSchema = z.object({
+  identity_verified: z.boolean().optional(),
+  prescribing_location_ack: z.boolean().optional(),
+  ma_supervision_ack: z.boolean().optional(),
+  ready_for_doctor: z.boolean().optional(),
+  ma_exam_findings: z.string().max(8000).optional().nullable(),
+  consent_ack: z.record(z.string(), z.string()).optional(),
+  pharmacy_id: z.number().int().positive().optional().nullable(),
+})
+
+export type RoomingPatchInput = z.infer<typeof roomingPatchSchema>
+
+export const encounterOrderCreateSchema = z.object({
+  order_type: z.enum(['lab_draw', 'injection', 'immunization', 'poc_test', 'referral', 'other']),
+  title: z.string().min(1).max(500),
+  instructions: z.string().max(2000).optional().nullable(),
+  ordered_by_doctor_id: z.number().int().positive().optional().nullable(),
+})
+
+export type EncounterOrderCreateInput = z.infer<typeof encounterOrderCreateSchema>
+
+export const encounterOrderUpdateSchema = z.object({
+  status: z.enum(['pending', 'in_progress', 'completed', 'cancelled']).optional(),
+})
+
+export const postVisitTaskCreateSchema = z.object({
+  encounter_id: z.number().int().positive().optional().nullable(),
+  patient_id: z.number().int().positive(),
+  task_type: z.enum(['follow_up_reminder', 'lab_review', 'rx_review', 'escalation', 'callback', 'other']),
+  title: z.string().min(1).max(500),
+  due_at: z.string().datetime().optional().nullable(),
+  notes: z.string().max(2000).optional().nullable(),
+})
+
+export type PostVisitTaskCreateInput = z.infer<typeof postVisitTaskCreateSchema>
+
+export const postVisitTaskUpdateSchema = z.object({
+  status: z.enum(['open', 'in_progress', 'done', 'cancelled']).optional(),
+  notes: z.string().max(2000).optional().nullable(),
+})

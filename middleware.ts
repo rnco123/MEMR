@@ -1,16 +1,64 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
-import { UserRole, isValidRole, mapRoleToEnum } from './lib/roles'
+import { UserRole, mapRoleToEnum } from './lib/roles'
 import { validateRequest } from './lib/security/request-validator'
 import { rateLimitCheck } from './lib/rate-limit'
 
-// Define role-based route requirements
-const ROLE_ROUTES: Record<string, UserRole[]> = {
-  '/dashboard': [UserRole.DOCTOR, UserRole.NURSE],
-  // Add more routes as needed
+const isProduction = process.env.NODE_ENV === 'production'
+
+function normalizePathname(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    return pathname.replace(/\/+$/, '') || '/'
+  }
+  return pathname
+}
+
+/**
+ * Role rules aligned with `withRoleProtection` on each page.
+ * Returns null when this path has no extra role requirement in middleware.
+ */
+function getRequiredRolesForPath(pathname: string): UserRole[] | null {
+  const p = normalizePathname(pathname)
+
+  if (p.startsWith('/dashboard/flowboard')) {
+    return [UserRole.DOCTOR]
+  }
+  if (p.startsWith('/dashboard/nurse-flowboard')) {
+    return [UserRole.NURSE, UserRole.STAFF]
+  }
+  if (p.startsWith('/dashboard/patients-history')) {
+    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+  }
+  if (p.startsWith('/dashboard/prescriptions')) {
+    return [UserRole.DOCTOR]
+  }
+  if (p === '/dashboard') {
+    return [UserRole.DOCTOR, UserRole.NURSE]
+  }
+  if (p.startsWith('/dashboard/')) {
+    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+  }
+  if (p.startsWith('/video')) {
+    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+  }
+  if (p.startsWith('/patient-file')) {
+    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+  }
+  return null
+}
+
+/** Do not use `pathname.startsWith('/')` — that matches every path and breaks auth redirects. */
+function isPublicPath(pathname: string, production: boolean): boolean {
+  if (pathname === '/') return true
+  if (pathname === '/login' || pathname === '/signup') return true
+  if (pathname.startsWith('/api')) return true
+  if (!production && pathname === '/test-daily') return true
+  return false
 }
 
 export async function middleware(request: NextRequest) {
+  const pathname = request.nextUrl.pathname
+
   // Security: Validate request
   const requestValidation = validateRequest(request)
   if (!requestValidation.valid) {
@@ -18,6 +66,20 @@ export async function middleware(request: NextRequest) {
       { error: requestValidation.error || 'Invalid request', code: 'SECURITY_ERROR' },
       { status: 400 }
     )
+  }
+
+  // Production: disable dev/diagnostic surfaces
+  if (isProduction) {
+    if (pathname === '/test-daily' || pathname === '/sentry-test') {
+      return NextResponse.redirect(new URL('/', request.url))
+    }
+    if (
+      pathname === '/api/auth/test-login' ||
+      pathname === '/api/daily/test' ||
+      pathname === '/api/test-db-connection'
+    ) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
   }
 
   // Security: Rate limiting for API routes
@@ -73,34 +135,33 @@ export async function middleware(request: NextRequest) {
 
   // Refresh session if needed - this will automatically refresh expired tokens
   const {
-    data: { user },
+    data: { user: initialUser },
     error: userError,
   } = await supabase.auth.getUser()
 
-  const pathname = request.nextUrl.pathname
+  let effectiveUser = initialUser
 
   // If there's an error getting user, try to refresh the session
-  let isAuthenticated = user && !userError
-  
+  let isAuthenticated = !!(initialUser && !userError)
+
   // If there's an error but we have session cookies, try to refresh the session
-  if (userError && !user) {
+  if (userError && !initialUser) {
     // Check if we have session cookies - if so, try to refresh
     const sessionCookies = request.cookies.getAll().filter(
       cookie => cookie.name.includes('sb-') && (cookie.name.includes('auth-token') || cookie.name.includes('refresh-token'))
     )
     const hasSessionCookies = sessionCookies.length > 0
-    
+
     if (hasSessionCookies) {
       // Try to refresh the session
       try {
         const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
         if (!refreshError && session?.user) {
           isAuthenticated = true
-          // Update user from refreshed session
-          const refreshedUser = session.user
-          // Re-check authentication with refreshed session
+          effectiveUser = session.user
           const { data: { user: refreshedUserData } } = await supabase.auth.getUser()
           if (refreshedUserData) {
+            effectiveUser = refreshedUserData
             isAuthenticated = true
           }
         }
@@ -113,11 +174,16 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  if (isAuthenticated && !effectiveUser) {
+    const { data: { user: resolved } } = await supabase.auth.getUser()
+    effectiveUser = resolved ?? null
+  }
+
   // Fetch role from profiles table (matches existing schema)
   let userRole: UserRole | null = null
-  if (isAuthenticated && user) {
+  if (isAuthenticated && effectiveUser) {
     // Try to get role from user metadata first (for test mode)
-    const metadataRole = mapRoleToEnum(user.user_metadata?.role)
+    const metadataRole = mapRoleToEnum(effectiveUser.user_metadata?.role)
     if (metadataRole) {
       userRole = metadataRole
     } else {
@@ -125,7 +191,7 @@ export async function middleware(request: NextRequest) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('role')
-        .eq('uid', user.id)
+        .eq('uid', effectiveUser.id)
         .single()
       
       if (profile?.role) {
@@ -139,11 +205,7 @@ export async function middleware(request: NextRequest) {
 
   // Protect routes that require authentication
   if (!isAuthenticated && !pathname.startsWith('/login')) {
-    // Allow access to public routes
-    const publicRoutes = ['/', '/test-daily', '/api', '/login']
-    const isPublicRoute = publicRoutes.some(route => pathname === route || pathname.startsWith(route))
-    
-    if (!isPublicRoute) {
+    if (!isPublicPath(pathname, isProduction)) {
       const redirectUrl = request.nextUrl.clone()
       redirectUrl.pathname = '/'
       redirectUrl.searchParams.set('redirectedFrom', pathname)
@@ -151,12 +213,10 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Role-based route protection
-  if (isAuthenticated && pathname in ROLE_ROUTES) {
-    const requiredRoles = ROLE_ROUTES[pathname]
-    
-    // If user has no role or role is not in required roles, redirect
-    if (!userRole || !requiredRoles || !requiredRoles.includes(userRole)) {
+  // Role-based route protection (matches page-level withRoleProtection)
+  const requiredRoles = getRequiredRolesForPath(pathname)
+  if (isAuthenticated && requiredRoles !== null) {
+    if (!userRole || !requiredRoles.includes(userRole)) {
       const redirectUrl = request.nextUrl.clone()
       redirectUrl.pathname = '/'
       return NextResponse.redirect(redirectUrl)
