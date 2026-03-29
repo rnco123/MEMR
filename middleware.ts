@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { UserRole, mapRoleToEnum } from './lib/roles'
+import { fetchUserRole } from './lib/fetch-user-role'
 import { validateRequest } from './lib/security/request-validator'
 import { rateLimitCheck } from './lib/rate-limit'
 
@@ -187,13 +188,8 @@ export async function middleware(request: NextRequest) {
     if (metadataRole) {
       userRole = metadataRole
     } else {
-      // Fetch from profiles table
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('uid', effectiveUser.id)
-        .single()
-      
+      // Must match client auth-context (fetchUserRole): id → uid → user_profiles
+      const profile = await fetchUserRole(supabase, effectiveUser.id)
       if (profile?.role) {
         const mappedRole = mapRoleToEnum(profile.role)
         if (mappedRole) {

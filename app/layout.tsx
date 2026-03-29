@@ -26,15 +26,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        {/* Beta Version Ticker */}
-        <div className="beta-ticker">
-          <div className="beta-ticker-content">
-            <span>⚠️ THIS VERSION OF MCM EMR IS A BETA VERSION — NOT READY FOR PRODUCTION ⚠️</span>
-            <span>⚠️ THIS VERSION OF MCM EMR IS A BETA VERSION — NOT READY FOR PRODUCTION ⚠️</span>
-            <span>⚠️ THIS VERSION OF MCM EMR IS A BETA VERSION — NOT READY FOR PRODUCTION ⚠️</span>
-            <span>⚠️ THIS VERSION OF MCM EMR IS A BETA VERSION — NOT READY FOR PRODUCTION ⚠️</span>
-          </div>
-        </div>
         <ErrorBoundary>
           <AuthProvider>{children}</AuthProvider>
         </ErrorBoundary>

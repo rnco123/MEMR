@@ -13,8 +13,12 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: process.env.NEXT_IGNORE_ESLINT === '1',
   },
-  // Security headers
+  // Security headers (production only). Applying CSP + upgrade-insecure-requests on http://localhost breaks
+  // next dev: the browser upgrades _next static assets to https://localhost and they fail to load → no CSS/Tailwind.
   async headers() {
+    if (process.env.NODE_ENV !== 'production') {
+      return []
+    }
     return [
       {
         source: '/:path*',

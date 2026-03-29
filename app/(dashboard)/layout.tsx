@@ -168,7 +168,7 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800">
-      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-9 z-40">
+      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <Link href="/dashboard" className="flex items-center gap-3 min-w-0 group">
