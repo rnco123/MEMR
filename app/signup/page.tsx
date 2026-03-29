@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { BrandLogo } from '@/components/BrandLogo'
 
 export default function SignupPage() {
   const [name, setName] = useState('')
@@ -80,12 +81,8 @@ export default function SignupPage() {
 
       <div className="relative z-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-8 max-w-md w-full">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <svg className="w-10 h-10 text-white" viewBox="0 0 100 100" fill="currentColor">
-              <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-              <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-              <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-            </svg>
+          <div className="flex justify-center mb-4">
+            <BrandLogo variant="hero" />
           </div>
           <h1 className="text-2xl font-bold text-white">Create Staff Account</h1>
           <p className="text-blue-200 text-sm mt-1">Admin access required</p>

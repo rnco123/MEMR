@@ -13,7 +13,8 @@ export const metadata: Metadata = {
   title: "MyclinicMD - Electronic Medical Records",
   description: "MyclinicMD - Modern EMR system with video conferencing powered by Supabase and Daily.co",
   icons: {
-    icon: "/favicon.svg",
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    apple: "/myclinic-md-logo.png",
   },
 };
 

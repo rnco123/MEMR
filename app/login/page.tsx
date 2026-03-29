@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import { BrandLogo } from '@/components/BrandLogo'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -77,14 +78,9 @@ export default function LoginPage() {
 
       <div className="max-w-md w-full relative z-10">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl shadow-2xl mb-4 transform hover:scale-105 transition-transform">
-            <svg className="w-14 h-14 text-white" viewBox="0 0 100 100" fill="currentColor">
-              <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-              <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-              <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-            </svg>
+          <div className="flex justify-center mb-4 transform hover:scale-[1.02] transition-transform">
+            <BrandLogo variant="hero" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2 tracking-tight">MyclinicMD</h1>
           <p className="text-blue-200 text-sm font-medium">Electronic Medical Records System</p>
           <p className="text-gray-400 text-xs mt-1">Secure • Reliable • Modern</p>
         </div>

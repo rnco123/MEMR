@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function Home() {
   const { user, role, loading, signOut, signIn, testSignIn } = useAuth();
@@ -77,17 +78,10 @@ export default function Home() {
       <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-9 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
-                <svg className="w-8 h-8 text-white" viewBox="0 0 100 100" fill="currentColor">
-                  <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-                  <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-                  <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                </svg>
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">MyclinicMD</h1>
-                <p className="text-xs text-blue-200">Electronic Medical Records</p>
+            <div className="flex items-center gap-3 min-w-0">
+              <BrandLogo variant="header" />
+              <div className="hidden sm:flex flex-col min-w-0">
+                <span className="text-xs text-blue-200 leading-tight">Electronic Medical Records</span>
               </div>
             </div>
             {user && (
@@ -124,14 +118,10 @@ export default function Home() {
           </div>
         ) : user && !role && !loading ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-            <div className="w-32 h-32 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-3xl flex items-center justify-center mb-8 shadow-2xl shadow-blue-500/50">
-              <svg className="w-20 h-20 text-white" viewBox="0 0 100 100" fill="currentColor">
-                <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-                <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-                <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-              </svg>
+            <div className="mb-8">
+              <BrandLogo variant="hero" className="shadow-2xl shadow-blue-500/20" />
             </div>
-            <h2 className="text-4xl font-bold text-white mb-4">Welcome to MyclinicMD</h2>
+            <h2 className="text-4xl font-bold text-white mb-4">Welcome</h2>
             <p className="text-blue-200 text-lg mb-8 max-w-md">
               Your account is being set up. Please contact your administrator to assign your role.
             </p>
@@ -146,14 +136,10 @@ export default function Home() {
           <div className="flex flex-col items-center justify-center min-h-[60vh]">
             <div className="w-full max-w-md">
               <div className="text-center mb-8">
-                <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl shadow-2xl mb-4 transform hover:scale-105 transition-transform">
-                  <svg className="w-14 h-14 text-white" viewBox="0 0 100 100" fill="currentColor">
-                    <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-                    <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-                    <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                  </svg>
+                <div className="flex justify-center mb-4 transform hover:scale-[1.02] transition-transform">
+                  <BrandLogo variant="hero" />
                 </div>
-                <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">Welcome to MyclinicMD</h2>
+                <h2 className="text-4xl font-bold text-white mb-2 tracking-tight">Welcome</h2>
                 <p className="text-blue-200 text-sm font-medium">Electronic Medical Records System</p>
                 <p className="text-gray-400 text-xs mt-1">Secure • Reliable • Modern</p>
               </div>

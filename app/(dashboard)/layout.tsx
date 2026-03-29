@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Chat } from '@/components/Chat'
+import { BrandLogo } from '@/components/BrandLogo'
 
 export default function DashboardLayout({
   children,
@@ -170,19 +171,12 @@ export default function DashboardLayout({
       <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-9 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
-                <svg className="w-8 h-8 text-white" viewBox="0 0 100 100" fill="currentColor">
-                  <circle cx="58" cy="22" r="10" fill="none" stroke="currentColor" strokeWidth="4"/>
-                  <path d="M25 50h20v30h10V50h20v-10h-20V20h-10v20h-20z" fill="currentColor"/>
-                  <path d="M20 75 Q50 45 80 25" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/>
-                </svg>
+            <Link href="/dashboard" className="flex items-center gap-3 min-w-0 group">
+              <BrandLogo variant="header" />
+              <div className="hidden md:flex flex-col min-w-0">
+                <span className="text-xs text-blue-200 leading-tight">Electronic Medical Records</span>
               </div>
-              <div>
-                <h1 className="text-2xl font-bold text-white">MyclinicMD</h1>
-                <p className="text-xs text-blue-200">Electronic Medical Records</p>
-              </div>
-            </div>
+            </Link>
             {user && (
               <div className="flex items-center gap-4">
                 <div className="text-right hidden sm:block">
