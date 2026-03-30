@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import * as Sentry from '@sentry/nextjs'
@@ -30,8 +31,8 @@ async function getAuthenticatedSupabaseClient(request: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession()
   if (session?.access_token) {
     return createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      getSupabaseUrl(),
+      getSupabasePublishableKey(),
       {
         global: {
           headers: {
@@ -46,8 +47,8 @@ async function getAuthenticatedSupabaseClient(request: NextRequest) {
   const token = getAccessTokenFromCookie(request)
   if (token) {
     return createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      getSupabaseUrl(),
+      getSupabasePublishableKey(),
       {
         global: {
           headers: {
@@ -69,8 +70,8 @@ async function getUserFromCustomCookie(request: NextRequest) {
 
   try {
     const supabase = createSupabaseClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      getSupabaseUrl(),
+      getSupabasePublishableKey(),
       {
         global: {
           headers: {

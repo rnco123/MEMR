@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
@@ -10,8 +11,8 @@ export async function POST() {
   const response = NextResponse.json({ success: true })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    getSupabaseUrl(),
+    getSupabasePublishableKey(),
     {
       cookies: {
         getAll() {

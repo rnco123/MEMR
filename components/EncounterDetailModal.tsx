@@ -1,10 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { EncounterRoomingPanel } from './EncounterRoomingPanel'
+import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
+
+/** Intake severity (1–10) → Low / Medium / High */
+function severityBandFromIntake(severity: number | null | undefined): 'low' | 'medium' | 'high' | null {
+  if (severity == null || Number.isNaN(Number(severity))) return null
+  const n = Math.round(Number(severity))
+  if (n < 1 || n > 10) return null
+  if (n <= 3) return 'low'
+  if (n <= 7) return 'medium'
+  return 'high'
+}
 
 interface Patient {
   id: number
@@ -97,6 +108,10 @@ interface Encounter {
   ready_for_doctor_at?: string | null
   ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
+  risk_level?: string | null
+  risk_rationale?: string | null
+  risk_factors?: string[] | null
+  risk_assessed_at?: string | null
 }
 
 interface Appointment {
@@ -135,7 +150,7 @@ export function EncounterDetailModal({
   onJoinTelemedicine,
   canJoinTelemedicine = false,
 }: EncounterDetailModalProps) {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [intake, setIntake] = useState<IntakeForm | null>(null)
@@ -145,6 +160,26 @@ export function EncounterDetailModal({
   const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
   const [pharmacies, setPharmacies] = useState<{ id: number; name: string | null }[]>([])
+
+  type IcdSuggestionRow = {
+    code: string
+    description: string
+    confidence: number
+    reasoning: string
+  }
+  const [icdSuggestions, setIcdSuggestions] = useState<IcdSuggestionRow[] | null>(null)
+  const [icdLoading, setIcdLoading] = useState(false)
+  const [icdMessage, setIcdMessage] = useState<string | null>(null)
+  const [modalTab, setModalTab] = useState<'details' | 'forms'>('details')
+
+  const intakeSeverityBand = useMemo(
+    () => severityBandFromIntake(intake?.severity),
+    [intake?.severity]
+  )
+
+  useEffect(() => {
+    setModalTab('details')
+  }, [encounterId])
 
   useEffect(() => {
     if (!isOpen) return
@@ -168,7 +203,8 @@ export function EncounterDetailModal({
           .eq('id', encounterId)
           .single()
 
-        setEncounter(encounterData as Encounter)
+        const encTyped = encounterData as Encounter
+        setEncounter(encTyped)
 
         const { data: pharmList } = await supabase.from('pharmacy').select('id, name').order('name')
         setPharmacies((pharmList as { id: number; name: string | null }[]) ?? [])
@@ -273,6 +309,7 @@ export function EncounterDetailModal({
             setPharmacy(pharmacyData as Pharmacy)
           }
         }
+
       } catch (error) {
         console.error('Error fetching encounter details:', error)
       } finally {
@@ -282,6 +319,56 @@ export function EncounterDetailModal({
 
     fetchData()
   }, [isOpen, encounterId, appointmentId, patientId, supabase])
+
+  /** ICD-10-CM suggestions from intake + SOAP subjective (one request per modal open). */
+  useEffect(() => {
+    if (!isOpen || loading) return
+    let cancelled = false
+    setIcdSuggestions(null)
+    setIcdMessage(null)
+    setIcdLoading(true)
+
+    ;(async () => {
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession()
+        const headers: Record<string, string> = {}
+        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+        const res = await fetch(`/api/encounters/${encounterId}/icd-suggestions`, {
+          credentials: 'include',
+          headers,
+        })
+        const json = (await res.json().catch(() => ({}))) as {
+          ok?: boolean
+          icd_suggestions?: IcdSuggestionRow[]
+          message?: string
+          error?: string
+        }
+        if (cancelled) return
+        if (json.ok && Array.isArray(json.icd_suggestions) && json.icd_suggestions.length > 0) {
+          setIcdSuggestions(json.icd_suggestions)
+          setIcdMessage(null)
+        } else {
+          setIcdSuggestions(null)
+          setIcdMessage(
+            json.message || json.error || (!res.ok ? `Request failed (${res.status})` : "AI can't find ICD code")
+          )
+        }
+      } catch {
+        if (!cancelled) {
+          setIcdSuggestions(null)
+          setIcdMessage('Could not load ICD suggestions')
+        }
+      } finally {
+        if (!cancelled) setIcdLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isOpen, loading, encounterId, supabase])
 
   const calculateAge = (dob: string | null) => {
     if (!dob) return 'N/A'
@@ -362,6 +449,25 @@ export function EncounterDetailModal({
                 {getStatusInfo(encounter.status as EncounterStatus)?.label ?? encounter.status}
               </span>
             )}
+            {!loading && intakeSeverityBand && (
+              <span
+                className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                  intakeSeverityBand === 'high'
+                    ? 'bg-red-500/25 border-red-400/55 text-red-100'
+                    : intakeSeverityBand === 'medium'
+                      ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                      : 'bg-emerald-500/15 border-emerald-400/45 text-emerald-100'
+                }`}
+              >
+                Risk: {intakeSeverityBand === 'high' ? 'High' : intakeSeverityBand === 'medium' ? 'Medium' : 'Low'}
+              </span>
+            )}
+            {!loading && !intakeSeverityBand && intake && intake.severity == null && (
+              <span className="text-xs text-slate-400">Severity not set on intake</span>
+            )}
+            {!loading && !intakeSeverityBand && !intake && (
+              <span className="text-xs text-slate-500">Risk: needs intake (severity 1–10)</span>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {onJoinTelemedicine && canJoinTelemedicine && (
@@ -387,13 +493,153 @@ export function EncounterDetailModal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <LoadingSpinner message="Loading encounter details..." />
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {!loading && (
+            <div className="flex gap-2 px-6 pt-3 pb-0 border-b border-white/10 shrink-0">
+              <button
+                type="button"
+                onClick={() => setModalTab('details')}
+                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+                  modalTab === 'details'
+                    ? 'bg-white/10 text-white border border-b-0 border-white/15'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Details
+              </button>
+              <button
+                type="button"
+                onClick={() => setModalTab('forms')}
+                className={`px-4 py-2 rounded-t-lg text-sm font-medium transition-colors ${
+                  modalTab === 'forms'
+                    ? 'bg-white/10 text-white border border-b-0 border-white/15'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Forms
+              </button>
             </div>
-          ) : (
+          )}
+          <div className="flex-1 overflow-y-auto p-6 min-h-0">
+            {loading ? (
+              <div className="flex items-center justify-center h-full min-h-[200px]">
+                <LoadingSpinner message="Loading encounter details..." />
+              </div>
+            ) : modalTab === 'forms' ? (
+              <EncounterConsentFormsTab encounterId={encounterId} />
+            ) : (
             <div className="space-y-6">
+              {/* Risk alerts — first in scroll so it cannot be missed */}
+              <div
+                id="encounter-risk-alerts"
+                className="bg-gradient-to-br from-rose-950/40 to-slate-900/80 border border-rose-500/30 rounded-xl p-6 ring-1 ring-rose-500/20"
+              >
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                  <h3 className="text-xl font-bold text-white flex items-center gap-2 flex-wrap">
+                    <svg className="w-5 h-5 text-rose-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Risk alerts
+                    <span className="text-xs font-normal text-rose-200/80">ai diagnose</span>
+                  </h3>
+                </div>
+                {!intake && (
+                  <p className="text-rose-200/90 text-sm mb-3">
+                    Severity (Low / Medium / High) is derived from the intake form once it is available.
+                  </p>
+                )}
+                {intake && intakeSeverityBand && (
+                  <div className="space-y-3">
+                    <div
+                      className="flex rounded-lg overflow-hidden border border-white/15 bg-black/20"
+                      title="From intake severity: 1–3 Low, 4–7 Medium, 8–10 High"
+                    >
+                      {(['low', 'medium', 'high'] as const).map((step) => (
+                        <div
+                          key={step}
+                          className={`flex-1 py-2 text-center text-xs font-semibold capitalize ${
+                            intakeSeverityBand === step
+                              ? step === 'high'
+                                ? 'bg-red-500/50 text-white'
+                                : step === 'medium'
+                                  ? 'bg-amber-500/45 text-white'
+                                  : 'bg-emerald-500/40 text-white'
+                              : 'text-white/35'
+                          }`}
+                        >
+                          {step}
+                        </div>
+                      ))}
+                    </div>
+                    <div
+                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold border ${
+                        intakeSeverityBand === 'high'
+                          ? 'bg-red-500/25 border-red-400/60 text-red-100'
+                          : intakeSeverityBand === 'medium'
+                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-100'
+                            : 'bg-emerald-500/15 border-emerald-400/45 text-emerald-100'
+                      }`}
+                    >
+                      <span className="uppercase tracking-wide text-xs opacity-90">Level</span>
+                      <span>
+                        {intakeSeverityBand === 'high'
+                          ? 'High'
+                          : intakeSeverityBand === 'medium'
+                            ? 'Medium'
+                            : 'Low'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {intake && intake.severity == null && (
+                  <p className="text-rose-200/80 text-sm">Add a severity score (1–10) on the intake form to see Low / Medium / High.</p>
+                )}
+                {intake && intake.severity != null && !intakeSeverityBand && (
+                  <p className="text-amber-200/90 text-sm">
+                    Severity must be between 1 and 10 to classify this encounter.
+                  </p>
+                )}
+              </div>
+
+              {/* ICD-10-CM suggestions (AI-assisted, from intake + SOAP subjective) */}
+              <div
+                id="encounter-icd-suggestions"
+                className="bg-gradient-to-br from-cyan-950/35 to-slate-900/80 border border-cyan-500/25 rounded-xl p-6 ring-1 ring-cyan-500/15"
+              >
+                <h3 className="text-xl font-bold text-white mb-1 flex items-center gap-2 flex-wrap">
+                  <svg className="w-5 h-5 text-cyan-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  ICD-10-CM suggestions
+                  <span className="text-xs font-normal text-cyan-200/75">(AI — pre-clinical, not for billing without review)</span>
+                </h3>
+                {icdLoading && (
+                  <p className="text-cyan-100/80 text-sm mt-3">Loading suggestions…</p>
+                )}
+                {!icdLoading && icdMessage && !icdSuggestions?.length && (
+                  <p className="text-amber-200/90 text-sm mt-3">{icdMessage}</p>
+                )}
+                {!icdLoading && icdSuggestions && icdSuggestions.length > 0 && (
+                  <ul className="mt-4 space-y-4">
+                    {icdSuggestions.map((row, idx) => (
+                      <li
+                        key={`${row.code}-${idx}`}
+                        className="rounded-lg border border-white/10 bg-black/20 p-4"
+                      >
+                        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                          <span className="font-mono text-lg font-semibold text-cyan-300">{row.code}</span>
+                          <span className="text-xs text-slate-400">
+                            Confidence: <span className="text-cyan-200/90">{row.confidence}%</span>
+                          </span>
+                        </div>
+                        <p className="text-white font-medium text-sm mb-1">{row.description}</p>
+                        <p className="text-slate-300 text-xs leading-relaxed">{row.reasoning}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               {/* Appointment Details */}
               {appointment && (
                 <div className="bg-white/5 border border-white/10 rounded-xl p-6">
@@ -765,7 +1011,8 @@ export function EncounterDetailModal({
                 )}
               </div>
             </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

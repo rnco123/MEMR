@@ -13,13 +13,23 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: process.env.NEXT_IGNORE_ESLINT === '1',
   },
-  // Security headers (production only). Applying CSP + upgrade-insecure-requests on http://localhost breaks
-  // next dev: the browser upgrades _next static assets to https://localhost and they fail to load → no CSS/Tailwind.
+  // Security headers (production only). Skip on dev — CSP upgrade-insecure-requests breaks http://localhost.
+  // For `/_next/static/*`, avoid CORP + upgrade-insecure-requests: they can block or confuse loading of JS/CSS
+  // chunks behind some proxies/CDNs (unstyled UI, failed webpack.js / layout.css in Network tab).
   async headers() {
     if (process.env.NODE_ENV !== 'production') {
       return []
     }
     return [
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
       {
         source: '/:path*',
         headers: [
@@ -68,7 +78,6 @@ const nextConfig = {
               "base-uri 'self'",
               "form-action 'self'",
               "frame-ancestors 'self'",
-              "upgrade-insecure-requests",
             ].join('; '),
           },
           {
@@ -79,10 +88,6 @@ const nextConfig = {
           {
             key: 'Cross-Origin-Opener-Policy',
             value: 'same-origin',
-          },
-          {
-            key: 'Cross-Origin-Resource-Policy',
-            value: 'cross-origin',
           },
         ],
       },

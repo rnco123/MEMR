@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { UserRole, mapRoleToEnum } from './lib/roles'
 import { fetchUserRole } from './lib/fetch-user-role'
+import { getSupabasePublishableKey, getSupabaseUrl } from './lib/supabase/keys'
 import { validateRequest } from './lib/security/request-validator'
 import { rateLimitCheck } from './lib/rate-limit'
 
@@ -54,11 +55,26 @@ function isPublicPath(pathname: string, production: boolean): boolean {
   if (pathname === '/login' || pathname === '/signup') return true
   if (pathname.startsWith('/api')) return true
   if (!production && pathname === '/test-daily') return true
+  /** Dev-only: OpenAI key connectivity page (no secrets shown). */
+  if (!production && pathname === '/openai') return true
   return false
 }
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+
+  let supabaseUrl: string
+  let supabaseAnonKey: string
+  try {
+    supabaseUrl = getSupabaseUrl()
+    supabaseAnonKey = getSupabasePublishableKey()
+  } catch (e) {
+    console.error('[middleware] Supabase env not configured:', e)
+    return new NextResponse(
+      'Server misconfiguration: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY, then redeploy.',
+      { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } }
+    )
+  }
 
   // Security: Validate request
   const requestValidation = validateRequest(request)
@@ -71,7 +87,12 @@ export async function middleware(request: NextRequest) {
 
   // Production: disable dev/diagnostic surfaces
   if (isProduction) {
-    if (pathname === '/test-daily' || pathname === '/sentry-test') {
+    if (
+      pathname === '/test-daily' ||
+      pathname === '/sentry-test' ||
+      pathname === '/test-consent-forms' ||
+      pathname === '/test-soap-complete'
+    ) {
       return NextResponse.redirect(new URL('/', request.url))
     }
     if (
@@ -101,8 +122,8 @@ export async function middleware(request: NextRequest) {
   })
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {

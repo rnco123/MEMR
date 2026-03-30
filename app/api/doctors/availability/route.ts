@@ -1,45 +1,59 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import type { User } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createSupabaseWithAccessToken, hasServiceRoleKey } from '@/lib/supabase/user-jwt-client'
 import { config } from '@/lib/config'
+import { fetchProfileFields } from '@/lib/fetch-user-role'
+import { UserRole, mapRoleToEnum } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-async function getUserFromRequest(request: Request): Promise<{ user: { id: string; email?: string; user_metadata?: { full_name?: string } } } | null> {
+/** Auth user + access token for user-scoped DB reads (matches browser; works without service role). */
+async function getAuthFromRequest(request: Request): Promise<{ user: User; accessToken: string | null } | null> {
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
   if (token) {
     const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
+      auth: { persistSession: false, autoRefreshToken: false },
     })
-    const { data: { user }, error } = await supabase.auth.getUser()
-    if (!error && user) return { user }
+    const { data: { user }, error } = await supabase.auth.getUser(token)
+    if (!error && user) return { user, accessToken: token }
   }
 
   const supabaseServer = await import('@/lib/supabase/server').then((m) => m.createClient())
   const { data: { session } } = await supabaseServer.auth.getSession()
   const user = session?.user ?? null
-  return user ? { user } : null
+  if (!user) return null
+  return { user, accessToken: session?.access_token ?? null }
 }
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const doctorUserId = searchParams.get('doctor_id') // This is user_id (UUID)
 
-  const authResult = await getUserFromRequest(request)
+  const authResult = await getAuthFromRequest(request)
   const user = authResult?.user ?? null
+  const accessToken = authResult?.accessToken ?? null
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // Use admin client for DB operations (bypasses RLS)
   let supabase
-  try {
+  if (hasServiceRoleKey()) {
     supabase = createAdminClient()
-  } catch (e) {
-    throw e
+  } else if (accessToken) {
+    supabase = createSupabaseWithAccessToken(accessToken)
+  } else {
+    return NextResponse.json(
+      {
+        error:
+          'Server misconfiguration: set SUPABASE_SERVICE_ROLE_KEY or call with a valid session / Authorization bearer token.',
+      },
+      { status: 500 }
+    )
   }
 
   // Use doctor_id param if provided (must be valid UUID), otherwise use current user for doctor's own dashboard
@@ -99,14 +113,13 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const authResult = await getUserFromRequest(request)
+  const authResult = await getAuthFromRequest(request)
   const user = authResult?.user ?? null
+  const accessToken = authResult?.accessToken ?? null
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
-  const supabase = createAdminClient()
 
   // Parse request body safely
   let body: { is_available?: boolean }
@@ -130,21 +143,38 @@ export async function POST(request: Request) {
     )
   }
 
-  // Only doctors can update their availability - check profile or doctors table (admin client for reads)
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, full_name, email')
-    .eq('uid', user.id)
-    .single()
+  // Prefer user JWT for reads/writes so local dev works without SUPABASE_SERVICE_ROLE_KEY (RLS matches browser)
+  const readSb =
+    accessToken != null ? createSupabaseWithAccessToken(accessToken) : hasServiceRoleKey() ? createAdminClient() : null
+  if (!readSb) {
+    return NextResponse.json(
+      {
+        error:
+          'Server misconfiguration: set SUPABASE_SERVICE_ROLE_KEY (or sign in with a session that provides an access token).',
+      },
+      { status: 500 }
+    )
+  }
 
-  // Allow if profile says doctor, OR if user already has a doctor record
-  const { data: existingDoctorCheck } = await supabase
+  // Only doctors can update — JWT metadata role, DB profile (id/uid/email/user_profiles), then doctors row
+  const profile = await fetchProfileFields(readSb, user.id, 'role, full_name, email', {
+    email: user.email,
+  })
+
+  const { data: existingDoctorCheck } = await readSb
     .from('doctors')
     .select('id')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
-  const isDoctor = profile?.role === 'doctor' || !!existingDoctorCheck
+  const metaRole = mapRoleToEnum(user.user_metadata?.role as string | undefined)
+  const profileRole = mapRoleToEnum(
+    profile?.role != null ? String(profile.role) : undefined
+  )
+  const isDoctor =
+    metaRole === UserRole.DOCTOR ||
+    profileRole === UserRole.DOCTOR ||
+    !!existingDoctorCheck
 
   if (!isDoctor) {
     return NextResponse.json(
@@ -153,11 +183,14 @@ export async function POST(request: Request) {
     )
   }
 
-  const doctorEmail = profile?.email || user.email || ''
-  const doctorName = profile?.full_name || user.email || 'Doctor'
+  const doctorEmail = (profile?.email as string | undefined) || user.email || ''
+  const doctorName = (profile?.full_name as string | undefined) || user.email || 'Doctor'
+
+  const writeSb =
+    accessToken != null && !hasServiceRoleKey() ? createSupabaseWithAccessToken(accessToken) : createAdminClient()
 
   // First, ensure the doctor exists in the doctors table
-  const { data: existingDoctor } = await supabase
+  const { data: existingDoctor } = await writeSb
     .from('doctors')
     .select('id, user_id, email, full_name')
     .eq('user_id', user.id)
@@ -167,7 +200,7 @@ export async function POST(request: Request) {
 
   // If doctor doesn't exist, create it
   if (!existingDoctor) {
-    const { data: newDoctor, error: createDoctorError } = await supabase
+    const { data: newDoctor, error: createDoctorError } = await writeSb
       .from('doctors')
       .insert({
         user_id: user.id,
@@ -190,7 +223,7 @@ export async function POST(request: Request) {
   }
 
   // Upsert availability (doctor_availability has UNIQUE(doctor_id))
-  const { error: upsertError } = await supabase
+  const { error: upsertError } = await writeSb
     .from('doctor_availability')
     .upsert(
       {

@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 
 /**
  * Browser client must NOT use localStorage-only auth storage: middleware and Route Handlers
@@ -6,8 +7,5 @@ import { createBrowserClient } from '@supabase/ssr'
  * that sync and causes redirect loops (/dashboard → /?redirectedFrom=…).
  */
 export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  return createBrowserClient(getSupabaseUrl(), getSupabasePublishableKey())
 }

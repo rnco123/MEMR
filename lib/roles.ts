@@ -81,15 +81,17 @@ export function isValidRole(role: string | null | undefined): role is UserRole {
  * Maps 'staff' to 'nurse' for application logic
  */
 export function mapRoleToEnum(role: string | null | undefined): UserRole | null {
-  if (!role) return null
-  
-  if (role === UserRole.DOCTOR || role === 'doctor') {
+  if (role == null) return null
+  const r = String(role).trim().toLowerCase()
+  if (!r) return null
+
+  if (r === UserRole.DOCTOR || r === 'doctor') {
     return UserRole.DOCTOR
   }
-  if (role === UserRole.NURSE || role === 'nurse' || role === UserRole.STAFF || role === 'staff') {
+  if (r === UserRole.NURSE || r === 'nurse' || r === UserRole.STAFF || r === 'staff') {
     return UserRole.NURSE // Map staff to nurse
   }
-  
+
   return null
 }
 

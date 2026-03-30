@@ -5,22 +5,33 @@
 
 function getEnvVar(key: string, required = true): string {
   const value = process.env[key]
-  // Only throw error in production runtime, not during build
   if (required && !value && process.env.NODE_ENV === 'production' && typeof window === 'undefined') {
-    // Check if we're in a build context (Next.js build process)
-    const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' || process.env.NEXT_PHASE === 'phase-development-build'
+    const isBuildTime =
+      process.env.NEXT_PHASE === 'phase-production-build' ||
+      process.env.NEXT_PHASE === 'phase-development-build'
     if (!isBuildTime) {
-      throw new Error(`Missing required environment variable: ${key}`)
+      // Do not throw — throwing on import causes opaque "Internal Server Error" for every route.
+      console.error(`[config] Missing required environment variable: ${key}`)
     }
   }
   return value || ''
 }
 
+const supabasePublishable =
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const supabaseSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+
 export const config = {
   supabase: {
     url: getEnvVar('NEXT_PUBLIC_SUPABASE_URL'),
-    anonKey: getEnvVar('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
-    serviceRoleKey: getEnvVar('SUPABASE_SERVICE_ROLE_KEY'),
+    /** Publishable (sb_publishable_…) or legacy anon JWT */
+    publishableKey: supabasePublishable,
+    /** Secret (sb_secret_…) or legacy service_role JWT */
+    secretKey: supabaseSecret,
+    /** @deprecated use publishableKey */
+    anonKey: supabasePublishable,
+    /** @deprecated use secretKey */
+    serviceRoleKey: supabaseSecret,
   },
   daily: {
     apiKey: getEnvVar('NEXT_PUBLIC_DAILY_API_KEY'),
@@ -40,6 +51,10 @@ export const config = {
   soapNotes: {
     apiUrl: getEnvVar('NEXT_PUBLIC_SOAP_NOTES_API_URL', false), // Optional - Complete SOAP Notes API
   },
+  /** Server-only: nurse risk alerts (OpenAI). */
+  openai: {
+    apiKey: getEnvVar('OPENAI_API_KEY', false),
+  },
 } as const
 
 // Validate critical config on module load — server only (client never has SERVICE_ROLE or ADMIN_SIGNUP_PIN)
@@ -49,17 +64,18 @@ const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' ||
 const isServer = typeof window === 'undefined'
 
 if (config.app.isProduction && !isBuildTime && isServer) {
-  const requiredVars = [
-    'NEXT_PUBLIC_SUPABASE_URL',
-    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
-    'SUPABASE_SERVICE_ROLE_KEY',
-    'NEXT_PUBLIC_DAILY_API_KEY',
-    'NEXT_PUBLIC_DAILY_DOMAIN',
-    'ADMIN_SIGNUP_PIN',
-  ]
-
-  const missing = requiredVars.filter((key) => !process.env[key])
+  const missing: string[] = []
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push('NEXT_PUBLIC_SUPABASE_URL')
+  if (!supabasePublishable) {
+    missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+  }
+  if (!supabaseSecret) {
+    missing.push('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY')
+  }
+  ;['NEXT_PUBLIC_DAILY_API_KEY', 'NEXT_PUBLIC_DAILY_DOMAIN', 'ADMIN_SIGNUP_PIN'].forEach((key) => {
+    if (!process.env[key]) missing.push(key)
+  })
   if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
+    console.error(`[config] Missing required environment variables: ${missing.join(', ')}`)
   }
 }

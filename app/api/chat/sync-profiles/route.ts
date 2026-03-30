@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublishableKey, getSupabaseSecretKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createAdminClient, createClient as createSupabaseClient } from '@supabase/supabase-js'
 
@@ -31,8 +32,8 @@ async function getUserFromCustomCookie(request: NextRequest) {
     if (sessionData?.access_token) {
       // Use the access token to get user
       const supabase = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        getSupabaseUrl(),
+        getSupabasePublishableKey(),
         {
           global: {
             headers: {
@@ -111,8 +112,8 @@ export async function POST(request: NextRequest) {
 
     // Use admin client to sync profiles
     const supabaseAdmin = createAdminClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      getSupabaseUrl(),
+      getSupabaseSecretKey(),
       {
         auth: {
           autoRefreshToken: false,

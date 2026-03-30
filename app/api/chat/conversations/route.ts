@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
@@ -17,8 +18,8 @@ async function getUserFromCustomCookie(request: NextRequest) {
     
     if (sessionData?.access_token) {
       const supabase = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        getSupabaseUrl(),
+        getSupabasePublishableKey(),
         {
           global: {
             headers: {
