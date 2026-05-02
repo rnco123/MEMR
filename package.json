@@ -18,8 +18,10 @@
         "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\""
     },
     "dependencies": {
+        "@daily-co/daily-js": "^0.83.1",
         "@sentry/nextjs": "^10.38.0",
         "@supabase/ssr": "^0.8.0",
+        "jspdf": "^4.2.1",
         "lru-cache": "^10.1.0",
         "next": "^14.2.35",
         "react": "18.2.0",

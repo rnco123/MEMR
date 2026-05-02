@@ -273,6 +273,58 @@ Create a Daily.co video room.
 
 ---
 
+### Pharmacy Integration
+
+#### Fetch Prescriptions (Pharmacy Pull API)
+
+**GET** `/api/pharmacy/prescriptions`
+
+Pharmacy-facing endpoint. External pharmacy systems call this endpoint to fetch prescriptions assigned to that pharmacy.
+
+**Authentication:**
+- `Authorization: Bearer <pharmacy_api_key>`
+- or `x-api-key: <pharmacy_api_key>`
+
+**Query Params:**
+- `since` (optional, ISO datetime): return rows created at/after this time
+- `limit` (optional, default `100`, max `200`)
+- `include_cancelled` (optional, `true|false`, default `false`)
+
+**Response:**
+```json
+{
+  "success": true,
+  "pharmacy_id": 7,
+  "count": 2,
+  "data": [
+    {
+      "id": 101,
+      "patient_id": 42,
+      "encounter_id": 88,
+      "medication_name": "Amoxicillin 500mg",
+      "dosage": "1 capsule",
+      "instructions": "Take twice daily for 7 days",
+      "quantity": "14",
+      "refills": 0,
+      "status": "recorded",
+      "external_rx_id": null,
+      "notes": null,
+      "created_at": "2026-04-28T00:10:00.000Z",
+      "updated_at": "2026-04-28T00:10:00.000Z",
+      "pharmacy_id": 7,
+      "pharmacy_pulled_at": null
+    }
+  ]
+}
+```
+
+**Behavior notes:**
+- Returns only prescriptions where `prescriptions.pharmacy_id` matches the API key's pharmacy.
+- On successful fetch, first pull timestamp is recorded in `pharmacy_pulled_at`.
+- Prescriptions with `status='recorded'` are promoted to `status='sent'` after they are fetched.
+
+---
+
 ### Audit
 
 #### Log Audit Event

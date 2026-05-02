@@ -22,7 +22,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'Appointment Initiated',
     description: 'When the appointment is first booked',
     step: 1,
-    color: 'bg-gray-500',
+    color: 'bg-fuchsia-500',
     icon: '📋',
   },
   {
@@ -30,7 +30,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'Provider Assigned',
     description: 'After the nurse assigns the doctor',
     step: 2,
-    color: 'bg-blue-500',
+    color: 'bg-blue-700',
     icon: '👨‍⚕️',
   },
   {
@@ -38,7 +38,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'Vitals Assessed',
     description: "Once the nurse has checked the patient's vitals",
     step: 3,
-    color: 'bg-purple-500',
+    color: 'bg-lime-500',
     icon: '💉',
   },
   {
@@ -46,7 +46,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'In Consultation',
     description: 'While the telemedicine session is ongoing',
     step: 4,
-    color: 'bg-yellow-500',
+    color: 'bg-yellow-400',
     icon: '🎥',
   },
   {
@@ -54,7 +54,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'Consultation Concluded',
     description: 'When the main consultation ends',
     step: 5,
-    color: 'bg-orange-500',
+    color: 'bg-red-600',
     icon: '✅',
   },
   {
@@ -62,7 +62,7 @@ export const ENCOUNTER_STATUSES: {
     label: 'Final Review',
     description: "During the nurse's post-visit check and wrap-up",
     step: 6,
-    color: 'bg-cyan-500',
+    color: 'bg-teal-400',
     icon: '📝',
   },
   {
@@ -70,10 +70,34 @@ export const ENCOUNTER_STATUSES: {
     label: 'Completed',
     description: 'Everything is fully completed and archived',
     step: 7,
-    color: 'bg-green-500',
+    color: 'bg-emerald-500',
     icon: '✔️',
   },
 ]
+
+/**
+ * Left-edge status bar (~6px with `w-1.5`) — hues spread across the spectrum so
+ * adjacent steps don’t all read as “blue-purple” on screen.
+ */
+const STATUS_ACCENT_BAR: Record<EncounterStatus, string> = {
+  appointment_initiated: 'bg-fuchsia-500',
+  provider_assigned: 'bg-blue-700',
+  vitals_assessed: 'bg-lime-500',
+  in_consultation: 'bg-yellow-400',
+  consultation_concluded: 'bg-red-600',
+  final_review: 'bg-teal-400',
+  completed: 'bg-emerald-500',
+}
+
+/**
+ * Tailwind background class for a thin vertical status indicator (full row height).
+ * Use on a `w-1.5` element beside the card/row content.
+ */
+export function getStatusAccentBarClass(status: string | null | undefined): string {
+  if (!status) return 'bg-purple-600'
+  const key = status as EncounterStatus
+  return STATUS_ACCENT_BAR[key] ?? 'bg-orange-500'
+}
 
 export function getStatusInfo(status: EncounterStatus) {
   return ENCOUNTER_STATUSES.find((s) => s.value === status)

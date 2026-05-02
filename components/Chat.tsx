@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
+import { useT } from '@/lib/i18n'
+
 
 interface User {
   uid: string
@@ -46,6 +48,7 @@ interface ChatProps {
 
 export function Chat({ isOpen, onClose }: ChatProps) {
   const { user } = useAuth()
+  const { t } = useT()
   const supabase = createClient()
   const [activeView, setActiveView] = useState<'conversations' | 'new-chat'>('conversations')
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -301,29 +304,31 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-slate-800 border border-white/20 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-white/10 bg-slate-800">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 setSelectedConversation(null)
                 setActiveView('conversations')
               }}
-              className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+              aria-label="Back"
             >
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h2 className="text-xl font-bold text-white">Chat</h2>
+            <h2 className="text-lg font-bold text-slate-900">{t('chat.title')}</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
+            aria-label="Close"
           >
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
@@ -332,43 +337,43 @@ export function Chat({ isOpen, onClose }: ChatProps) {
         <div className="flex-1 flex overflow-hidden">
           {/* Sidebar - Conversations List */}
           {!selectedConversation && (
-            <div className="w-80 border-r border-white/10 bg-slate-800 flex flex-col">
+            <div className="w-80 border-r border-slate-200 bg-white flex flex-col">
               {/* Tabs */}
-              <div className="flex border-b border-white/10">
+              <div className="flex border-b border-slate-200">
                 <button
                   onClick={() => setActiveView('conversations')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-all ${
+                  className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors ${
                     activeView === 'conversations'
-                      ? 'text-white bg-white/10 border-b-2 border-blue-500'
-                      : 'text-blue-200 hover:text-white hover:bg-white/5'
+                      ? 'text-[#2E6EF3] border-b-2 border-[#2E6EF3]'
+                      : 'text-slate-500 hover:text-slate-700 border-b-2 border-transparent'
                   }`}
                 >
-                  Conversations
+                  {t('chat.tab_conversations')}
                 </button>
                 <button
                   onClick={() => setActiveView('new-chat')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-all ${
+                  className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors ${
                     activeView === 'new-chat'
-                      ? 'text-white bg-white/10 border-b-2 border-blue-500'
-                      : 'text-blue-200 hover:text-white hover:bg-white/5'
+                      ? 'text-[#2E6EF3] border-b-2 border-[#2E6EF3]'
+                      : 'text-slate-500 hover:text-slate-700 border-b-2 border-transparent'
                   }`}
                 >
-                  New Chat
+                  {t('chat.tab_new')}
                 </button>
               </div>
 
               {/* Content */}
               <div className="flex-1 overflow-y-auto">
                 {loading ? (
-                  <div className="flex items-center justify-center py-8">
-                    <LoadingSpinner message="Loading..." />
+                  <div className="flex items-center justify-center py-10">
+                    <LoadingSpinner message={t('common.loading')} />
                   </div>
                 ) : activeView === 'conversations' ? (
-                  <div className="divide-y divide-white/10">
+                  <div className="divide-y divide-slate-100">
                     {conversations.length === 0 ? (
-                      <div className="p-8 text-center text-blue-200">
-                        <p>No conversations yet</p>
-                        <p className="text-sm mt-2">Start a new chat to begin messaging</p>
+                      <div className="p-8 text-center">
+                        <p className="text-slate-700 font-medium">{t('chat.empty_conversations')}</p>
+                        <p className="text-slate-500 text-sm mt-1">{t('chat.start_new')}</p>
                       </div>
                     ) : (
                       conversations.map((conv) => (
@@ -378,22 +383,22 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                             setSelectedConversation(conv)
                             fetchMessages(conv.id)
                           }}
-                          className="w-full p-4 text-left hover:bg-white/5 transition-colors"
+                          className="w-full p-4 text-left hover:bg-slate-50 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                            <div className="w-11 h-11 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
                               {conv.other_participant.full_name.charAt(0).toUpperCase()}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-1">
-                                <p className="text-white font-semibold truncate">
+                              <div className="flex items-center justify-between mb-0.5">
+                                <p className="text-slate-900 font-semibold text-sm truncate">
                                   {conv.other_participant.full_name}
                                 </p>
-                                <span className="text-xs text-blue-300 ml-2">
+                                <span className="text-xs text-slate-400 ml-2 shrink-0">
                                   {formatTime(conv.last_message_at)}
                                 </span>
                               </div>
-                              <p className="text-xs text-blue-200 capitalize">
+                              <p className="text-xs text-slate-500 capitalize">
                                 {conv.other_participant.role}
                               </p>
                             </div>
@@ -403,17 +408,17 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                     )}
                   </div>
                 ) : (
-                  <div className="divide-y divide-white/10">
+                  <div className="divide-y divide-slate-100">
                     {users.length === 0 ? (
-                      <div className="p-8 text-center text-blue-200">
-                        <p className="mb-2">No users available</p>
-                        <p className="text-sm text-blue-300/70 mb-4">
-                          Make sure other staff members have profiles in the system.
+                      <div className="p-8 text-center">
+                        <p className="text-slate-700 font-medium mb-1">{t('chat.no_users')}</p>
+                        <p className="text-xs text-slate-500 mb-4">
+                          {t('chat.no_users_hint')}
                         </p>
                         <button
                           onClick={async () => {
                             try {
-                              const response = await fetch('/api/chat/sync-profiles', { 
+                              const response = await fetch('/api/chat/sync-profiles', {
                                 method: 'POST',
                                 credentials: 'include',
                                 headers: {
@@ -432,9 +437,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                               alert('Error syncing profiles: ' + (error instanceof Error ? error.message : 'Unknown error'))
                             }
                           }}
-                          className="px-4 py-2 bg-blue-500/20 border border-blue-500/50 text-blue-300 rounded-lg text-sm hover:bg-blue-500/30 transition-all"
+                          className="px-4 py-2 bg-[#2E6EF3]/10 border border-[#2E6EF3]/20 text-[#2E6EF3] rounded-lg text-xs font-semibold hover:bg-[#2E6EF3]/15 transition-colors"
                         >
-                          Sync Profiles (Admin)
+                          {t('chat.sync_profiles')}
                         </button>
                       </div>
                     ) : (
@@ -442,17 +447,17 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                         <button
                           key={userItem.uid}
                           onClick={() => startConversation(userItem.uid)}
-                          className="w-full p-4 text-left hover:bg-white/5 transition-colors"
+                          className="w-full p-4 text-left hover:bg-slate-50 transition-colors"
                         >
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                            <div className="w-11 h-11 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
                               {userItem.full_name?.charAt(0).toUpperCase() || 'U'}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="text-white font-semibold truncate">
-                                {userItem.full_name || 'Unknown'}
+                              <p className="text-slate-900 font-semibold text-sm truncate">
+                                {userItem.full_name || t('chat.unknown')}
                               </p>
-                              <p className="text-xs text-blue-200 capitalize">
+                              <p className="text-xs text-slate-500 capitalize">
                                 {userItem.role}
                               </p>
                             </div>
@@ -468,18 +473,18 @@ export function Chat({ isOpen, onClose }: ChatProps) {
 
           {/* Main Chat Area */}
           {selectedConversation ? (
-            <div className="flex-1 flex flex-col bg-slate-800">
+            <div className="flex-1 flex flex-col bg-[#f9fbff]">
               {/* Chat Header */}
-              <div className="p-4 border-b border-white/10 bg-slate-800">
+              <div className="p-4 border-b border-slate-200 bg-white">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold">
+                  <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold">
                     {selectedConversation.other_participant.full_name.charAt(0).toUpperCase()}
                   </div>
                   <div>
-                    <p className="text-white font-semibold">
+                    <p className="text-slate-900 font-semibold text-sm">
                       {selectedConversation.other_participant.full_name}
                     </p>
-                    <p className="text-xs text-blue-200 capitalize">
+                    <p className="text-xs text-slate-500 capitalize">
                       {selectedConversation.other_participant.role}
                     </p>
                   </div>
@@ -489,7 +494,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
               {/* Messages */}
               <div
                 ref={messagesContainerRef}
-                className="flex-1 overflow-y-auto p-4 space-y-4"
+                className="flex-1 overflow-y-auto p-4 space-y-3"
               >
                 {messages.map((message) => {
                   const isOwn = message.sender_id === user?.id
@@ -498,23 +503,25 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                       key={message.id}
                       className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${
+                      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${
                         isOwn
-                          ? 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-tr-none'
-                          : 'bg-white/10 text-white rounded-tl-none'
+                          ? 'bg-[#2E6EF3] text-white rounded-tr-sm'
+                          : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
                       }`}>
                         {!isOwn && (
-                          <p className="text-xs font-medium opacity-80 mb-1">
+                          <p className="text-xs font-semibold text-[#2E6EF3] mb-0.5">
                             {message.sender.full_name}
                           </p>
                         )}
-                        <p className="text-sm">{message.content}</p>
+                        {message.content?.trim() && (
+                          <p className="text-sm leading-relaxed">{message.content}</p>
+                        )}
                         <div className={`flex items-center gap-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          <span className="text-xs opacity-60" title={new Date(message.created_at).toLocaleString()}>
+                          <span className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-slate-400'}`} title={new Date(message.created_at).toLocaleString()}>
                             {formatTime(message.created_at)}
                           </span>
                           {isOwn && message.read_at && (
-                            <span className="text-xs opacity-60" title="Read">✓✓</span>
+                            <span className="text-[10px] text-white/70" title="Read">✓✓</span>
                           )}
                         </div>
                       </div>
@@ -525,8 +532,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
               </div>
 
               {/* Message Input */}
-              <div className="p-4 border-t border-white/10 bg-slate-800">
-                <div className="flex gap-3">
+              <div className="p-3 border-t border-slate-200 bg-white">
+                <div className="flex gap-2">
                   <input
                     type="text"
                     value={messageText}
@@ -537,27 +544,30 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                         sendMessage()
                       }
                     }}
-                    placeholder="Type a message..."
-                    className="flex-1 px-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
+                    placeholder={t('chat.placeholder')}
+                    className="flex-1 h-11 px-4 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
                     disabled={sending}
                   />
                   <button
                     onClick={sendMessage}
                     disabled={!messageText.trim() || sending}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl font-medium hover:from-blue-600 hover:to-cyan-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="h-11 px-5 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {sending ? 'Sending...' : 'Send'}
+                    {sending ? t('common.sending') : t('common.send')}
                   </button>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-blue-200">
+            <div className="flex-1 flex items-center justify-center bg-[#f9fbff]">
               <div className="text-center">
-                <svg className="w-16 h-16 mx-auto mb-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                </svg>
-                <p>Select a conversation to start chatting</p>
+                <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </div>
+                <p className="text-slate-700 font-medium">{t('chat.select_conv')}</p>
+                <p className="text-slate-500 text-sm mt-1">{t('chat.select_conv_hint')}</p>
               </div>
             </div>
           )}

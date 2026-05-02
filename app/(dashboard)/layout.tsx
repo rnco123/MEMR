@@ -3,10 +3,11 @@
 import { useAuth } from '@/lib/auth-context'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { Chat } from '@/components/Chat'
 import { BrandLogo } from '@/components/BrandLogo'
+import { LanguageToggle } from '@/components/LanguageToggle'
+import { useT } from '@/lib/i18n'
 
 export default function DashboardLayout({
   children,
@@ -15,9 +16,17 @@ export default function DashboardLayout({
 }) {
   const { user, role, signOut } = useAuth()
   const pathname = usePathname()
-  const router = useRouter()
+  const { t } = useT()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
+  const [showPharmacyApiPanel, setShowPharmacyApiPanel] = useState(false)
+  const [pharmacyApiKey, setPharmacyApiKey] = useState('')
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  const pharmacyApiBaseUrl = `${origin}/api/pharmacy/prescriptions`
+  const pharmacyBrowserUrl = pharmacyApiKey.trim()
+    ? `${pharmacyApiBaseUrl}?api_key=${encodeURIComponent(pharmacyApiKey.trim())}&limit=100`
+    : `${pharmacyApiBaseUrl}?api_key=YOUR_API_KEY&limit=100`
+  const pharmacyCurl = `curl -H "Authorization: Bearer ${pharmacyApiKey.trim() || 'YOUR_API_KEY'}" "${pharmacyApiBaseUrl}?limit=100"`
 
   const handleSignOut = async () => {
     if (isSigningOut) return
@@ -41,7 +50,7 @@ export default function DashboardLayout({
 
   const doctorMenuItems: MenuItem[] = [
     {
-      name: 'Dashboard',
+      name: t('nav.dashboard'),
       href: '/dashboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -50,7 +59,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Flowboard',
+      name: t('nav.flowboard'),
       href: '/dashboard/flowboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -59,7 +68,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Patients History',
+      name: t('nav.patients_history'),
       href: '/dashboard/patients-history',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -68,7 +77,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'E-Prescribe',
+      name: t('nav.eprescribe'),
       href: '/dashboard/prescriptions',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -77,7 +86,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Orders',
+      name: t('nav.orders'),
       href: '/dashboard/orders',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,7 +95,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Follow-ups',
+      name: t('nav.followups'),
       href: '/dashboard/follow-ups',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,7 +104,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Chat',
+      name: t('nav.chat'),
       href: '#',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,11 +113,20 @@ export default function DashboardLayout({
       ),
       onClick: () => setIsChatOpen(true),
     },
+    {
+      name: 'Pharmacies',
+      href: '/dashboard/pharmacies',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+        </svg>
+      ),
+    },
   ]
 
   const nurseMenuItems: MenuItem[] = [
     {
-      name: 'Dashboard',
+      name: t('nav.dashboard'),
       href: '/dashboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,7 +135,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Flowboard',
+      name: t('nav.flowboard'),
       href: '/dashboard/nurse-flowboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,7 +144,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Patients History',
+      name: t('nav.patients_history'),
       href: '/dashboard/patients-history',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -135,7 +153,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Orders',
+      name: t('nav.orders'),
       href: '/dashboard/orders',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -144,7 +162,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Follow-ups',
+      name: t('nav.followups'),
       href: '/dashboard/follow-ups',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -153,7 +171,7 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: 'Chat',
+      name: t('nav.chat'),
       href: '#',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,39 +180,81 @@ export default function DashboardLayout({
       ),
       onClick: () => setIsChatOpen(true),
     },
+    {
+      name: 'Pharmacies',
+      href: '/dashboard/pharmacies',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+        </svg>
+      ),
+    },
   ]
 
   const menuItems = role === 'doctor' ? doctorMenuItems : role === 'nurse' || role === 'staff' ? nurseMenuItems : []
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-800">
-      <header className="bg-white/10 backdrop-blur-xl border-b border-white/20 sticky top-0 z-40">
+    <div className="min-h-screen bg-[#f5f7fb]">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-20">
             <Link href="/dashboard" className="flex items-center gap-3 min-w-0 group">
               <BrandLogo variant="header" />
               <div className="hidden md:flex flex-col min-w-0">
-                <span className="text-xs text-blue-200 leading-tight">Electronic Medical Records</span>
+                <span className="text-xs text-slate-500 leading-tight">{t('auth.electronic_records')}</span>
               </div>
             </Link>
             {user && (
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3 relative">
+                <LanguageToggle />
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-semibold text-white">
+                  <p className="text-sm font-semibold text-slate-900">
                     {user.user_metadata?.full_name || user.email || 'User'}
                   </p>
-                  <p className="text-xs text-blue-200 capitalize">{role || 'User'}</p>
+                  <p className="text-xs text-slate-500 capitalize">{role || 'User'}</p>
                 </div>
-                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-semibold shadow-lg">
+                <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold shadow-sm">
                   {(user.user_metadata?.full_name || user.email || 'U').charAt(0).toUpperCase()}
                 </div>
                 <button
+                  type="button"
+                  onClick={() => setShowPharmacyApiPanel((v) => !v)}
+                  className="px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
+                >
+                  {t('nav.pharmacy_api')}
+                </button>
+                <button
                   onClick={handleSignOut}
                   disabled={isSigningOut}
-                  className="px-4 py-2 bg-red-500/20 border border-red-500/50 text-red-200 rounded-xl hover:bg-red-500/30 transition-all text-sm font-medium backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSigningOut ? 'Signing out...' : 'Sign Out'}
+                  {isSigningOut ? t('common.signing_out') : t('common.sign_out')}
                 </button>
+                {showPharmacyApiPanel && (
+                  <div className="absolute right-0 top-16 w-[min(92vw,640px)] border border-amber-200 bg-white rounded-xl p-4 shadow-2xl z-50 space-y-3">
+                    <p className="text-sm text-slate-700">
+                      {t('pharmacy.give_api')}
+                    </p>
+                    <div>
+                      <label className="text-xs text-slate-600 block mb-1">{t('pharmacy.api_key_label')}</label>
+                      <input
+                        type="text"
+                        value={pharmacyApiKey}
+                        onChange={(e) => setPharmacyApiKey(e.target.value)}
+                        placeholder={t('pharmacy.api_key_placeholder')}
+                        className="w-full bg-[#f9fbff] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">{t('pharmacy.browser_url')}</p>
+                      <code className="block text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 break-all">{pharmacyBrowserUrl}</code>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-600 mb-1">{t('pharmacy.header_request')}</p>
+                      <code className="block text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 break-all">{pharmacyCurl}</code>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -203,8 +263,8 @@ export default function DashboardLayout({
 
       <div className="flex">
         {(role === 'doctor' || role === 'nurse' || role === 'staff') && (
-          <aside className="w-64 bg-white/5 backdrop-blur-xl border-r border-white/10 min-h-[calc(100vh-5rem)] sticky top-20">
-            <nav className="p-4 space-y-2">
+          <aside className="w-64 bg-white border-r border-slate-200 min-h-[calc(100vh-5rem)] sticky top-20">
+            <nav className="p-4 space-y-1">
               {menuItems.map((item) => {
                 const isActive = pathname === item.href
                 
@@ -213,16 +273,16 @@ export default function DashboardLayout({
                     <button
                       key={item.href || item.name}
                       onClick={item.onClick}
-                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
                         isActive
-                          ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/50 text-white shadow-lg'
-                          : 'text-blue-200 hover:bg-white/10 hover:text-white'
+                          ? 'bg-[#eef3ff] text-[#2E6EF3]'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                       }`}
                     >
-                      <span className={isActive ? 'text-blue-400' : 'text-blue-300'}>
+                      <span className={isActive ? 'text-[#2E6EF3]' : 'text-slate-400'}>
                         {item.icon}
                       </span>
-                      <span className="font-medium">{item.name}</span>
+                      <span className="text-sm font-medium">{item.name}</span>
                     </button>
                   )
                 }
@@ -231,16 +291,16 @@ export default function DashboardLayout({
                   <Link
                     key={item.href || item.name}
                     href={item.href}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
                       isActive
-                        ? 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/50 text-white shadow-lg'
-                        : 'text-blue-200 hover:bg-white/10 hover:text-white'
+                        ? 'bg-[#eef3ff] text-[#2E6EF3]'
+                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                     }`}
                   >
-                    <span className={isActive ? 'text-blue-400' : 'text-blue-300'}>
+                    <span className={isActive ? 'text-[#2E6EF3]' : 'text-slate-400'}>
                       {item.icon}
                     </span>
-                    <span className="font-medium">{item.name}</span>
+                    <span className="text-sm font-medium">{item.name}</span>
                   </Link>
                 )
               })}
@@ -253,7 +313,6 @@ export default function DashboardLayout({
         </main>
       </div>
 
-      {/* Chat Modal */}
       <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
     </div>
   )

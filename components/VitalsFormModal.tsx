@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { createClient } from '@/lib/supabase/client'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
+import { useT } from '@/lib/i18n'
 
 interface VitalsFormModalProps {
   encounterId: number
@@ -29,6 +30,7 @@ const VALIDATION_RANGES = {
 
 export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: VitalsFormModalProps) {
   const supabase = createClient()
+  const { t } = useT()
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [formData, setFormData] = useState({
@@ -255,10 +257,24 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
 
         if (!soapRes.ok || !soapJson?.success) {
           console.error('SOAP complete-soap failed:', soapRes.status, soapJson)
+          const payload = soapJson as
+            | {
+                message?: string
+                error?: string
+                details?: { message?: string } | string
+              }
+            | undefined
+          const detailMessage =
+            typeof payload?.details === 'object' && payload?.details
+              ? payload.details.message
+              : typeof payload?.details === 'string'
+                ? payload.details
+                : undefined
           toast.error('SOAP note could not be started', {
             description:
-              soapJson?.error ||
-              soapJson?.message ||
+              payload?.message ||
+              detailMessage ||
+              payload?.error ||
               `Server returned ${soapRes.status}. Check console.`,
           })
         } else {
@@ -321,26 +337,51 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
 
   if (!isOpen) return null
 
+  const inputCls = (name: keyof typeof errors) =>
+    `w-full px-4 py-2.5 bg-[#f9fbff] border rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] ${
+      errors[name] ? 'border-red-500' : 'border-slate-200'
+    }`
+
+  const inputFlexCls = (name: keyof typeof errors) =>
+    `flex-1 px-4 py-2.5 bg-[#f9fbff] border rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] ${
+      errors[name] ? 'border-red-500' : 'border-slate-200'
+    }`
+
+  const selectCls =
+    'px-3 py-2.5 bg-[#f9fbff] border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] min-w-[70px]'
+
+  const labelCls = 'block text-slate-500 text-xs font-medium uppercase tracking-wide mb-2'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-slate-800 border border-white/20 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-white">Add Vitals</h3>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-[2px] p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="vitals-modal-title"
+    >
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 shrink-0">
+          <h3 id="vitals-modal-title" className="text-xl font-semibold text-slate-900 tracking-tight">
+            {t('vitals.modal_title')}
+          </h3>
           <button
+            type="button"
             onClick={handleClose}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
+            aria-label={t('common.close')}
           >
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             {/* Blood Pressure */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Blood Pressure (Systolic)</label>
+              <label className={labelCls}>{t('vitals.label_bp_systolic')}</label>
               <input
                 type="number"
                 min={VALIDATION_RANGES.bp_systolic.min}
@@ -348,16 +389,12 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 value={formData.bp_systolic}
                 onChange={(e) => handleFieldChange('bp_systolic', e.target.value)}
                 placeholder={`${VALIDATION_RANGES.bp_systolic.min}-${VALIDATION_RANGES.bp_systolic.max}`}
-                className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                  errors.bp_systolic ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                }`}
+                className={inputCls('bp_systolic')}
               />
-              {errors.bp_systolic && (
-                <p className="text-red-400 text-xs mt-1">{errors.bp_systolic}</p>
-              )}
+              {errors.bp_systolic && <p className="text-red-600 text-xs mt-1">{errors.bp_systolic}</p>}
             </div>
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Blood Pressure (Diastolic)</label>
+              <label className={labelCls}>{t('vitals.label_bp_diastolic')}</label>
               <input
                 type="number"
                 min={VALIDATION_RANGES.bp_diastolic.min}
@@ -365,18 +402,14 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 value={formData.bp_diastolic}
                 onChange={(e) => handleFieldChange('bp_diastolic', e.target.value)}
                 placeholder={`${VALIDATION_RANGES.bp_diastolic.min}-${VALIDATION_RANGES.bp_diastolic.max}`}
-                className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                  errors.bp_diastolic ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                }`}
+                className={inputCls('bp_diastolic')}
               />
-              {errors.bp_diastolic && (
-                <p className="text-red-400 text-xs mt-1">{errors.bp_diastolic}</p>
-              )}
+              {errors.bp_diastolic && <p className="text-red-600 text-xs mt-1">{errors.bp_diastolic}</p>}
             </div>
 
             {/* Heart Rate */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Heart Rate (bpm)</label>
+              <label className={labelCls}>{t('vitals.label_hr')}</label>
               <input
                 type="number"
                 min={VALIDATION_RANGES.heart_rate.min}
@@ -384,18 +417,14 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 value={formData.heart_rate}
                 onChange={(e) => handleFieldChange('heart_rate', e.target.value)}
                 placeholder={`${VALIDATION_RANGES.heart_rate.min}-${VALIDATION_RANGES.heart_rate.max}`}
-                className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                  errors.heart_rate ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                }`}
+                className={inputCls('heart_rate')}
               />
-              {errors.heart_rate && (
-                <p className="text-red-400 text-xs mt-1">{errors.heart_rate}</p>
-              )}
+              {errors.heart_rate && <p className="text-red-600 text-xs mt-1">{errors.heart_rate}</p>}
             </div>
 
             {/* Respiratory Rate */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Respiratory Rate (/min)</label>
+              <label className={labelCls}>{t('vitals.label_rr')}</label>
               <input
                 type="number"
                 min={VALIDATION_RANGES.respiratory_rate.min}
@@ -403,24 +432,28 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 value={formData.respiratory_rate}
                 onChange={(e) => handleFieldChange('respiratory_rate', e.target.value)}
                 placeholder="16"
-                className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                  errors.respiratory_rate ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                }`}
+                className={inputCls('respiratory_rate')}
               />
-              {errors.respiratory_rate && (
-                <p className="text-red-400 text-xs mt-1">{errors.respiratory_rate}</p>
-              )}
+              {errors.respiratory_rate && <p className="text-red-600 text-xs mt-1">{errors.respiratory_rate}</p>}
             </div>
 
             {/* Temperature */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Temperature</label>
+              <label className={labelCls}>{t('vitals.label_temperature')}</label>
               <div className="flex gap-2">
                 <input
                   type="number"
                   step="0.1"
-                  min={formData.temperature_unit === 'F' ? VALIDATION_RANGES.temperature_f.min : VALIDATION_RANGES.temperature_c.min}
-                  max={formData.temperature_unit === 'F' ? VALIDATION_RANGES.temperature_f.max : VALIDATION_RANGES.temperature_c.max}
+                  min={
+                    formData.temperature_unit === 'F'
+                      ? VALIDATION_RANGES.temperature_f.min
+                      : VALIDATION_RANGES.temperature_c.min
+                  }
+                  max={
+                    formData.temperature_unit === 'F'
+                      ? VALIDATION_RANGES.temperature_f.max
+                      : VALIDATION_RANGES.temperature_c.max
+                  }
                   value={formData.temperature}
                   onChange={(e) => handleFieldChange('temperature', e.target.value)}
                   placeholder={
@@ -428,9 +461,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       ? `${VALIDATION_RANGES.temperature_f.min}-${VALIDATION_RANGES.temperature_f.max}`
                       : `${VALIDATION_RANGES.temperature_c.min}-${VALIDATION_RANGES.temperature_c.max}`
                   }
-                  className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                    errors.temperature ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                  }`}
+                  className={inputFlexCls('temperature')}
                 />
                 <select
                   value={formData.temperature_unit}
@@ -442,20 +473,18 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       setErrors(newErrors)
                     }
                   }}
-                  className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500 min-w-[80px]"
+                  className={`${selectCls} min-w-[80px]`}
                 >
                   <option value="F">°F</option>
                   <option value="C">°C</option>
                 </select>
               </div>
-              {errors.temperature && (
-                <p className="text-red-400 text-xs mt-1">{errors.temperature}</p>
-              )}
+              {errors.temperature && <p className="text-red-600 text-xs mt-1">{errors.temperature}</p>}
             </div>
 
             {/* SpO2 */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">SpO2 (%)</label>
+              <label className={labelCls}>{t('vitals.label_spo2')}</label>
               <input
                 type="number"
                 min={VALIDATION_RANGES.spo2.min}
@@ -463,24 +492,24 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                 value={formData.spo2}
                 onChange={(e) => handleFieldChange('spo2', e.target.value)}
                 placeholder={`${VALIDATION_RANGES.spo2.min}-${VALIDATION_RANGES.spo2.max}`}
-                className={`w-full px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                  errors.spo2 ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                }`}
+                className={inputCls('spo2')}
               />
-              {errors.spo2 && (
-                <p className="text-red-400 text-xs mt-1">{errors.spo2}</p>
-              )}
+              {errors.spo2 && <p className="text-red-600 text-xs mt-1">{errors.spo2}</p>}
             </div>
 
             {/* Weight */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Weight</label>
+              <label className={labelCls}>{t('vitals.label_weight')}</label>
               <div className="flex gap-2">
                 <input
                   type="number"
                   step="0.1"
-                  min={formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.min : VALIDATION_RANGES.weight_kg.min}
-                  max={formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.max : VALIDATION_RANGES.weight_kg.max}
+                  min={
+                    formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.min : VALIDATION_RANGES.weight_kg.min
+                  }
+                  max={
+                    formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.max : VALIDATION_RANGES.weight_kg.max
+                  }
                   value={formData.weight}
                   onChange={(e) => handleFieldChange('weight', e.target.value)}
                   placeholder={
@@ -488,9 +517,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       ? `${VALIDATION_RANGES.weight_lbs.min}-${VALIDATION_RANGES.weight_lbs.max}`
                       : `${VALIDATION_RANGES.weight_kg.min}-${VALIDATION_RANGES.weight_kg.max}`
                   }
-                  className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                    errors.weight ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                  }`}
+                  className={inputFlexCls('weight')}
                 />
                 <select
                   value={formData.weight_unit}
@@ -502,26 +529,28 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       setErrors(newErrors)
                     }
                   }}
-                  className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500 min-w-[70px]"
+                  className={selectCls}
                 >
                   <option value="lbs">lbs</option>
                   <option value="kg">kg</option>
                 </select>
               </div>
-              {errors.weight && (
-                <p className="text-red-400 text-xs mt-1">{errors.weight}</p>
-              )}
+              {errors.weight && <p className="text-red-600 text-xs mt-1">{errors.weight}</p>}
             </div>
 
             {/* Height */}
             <div>
-              <label className="block text-blue-200 text-sm mb-2">Height</label>
+              <label className={labelCls}>{t('vitals.label_height')}</label>
               <div className="flex gap-2">
                 <input
                   type="number"
                   step="0.1"
-                  min={formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.min : VALIDATION_RANGES.height_cm.min}
-                  max={formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.max : VALIDATION_RANGES.height_cm.max}
+                  min={
+                    formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.min : VALIDATION_RANGES.height_cm.min
+                  }
+                  max={
+                    formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.max : VALIDATION_RANGES.height_cm.max
+                  }
                   value={formData.height}
                   onChange={(e) => handleFieldChange('height', e.target.value)}
                   placeholder={
@@ -529,9 +558,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       ? `${VALIDATION_RANGES.height_in.min}-${VALIDATION_RANGES.height_in.max}`
                       : `${VALIDATION_RANGES.height_cm.min}-${VALIDATION_RANGES.height_cm.max}`
                   }
-                  className={`flex-1 px-4 py-2 bg-white/5 border rounded-lg text-white placeholder-blue-300/50 focus:outline-none ${
-                    errors.height ? 'border-red-500' : 'border-white/20 focus:border-blue-500'
-                  }`}
+                  className={inputFlexCls('height')}
                 />
                 <select
                   value={formData.height_unit}
@@ -543,45 +570,43 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
                       setErrors(newErrors)
                     }
                   }}
-                  className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-500 min-w-[70px]"
+                  className={selectCls}
                 >
                   <option value="in">in</option>
                   <option value="cm">cm</option>
                 </select>
               </div>
-              {errors.height && (
-                <p className="text-red-400 text-xs mt-1">{errors.height}</p>
-              )}
+              {errors.height && <p className="text-red-600 text-xs mt-1">{errors.height}</p>}
             </div>
           </div>
 
           {/* Notes */}
           <div>
-            <label className="block text-blue-200 text-sm mb-2">Notes</label>
+            <label className={labelCls}>{t('vitals.label_notes')}</label>
             <textarea
               value={formData.notes}
               onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder="Additional notes..."
+              placeholder={t('vitals.placeholder_notes')}
               rows={3}
-              className="w-full px-4 py-2 bg-white/5 border border-white/20 rounded-lg text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
+              className="w-full px-4 py-2.5 bg-[#f9fbff] border border-slate-200 rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3]"
             />
           </div>
+          </div>
 
-          {/* Actions */}
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/90 shrink-0">
             <button
               type="button"
               onClick={handleClose}
-              className="flex-1 px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg hover:bg-white/20 transition-all"
+              className="flex-1 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transition-all disabled:opacity-50"
+              className="flex-1 px-4 py-2.5 bg-[#2E6EF3] text-white text-sm font-semibold rounded-xl hover:bg-[#256ae8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/60 focus-visible:ring-offset-2"
             >
-              {saving ? 'Saving...' : 'Save Vitals'}
+              {saving ? t('vitals.saving') : t('vitals.save')}
             </button>
           </div>
         </form>

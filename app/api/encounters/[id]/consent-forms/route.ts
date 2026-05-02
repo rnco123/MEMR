@@ -126,7 +126,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const parsed = parseFormPathsRaw(signedRow?.form_paths ?? null)
     let patientPath = normalizeStoragePath(encounterId, parsed.patientRelative)
-    let physicianPath = normalizeStoragePath(encounterId, parsed.physicianRelative)
+    const physicianPath = normalizeStoragePath(encounterId, parsed.physicianRelative)
 
     const publicUrl = (fullPath: string | null) => {
       if (!fullPath) return null
@@ -135,7 +135,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     }
 
     let patientSigUrl = publicUrl(patientPath)
-    let physicianSigUrl = publicUrl(physicianPath)
+    const physicianSigUrl = publicUrl(physicianPath)
 
     if (!patientSigUrl) {
       const { data: files, error: listErr } = await admin.storage.from(BUCKET).list(String(encounterId), {

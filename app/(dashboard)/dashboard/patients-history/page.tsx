@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
 import * as Sentry from '@sentry/nextjs'
+import { useT } from '@/lib/i18n'
 
 interface Patient {
   id: number // bigint
@@ -26,6 +27,7 @@ const PAGE_SIZE = 10
 
 function PatientsHistoryPage() {
   const { user, role } = useAuth()
+  const { t } = useT()
   const [patients, setPatients] = useState<Patient[]>([])
   const [totalPatientCount, setTotalPatientCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -120,19 +122,48 @@ function PatientsHistoryPage() {
       const encounterCounts: Record<number, number> = {}
       const encounterLastVisits: Record<number, string> = {}
       const appointmentLastVisits: Record<number, string> = {}
+      const appointmentToPatient: Record<number, number> = {}
+      const countedEncounterIds = new Set<number>()
+
+      // Build appointment -> patient map first, so encounters linked only by appointment_id
+      // are still counted in visit totals.
+      try {
+        const { data: appointmentsForEncounters } = await supabase
+          .from('appointments')
+          .select('id, patient_id')
+          .in('patient_id', patientIds)
+
+        if (appointmentsForEncounters) {
+          appointmentsForEncounters.forEach((appointment) => {
+            if (appointment?.id && appointment?.patient_id) {
+              appointmentToPatient[appointment.id] = appointment.patient_id
+            }
+          })
+        }
+      } catch {
+        // Continue without appointment map fallback
+      }
 
       try {
         const { data: encountersData } = await supabase
           .from('encounters')
-          .select('patient_id, created_at')
-          .in('patient_id', patientIds)
+          .select('id, patient_id, appointment_id, created_at')
+          .or(
+            `patient_id.in.(${patientIds.join(',')}),appointment_id.in.(${Object.keys(appointmentToPatient).join(',') || '-1'})`
+          )
 
         if (encountersData) {
           encountersData.forEach(encounter => {
-            const patientId = encounter.patient_id
-            encounterCounts[patientId] = (encounterCounts[patientId] || 0) + 1
-            if (!encounterLastVisits[patientId] || encounter.created_at > encounterLastVisits[patientId]) {
-              encounterLastVisits[patientId] = encounter.created_at
+            const resolvedPatientId =
+              encounter.patient_id ?? (encounter.appointment_id ? appointmentToPatient[encounter.appointment_id] : undefined)
+
+            if (!resolvedPatientId || !patientIds.includes(resolvedPatientId)) return
+            if (countedEncounterIds.has(encounter.id)) return
+
+            countedEncounterIds.add(encounter.id)
+            encounterCounts[resolvedPatientId] = (encounterCounts[resolvedPatientId] || 0) + 1
+            if (!encounterLastVisits[resolvedPatientId] || encounter.created_at > encounterLastVisits[resolvedPatientId]) {
+              encounterLastVisits[resolvedPatientId] = encounter.created_at
             }
           })
         }
@@ -260,100 +291,94 @@ function PatientsHistoryPage() {
     <div className="p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center justify-between">
+        <div className="mb-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-white mb-2">Patients History</h1>
-              <p className="text-blue-200">
-                Complete clinic patient records and medical history
+              <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('patients.title')}</h1>
+              <p className="text-slate-500 text-sm">
+                {t('patients.subtitle')}
               </p>
             </div>
             {totalPatientCount !== null && (
-              <div className="bg-green-500/20 border border-green-500/50 rounded-xl px-6 py-3">
-                <p className="text-green-300 text-sm font-medium">Database Connected</p>
-                <p className="text-white text-2xl font-bold">{totalPatientCount}</p>
-                <p className="text-green-200 text-xs">Total Patients</p>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-5 py-3">
+                <p className="text-emerald-700 text-xs font-medium">{t('patients.db_connected')}</p>
+                <p className="text-slate-900 text-2xl font-bold leading-tight">{totalPatientCount}</p>
+                <p className="text-emerald-600 text-xs">{t('patients.total_patients')}</p>
               </div>
             )}
           </div>
         </div>
 
-        {/* Patients Content */}
         <>
         {/* Search and Filters */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-4 mb-6">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
+          <div className="flex flex-col lg:flex-row gap-3">
             <div className="flex-1 relative">
-              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, email, phone, or patient ID..."
-                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
+                placeholder={t('patients.search_placeholder')}
+                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
 
-            {/* Refresh Button */}
             <button
               onClick={handleRefresh}
               disabled={loading}
-              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="h-11 w-11 inline-flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              title={t('common.refresh')}
             >
-              <svg className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
 
-            {/* Sort */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Sort by:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('patients.sort_by')}</span>
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="name">Name (A-Z)</option>
-                <option value="recent">Recent Visit</option>
-                <option value="visits">Most Visits</option>
+                <option value="name">{t('patients.sort_name')}</option>
+                <option value="recent">{t('patients.sort_recent')}</option>
+                <option value="visits">{t('patients.sort_visits')}</option>
               </select>
             </div>
 
-            {/* Gender Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Gender:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('patients.gender')}</span>
               <select
                 value={filterGender}
                 onChange={(e) => setFilterGender(e.target.value as typeof filterGender)}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="all">All</option>
-                <option value="Male">Male</option>
-                <option value="Female">Female</option>
+                <option value="all">{t('common.all')}</option>
+                <option value="Male">{t('common.male')}</option>
+                <option value="Female">{t('common.female')}</option>
               </select>
             </div>
           </div>
 
-          {/* Results count */}
-          <div className="mt-4 flex items-center justify-between">
-            <p className="text-sm text-blue-200">
-              Showing{' '}
-              <span className="text-white font-medium">
-                {patients.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}–
-                {Math.min(page * PAGE_SIZE, totalPatientCount ?? 0)}
-              </span>{' '}
-              of <span className="text-white font-medium">{totalPatientCount ?? 0}</span> patients
-              {debouncedSearch.trim() && ' (search on all)'}
+          <div className="mt-3 flex items-center justify-between">
+            <p className="text-xs text-slate-500">
+              {t('patients.showing_x_of_y', {
+                start: patients.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1,
+                end: Math.min(page * PAGE_SIZE, totalPatientCount ?? 0),
+                total: totalPatientCount ?? 0,
+              })}
+              {debouncedSearch.trim() && ` ${t('patients.search_on_all')}`}
             </p>
             {searchQuery.trim() && (
               <button
                 onClick={() => setSearchQuery('')}
-                className="text-sm text-blue-300 hover:text-white transition-colors"
+                className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors"
               >
-                Clear search
+                {t('common.clear_search')}
               </button>
             )}
           </div>
@@ -361,96 +386,88 @@ function PatientsHistoryPage() {
 
         {/* Patients Table */}
         {loading && patients.length === 0 ? (
-          <div className="flex items-center justify-center py-20">
-            <LoadingSpinner message="Loading patients..." />
+          <div className="bg-white border border-slate-200 rounded-2xl p-16 flex items-center justify-center">
+            <LoadingSpinner message={t('patients.loading')} />
           </div>
         ) : patients.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-12 text-center">
-            <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
+            <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-white mb-2">
-              {searchQuery ? 'No Results Found' : 'No Patients Found'}
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">
+              {searchQuery ? t('common.no_results') : t('patients.no_patients')}
             </h3>
-            <p className="text-blue-200">
-              {searchQuery ? 'Try adjusting your search or filters.' : 'No patients have been registered in the clinic yet.'}
+            <p className="text-slate-500 text-sm">
+              {searchQuery ? t('common.try_adjust_filters') : t('patients.empty_message')}
             </p>
           </div>
         ) : (
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl overflow-hidden">
-            {/* Table Header */}
-            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-4 bg-white/5 border-b border-white/10 text-sm font-medium text-blue-200">
-              <div className="col-span-3">Patient</div>
-              <div className="col-span-2">Contact</div>
-              <div className="col-span-2">Demographics</div>
-              <div className="col-span-2">Last Visit</div>
-              <div className="col-span-1 text-center">Visits</div>
-              <div className="col-span-2 text-right">Actions</div>
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              <div className="col-span-3">{t('patients.col_patient')}</div>
+              <div className="col-span-2">{t('patients.col_contact')}</div>
+              <div className="col-span-2">{t('patients.col_demographics')}</div>
+              <div className="col-span-2">{t('patients.col_last_visit')}</div>
+              <div className="col-span-1 text-center">{t('patients.col_visits')}</div>
+              <div className="col-span-2 text-right">{t('common.actions')}</div>
             </div>
 
-            {/* Table Body */}
-            <div className="divide-y divide-white/10">
+            <div className="divide-y divide-slate-100">
               {patients.map((patient) => (
                 <div
                   key={patient.id}
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 hover:bg-white/5 transition-colors"
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 hover:bg-slate-50 transition-colors"
                 >
-                  {/* Patient Info */}
                   <div className="lg:col-span-3 flex items-center gap-3">
-                    <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0">
+                    <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold text-sm flex-shrink-0">
                       {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                     </div>
-                    <div>
-                      <h3 className="text-white font-semibold">
+                    <div className="min-w-0">
+                      <h3 className="text-slate-900 font-semibold text-sm truncate">
                         {patient.first_name} {patient.last_name}
                       </h3>
-                      <p className="text-blue-300 text-xs font-mono">ID: {patient.id}</p>
+                      <p className="text-slate-400 text-xs font-mono">{t('common.id')}: {patient.id}</p>
                     </div>
                   </div>
 
-                  {/* Contact */}
-                  <div className="lg:col-span-2 flex flex-col justify-center">
-                    <p className="text-white text-sm truncate">{patient.email || 'No email'}</p>
-                    <p className="text-blue-200 text-sm">{patient.phone || 'No phone'}</p>
+                  <div className="lg:col-span-2 flex flex-col justify-center min-w-0">
+                    <p className="text-slate-700 text-sm truncate">{patient.email || t('common.no_email')}</p>
+                    <p className="text-slate-500 text-xs">{patient.phone || t('common.no_phone')}</p>
                   </div>
 
-                  {/* Demographics */}
                   <div className="lg:col-span-2 flex flex-col justify-center">
-                    <p className="text-white text-sm">
-                      {patient.gender || 'N/A'}, {calculateAge(patient.date_of_birth)} yrs
+                    <p className="text-slate-700 text-sm">
+                      {patient.gender ? (patient.gender === 'Male' ? t('common.male') : patient.gender === 'Female' ? t('common.female') : patient.gender) : 'N/A'}, {calculateAge(patient.date_of_birth)} {t('patients.years_short')}
                     </p>
-                    <p className="text-blue-200 text-sm">DOB: {formatDate(patient.date_of_birth)}</p>
+                    <p className="text-slate-500 text-xs">{t('common.dob')}: {formatDate(patient.date_of_birth)}</p>
                   </div>
 
-                  {/* Last Visit */}
                   <div className="lg:col-span-2 flex items-center">
-                    <span className={`text-sm ${patient.last_visit ? 'text-white' : 'text-blue-300'}`}>
-                      {patient.last_visit ? formatDate(patient.last_visit) : 'No visits yet'}
+                    <span className={`text-sm ${patient.last_visit ? 'text-slate-700' : 'text-slate-400'}`}>
+                      {patient.last_visit ? formatDate(patient.last_visit) : t('patients.no_visits')}
                     </span>
                   </div>
 
-                  {/* Visit Count */}
                   <div className="lg:col-span-1 flex items-center justify-center">
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${
                       (patient.encounter_count || 0) > 5 
-                        ? 'bg-green-500/20 text-green-300' 
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
                         : (patient.encounter_count || 0) > 0 
-                        ? 'bg-blue-500/20 text-blue-300'
-                        : 'bg-white/10 text-blue-200'
+                        ? 'bg-[#2E6EF3]/10 text-[#2E6EF3] border border-[#2E6EF3]/20'
+                        : 'bg-slate-100 text-slate-500 border border-slate-200'
                     }`}>
                       {patient.encounter_count || 0}
                     </span>
                   </div>
 
-                  {/* Actions */}
                   <div className="lg:col-span-2 flex items-center justify-end gap-2">
                     <Link
                       href={`/patient-file/${patient.id.toString()}`}
-                      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all"
+                      className="px-3.5 py-2 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors"
                     >
-                      View File
+                      {t('common.view_file')}
                     </Link>
                   </div>
                 </div>
@@ -461,27 +478,27 @@ function PatientsHistoryPage() {
 
         {/* Pagination */}
         {!loading && patients.length > 0 && (
-          <div className="mt-6 flex items-center justify-center gap-4">
+          <div className="mt-5 flex items-center justify-center gap-3">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Previous
+              {t('common.previous')}
             </button>
-            <span className="text-blue-200 font-medium">
-              Page {page} of {totalPages}
+            <span className="text-slate-500 text-sm font-medium">
+              {t('common.page_x_of_y', { page, total: totalPages })}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              Next
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {t('common.next')}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>
@@ -490,14 +507,14 @@ function PatientsHistoryPage() {
 
         {/* Stats Cards */}
         {!loading && totalPatientCount !== null && totalPatientCount > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Total Patients</p>
-              <p className="text-2xl font-bold text-white">{totalPatientCount}</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('patients.total_patients')}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{totalPatientCount}</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">On This Page</p>
-              <p className="text-2xl font-bold text-white">{patients.length}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('patients.on_this_page')}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{patients.length}</p>
             </div>
           </div>
         )}

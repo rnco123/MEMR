@@ -44,29 +44,6 @@ export async function GET(
       )
     }
 
-    // Fetch signed forms for all appointments of this patient
-    const { data: appointments } = await supabase
-      .from('appointments')
-      .select('id')
-      .eq('patient_id', patientId)
-
-    const appointmentIds = appointments?.map(a => a.id) || []
-    let signedForms: any[] = []
-    
-    if (appointmentIds.length > 0) {
-      const { data: forms } = await supabase
-        .from('signed_form')
-        .select('*')
-        .in('appointment_id', appointmentIds)
-      
-      signedForms = forms || []
-    }
-
-    // Find signed forms with file paths
-    const generalSurgeryForm = signedForms.find(f => f.generalsurgery_form_path)
-    const hipaaForm = signedForms.find(f => f.hipaacompliance_form_path)
-    const telemedicineForm = signedForms.find(f => f.telemedicine_form_path)
-
     // Use admin client for storage so bucket RLS cannot block listing/signed URLs
     const supabaseAdmin = createAdminClient()
     const getDocumentUrl = async (filePath: string, bucket = 'patient-documents'): Promise<string> => {
@@ -75,95 +52,6 @@ export async function GET(
         .createSignedUrl(filePath, 3600)
       return data?.signedUrl ?? supabaseAdmin.storage.from(bucket).getPublicUrl(filePath).data.publicUrl
     }
-
-    // Generate URLs for signed forms if they exist (signed URLs so they open in iframe/img)
-    // Telemedicine signed forms live in bucket 'telemedicine_signed_form'; others in 'patient-documents'
-    const generalSurgeryUrl = generalSurgeryForm?.generalsurgery_form_path
-      ? await getDocumentUrl(generalSurgeryForm.generalsurgery_form_path, 'patient-documents')
-      : null
-    const hipaaUrl = hipaaForm?.hipaacompliance_form_path
-      ? await getDocumentUrl(hipaaForm.hipaacompliance_form_path, 'patient-documents')
-      : null
-
-    // Telemedicine: prefer explicit path from signed_form; if missing, fall back to storage folder by latest appointment id
-    let telemedicineUrl: string | null = null
-    let hasTelemedicineFile = false
-
-    if (telemedicineForm?.telemedicine_form_path) {
-      telemedicineUrl = await getDocumentUrl(telemedicineForm.telemedicine_form_path, 'telemedicine_signed_form')
-      hasTelemedicineFile = true
-    } else if (appointmentIds.length > 0) {
-      // Fallback: list storage by appointment id; try each appointment (newest first) until we find a file
-      const sortedIds = [...appointmentIds].sort((a, b) => b - a)
-      for (const appointmentId of sortedIds) {
-        const folder = String(appointmentId)
-        const { data: files, error: listError } = await supabaseAdmin.storage
-          .from('telemedicine_signed_form')
-          .list(folder, { limit: 5 })
-
-        if (listError && process.env.NODE_ENV === 'development') {
-          console.error('telemedicine_signed_form list error for', folder, listError)
-        }
-        if (files && files.length > 0) {
-          const firstFile = files.find((f) => f.name && !f.name.startsWith('.'))
-          if (firstFile) {
-            const guessedPath = `${folder}/${firstFile.name}`
-            telemedicineUrl = await getDocumentUrl(guessedPath, 'telemedicine_signed_form')
-            hasTelemedicineFile = true
-            break
-          }
-        }
-      }
-    }
-
-    // Create default form documents for every patient
-    const defaultForms = [
-      {
-        id: `default-${patientId}-generalsurgery`,
-        patient_id: patientId,
-        document_name: 'GeneralSurgery_form',
-        document_label: 'other',
-        file_url: generalSurgeryUrl,
-        file_name: 'GeneralSurgery_form',
-        file_size: 0,
-        file_type: 'application/pdf',
-        uploaded_by: null,
-        uploaded_by_name: null,
-        created_at: new Date().toISOString(),
-        is_default: true,
-        has_file: !!generalSurgeryForm,
-      },
-      {
-        id: `default-${patientId}-hipaa`,
-        patient_id: patientId,
-        document_name: 'HIPAACompliance_form',
-        document_label: 'other',
-        file_url: hipaaUrl,
-        file_name: 'HIPAACompliance_form',
-        file_size: 0,
-        file_type: 'application/pdf',
-        uploaded_by: null,
-        uploaded_by_name: null,
-        created_at: new Date().toISOString(),
-        is_default: true,
-        has_file: !!hipaaForm,
-      },
-      {
-        id: `default-${patientId}-telemedicine`,
-        patient_id: patientId,
-        document_name: 'telemedicine_signed_form',
-        document_label: 'other',
-        file_url: telemedicineUrl,
-        file_name: 'telemedicine_signed_form',
-        file_size: 0,
-        file_type: 'application/pdf',
-        uploaded_by: null,
-        uploaded_by_name: null,
-        created_at: new Date().toISOString(),
-        is_default: true,
-        has_file: hasTelemedicineFile,
-      },
-    ]
 
     // Transform documents to match frontend interface
     // Schema has: id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at
@@ -207,10 +95,7 @@ export async function GET(
       })
     )
 
-    // Combine regular documents with default forms
-    const allDocuments = [...defaultForms, ...transformedDocuments]
-
-    return NextResponse.json({ documents: allDocuments })
+    return NextResponse.json({ documents: transformedDocuments })
   } catch (error) {
     console.error('Error in GET /api/patients/[id]/documents:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

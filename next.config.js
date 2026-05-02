@@ -110,6 +110,8 @@ const nextConfig = {
   // Enable instrumentation hook for future monitoring
   experimental: {
     instrumentationHook: true,
+    // Avoid flaky webpack vendor chunks like vendor-chunks/@supabase.js missing after incremental dev rebuilds
+    serverComponentsExternalPackages: ['@supabase/ssr', '@supabase/supabase-js'],
   },
   // Optimize webpack
   webpack: (config, { isServer }) => {

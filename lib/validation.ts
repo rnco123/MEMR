@@ -184,3 +184,43 @@ export const postVisitTaskUpdateSchema = z.object({
   status: z.enum(['open', 'in_progress', 'done', 'cancelled']).optional(),
   notes: z.string().max(2000).optional().nullable(),
 })
+
+const nullableOptionalString = (max: number) =>
+  z
+    .string()
+    .max(max)
+    .optional()
+    .nullable()
+    .transform((v) => (v == null || v === '' ? null : v))
+
+export const pharmacyCreateSchema = z.object({
+  name: z.string().min(1).max(200),
+  address: nullableOptionalString(1000),
+  phone: nullableOptionalString(50),
+  email: nullableOptionalString(200),
+})
+
+export type PharmacyCreateInput = z.infer<typeof pharmacyCreateSchema>
+
+export const pharmacyUpdateSchema = z.object({
+  name: z.string().min(1).max(200).optional(),
+  address: nullableOptionalString(1000),
+  phone: nullableOptionalString(50),
+  email: nullableOptionalString(200),
+})
+
+export type PharmacyUpdateInput = z.infer<typeof pharmacyUpdateSchema>
+
+export const pharmacyApiKeyCreateSchema = z.object({
+  key_name: z.string().min(1).max(200),
+  expires_at: z.string().datetime().optional().nullable(),
+})
+
+export type PharmacyApiKeyCreateInput = z.infer<typeof pharmacyApiKeyCreateSchema>
+
+export const pharmacyApiKeyUpdateSchema = z.object({
+  is_active: z.boolean().optional(),
+  key_name: z.string().min(1).max(200).optional(),
+})
+
+export type PharmacyApiKeyUpdateInput = z.infer<typeof pharmacyApiKeyUpdateSchema>

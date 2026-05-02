@@ -46,14 +46,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Optional: only doctors/nurses can end telemedicine rooms
-    const { data: profile } = await supabaseServer
-      .from('profiles')
-      .select('role')
-      .eq('uid', user.id)
-      .maybeSingle()
+    // Resolve profile: try id first (newer schema), fallback to uid
+    let profileData: { role?: string } | null = null
+    const byId = await supabaseServer.from('profiles').select('role').eq('id', user.id).maybeSingle()
+    if (byId.data) profileData = byId.data
+    if (!profileData) {
+      const byUid = await supabaseServer.from('profiles').select('role').eq('uid', user.id).maybeSingle()
+      if (byUid.data) profileData = byUid.data
+    }
 
-    const role = profile?.role as string | null
+    const role = profileData?.role as string | null
     if (!role || !['doctor', 'nurse', 'staff'].includes(role)) {
       return NextResponse.json(
         { error: 'Not allowed to end telemedicine session' },

@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
         start_video_off: true,
         start_audio_off: true,
         enable_transcription: true,
+        enable_live_captions_ui: true,
       },
     }
 
@@ -191,6 +192,44 @@ export async function POST(request: NextRequest) {
         }
       } else {
         roomData = await response.json()
+      }
+    }
+
+    // Rooms created before transcription was enabled keep old config — merge so captions/transcription work.
+    if (roomNameToUse && roomData) {
+      const existingProps =
+        (roomData.config && roomData.config.properties) ||
+        roomData.properties ||
+        {}
+      if (existingProps.enable_transcription !== true) {
+        const patchRes = await fetch(
+          `https://api.daily.co/v1/rooms/${encodeURIComponent(roomNameToUse)}`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              properties: {
+                ...existingProps,
+                enable_screenshare: true,
+                enable_chat: true,
+                enable_knocking: true,
+                start_video_off: true,
+                start_audio_off: true,
+                enable_transcription: true,
+                enable_live_captions_ui: true,
+              },
+            }),
+          }
+        )
+        if (patchRes.ok) {
+          roomData = await patchRes.json()
+        } else if (process.env.NODE_ENV === 'development') {
+          const errText = await patchRes.text()
+          console.error('[daily/room] Could not enable transcription on room', roomNameToUse, errText)
+        }
       }
     }
 

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
+import { useT } from '@/lib/i18n'
 
 type Task = {
   id: number
@@ -20,6 +21,7 @@ type Task = {
 }
 
 function FollowUpsPage() {
+  const { t } = useT()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
@@ -114,131 +116,138 @@ function FollowUpsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">Post-visit follow-up</h1>
-        <p className="text-blue-200/90 text-sm">
-          Reminders, lab/Rx review, callbacks, escalations. Automated monitoring can be layered on later.
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('followups.title')}</h1>
+        <p className="text-slate-500 text-sm">
+          {t('followups.subtitle')}
         </p>
       </div>
 
-      <form onSubmit={createTask} className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8 space-y-4">
-        <h2 className="text-lg font-semibold text-white">New task</h2>
+      <form onSubmit={createTask} className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 space-y-4">
+        <h2 className="text-base font-semibold text-slate-900">{t('followups.new_task')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm text-blue-200">Patient ID *</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.patient_id')} *</label>
             <input
               required
               value={form.patient_id}
               onChange={(e) => setForm((f) => ({ ...f, patient_id: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Encounter ID</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.encounter_id')}</label>
             <input
               value={form.encounter_id}
               onChange={(e) => setForm((f) => ({ ...f, encounter_id: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Type</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.type')}</label>
             <select
               value={form.task_type}
               onChange={(e) => setForm((f) => ({ ...f, task_type: e.target.value as Task['task_type'] }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             >
-              <option value="follow_up_reminder">Follow-up reminder</option>
-              <option value="lab_review">Lab review</option>
-              <option value="rx_review">Prescription review</option>
-              <option value="escalation">Escalation</option>
-              <option value="callback">Callback</option>
-              <option value="other">Other</option>
+              <option value="follow_up_reminder">{t('followups.t_followup')}</option>
+              <option value="lab_review">{t('followups.t_lab')}</option>
+              <option value="rx_review">{t('followups.t_rx')}</option>
+              <option value="escalation">{t('followups.t_escalation')}</option>
+              <option value="callback">{t('followups.t_callback')}</option>
+              <option value="other">{t('followups.t_other')}</option>
             </select>
           </div>
           <div>
-            <label className="text-sm text-blue-200">Due</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.due')}</label>
             <input
               type="datetime-local"
               value={form.due_at}
               onChange={(e) => setForm((f) => ({ ...f, due_at: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-blue-200">Title *</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.title_field')} *</label>
             <input
               required
               value={form.title}
               onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-blue-200">Notes</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.notes')}</label>
             <textarea
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               rows={2}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full bg-[#f9fbff] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
         </div>
         <button
           type="submit"
           disabled={submitting}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-medium disabled:opacity-50"
+          className="px-5 h-10 rounded-lg bg-[#2E6EF3] hover:bg-[#1f5ad2] text-white text-sm font-semibold disabled:opacity-50 transition-colors"
         >
-          {submitting ? 'Saving…' : 'Create task'}
+          {submitting ? t('common.saving') : t('followups.create')}
         </button>
       </form>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Tasks</h2>
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200">
+          <h2 className="text-base font-semibold text-slate-900">{t('followups.tasks')}</h2>
         </div>
         {loading ? (
           <div className="p-12 flex justify-center">
-            <LoadingSpinner message="Loading…" />
+            <LoadingSpinner message={t('followups.loading')} />
           </div>
         ) : tasks.length === 0 ? (
-          <p className="p-8 text-blue-200">No tasks yet.</p>
+          <p className="p-8 text-slate-500 text-sm">{t('followups.empty')}</p>
         ) : (
-          <div className="divide-y divide-white/10">
-            {tasks.map((t) => (
-              <div key={t.id} className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="divide-y divide-slate-100">
+            {tasks.map((task) => (
+              <div key={task.id} className="px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:bg-slate-50 transition-colors">
                 <div className="flex-1">
-                  <p className="text-white font-medium">{t.title}</p>
-                  <p className="text-xs text-blue-300 capitalize">
-                    {t.task_type.replace('_', ' ')} · Patient #{t.patient_id}
-                    {t.encounter_id ? ` · Enc ${t.encounter_id}` : ''}
+                  <p className="text-slate-900 font-semibold text-sm">{task.title}</p>
+                  <p className="text-xs text-slate-500 capitalize mt-0.5">
+                    {task.task_type.replace('_', ' ')} · Patient #{task.patient_id}
+                    {task.encounter_id ? ` · Enc ${task.encounter_id}` : ''}
                   </p>
-                  {t.due_at && (
-                    <p className="text-xs text-amber-200/90 mt-1">Due {new Date(t.due_at).toLocaleString()}</p>
+                  {task.due_at && (
+                    <p className="text-xs text-amber-600 mt-1 font-medium">{t('followups.due_at', { date: new Date(task.due_at).toLocaleString() })}</p>
                   )}
-                  {t.notes && <p className="text-sm text-gray-300 mt-2">{t.notes}</p>}
-                  <Link href={`/patient-file/${t.patient_id}`} className="text-xs text-cyan-400 hover:underline mt-1 inline-block">
-                    Open patient file
+                  {task.notes && <p className="text-sm text-slate-600 mt-2">{task.notes}</p>}
+                  <Link href={`/patient-file/${task.patient_id}`} className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium mt-1.5 inline-block">
+                    {t('followups.open_file')}
                   </Link>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs uppercase text-gray-400">{t.status.replace('_', ' ')}</span>
-                  {t.status !== 'done' && t.status !== 'cancelled' && (
+                  <span className={`text-xs font-semibold capitalize px-2.5 py-1 rounded-full border ${
+                    task.status === 'done' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : task.status === 'cancelled' ? 'bg-slate-50 text-slate-500 border-slate-200'
+                    : task.status === 'in_progress' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                    : 'bg-[#2E6EF3]/10 text-[#2E6EF3] border-[#2E6EF3]/20'
+                  }`}>
+                    {task.status.replace('_', ' ')}
+                  </span>
+                  {task.status !== 'done' && task.status !== 'cancelled' && (
                     <>
                       <button
                         type="button"
-                        className="text-xs px-3 py-1 rounded-lg bg-white/10 text-white"
-                        onClick={() => updateStatus(t.id, 'in_progress')}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 font-semibold"
+                        onClick={() => updateStatus(task.id, 'in_progress')}
                       >
-                        In progress
+                        {t('common.in_progress')}
                       </button>
                       <button
                         type="button"
-                        className="text-xs px-3 py-1 rounded-lg bg-green-500/30 text-green-200"
-                        onClick={() => updateStatus(t.id, 'done')}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                        onClick={() => updateStatus(task.id, 'done')}
                       >
-                        Done
+                        {t('common.done')}
                       </button>
                     </>
                   )}

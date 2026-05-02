@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { useT } from '@/lib/i18n'
 
 type FormRow = {
   id: number
@@ -19,6 +20,8 @@ type ApiOk = {
 }
 
 export function EncounterConsentFormsTab({ encounterId }: { encounterId: number }) {
+  const { t, language } = useT()
+  const localeTag = language === 'es' ? 'es-ES' : 'en-US'
   const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ApiOk | null>(null)
@@ -65,27 +68,22 @@ export function EncounterConsentFormsTab({ encounterId }: { encounterId: number 
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-16 text-slate-400">Loading consent forms…</div>
+      <div className="flex items-center justify-center py-16 text-slate-500">{t('encounter_modal.forms_loading')}</div>
     )
   }
 
   if (error) {
     return (
-      <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 p-6 text-amber-200 text-sm">
-        {error}
-      </div>
+      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-amber-950 text-sm">{error}</div>
     )
   }
 
   const forms = data?.forms ?? []
   if (forms.length === 0) {
     return (
-      <div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center text-slate-400">
-        <p className="mb-2">No active form templates in the database.</p>
-        <p className="text-xs text-slate-500">
-          Add rows to <code className="text-slate-400">forms</code> with <code className="text-slate-400">content.html</code>{' '}
-          (and run migration <code className="text-slate-400">036_forms_and_signed_forms</code> if needed).
-        </p>
+      <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-slate-600 shadow-sm">
+        <p className="mb-2 font-medium text-slate-800">{t('encounter_modal.forms_empty_title')}</p>
+        <p className="text-xs text-slate-500">{t('encounter_modal.forms_empty_hint')}</p>
       </div>
     )
   }
@@ -94,20 +92,18 @@ export function EncounterConsentFormsTab({ encounterId }: { encounterId: number 
     <div className="space-y-8">
       {data?.signaturePaths && (data.signaturePaths.patient || data.signaturePaths.physician) && (
         <p className="text-xs text-slate-500">
-          Signature file(s):{' '}
+          {t('encounter_modal.forms_signature_files')}{' '}
           {[data.signaturePaths.patient, data.signaturePaths.physician].filter(Boolean).join(' · ')}
         </p>
       )}
       {forms.map((f) => (
-        <div
-          key={f.id}
-          className="rounded-xl border border-white/10 bg-white/[0.03] overflow-hidden"
-        >
-          <div className="border-b border-white/10 px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-slate-900/50">
-            <h4 className="text-lg font-semibold text-white">{f.name}</h4>
+        <div key={f.id} className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3 flex flex-wrap items-center justify-between gap-2 bg-[#f9fbff]">
+            <h4 className="text-lg font-semibold text-slate-900">{f.name}</h4>
             {f.updated_at && (
               <span className="text-xs text-slate-500">
-                Template updated {new Date(f.updated_at).toLocaleString()}
+                {t('encounter_modal.forms_template_updated')}{' '}
+                {new Date(f.updated_at).toLocaleString(localeTag)}
               </span>
             )}
           </div>

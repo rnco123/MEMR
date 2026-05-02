@@ -96,7 +96,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ data })
   }
 
-  // Get all available doctors (for nurse flowboard)
+  // Get all available doctors (for nurse virtual waiting room)
   const { data, error } = await supabase
     .from('doctor_availability')
     .select('doctor_id, is_available, updated_at')

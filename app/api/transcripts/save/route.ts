@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
@@ -84,13 +85,69 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Each item must have a non-empty message' }, { status: 400 })
     }
 
-    const { error } = await supabase.from('telemedicine_transcripts').insert(rows)
+    let userRole: string | undefined
+    const { data: profileByUid } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('uid', user.id)
+      .maybeSingle()
+    if (profileByUid?.role) userRole = profileByUid.role as string
+    if (!userRole) {
+      const { data: profileById } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .maybeSingle()
+      userRole = profileById?.role as string | undefined
+    }
+
+    const { data: enc, error: encErr } = await supabase
+      .from('encounters')
+      .select('id, doctor_id')
+      .eq('id', encounterIdNum)
+      .maybeSingle()
+
+    if (encErr || !enc) {
+      return NextResponse.json({ error: 'Encounter not found' }, { status: 404 })
+    }
+
+    if (userRole === 'doctor') {
+      const { data: doctorRow } = await supabase
+        .from('doctors')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!doctorRow?.id || enc.doctor_id !== doctorRow.id) {
+        return NextResponse.json(
+          { error: 'Not authorized to save transcript for this encounter' },
+          { status: 403 }
+        )
+      }
+    } else if (userRole === 'nurse' || userRole === 'staff') {
+      // Nurses/staff may record the session; encounter must exist (checked above).
+    } else {
+      return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
+    }
+
+    const admin = createAdminClient()
+    const { data: inserted, error } = await admin
+      .from('telemedicine_transcripts')
+      .insert(rows)
+      .select('id')
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    const ids = (inserted ?? []).map((r) => Number(r.id)).filter((n) => !isNaN(n))
+    if (ids.length !== rows.length) {
+      return NextResponse.json(
+        { error: 'Insert did not return all row ids' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({ success: true, ids })
   } catch (e) {
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },

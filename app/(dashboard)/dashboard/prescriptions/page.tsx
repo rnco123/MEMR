@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
+import { useT } from '@/lib/i18n'
 
 type Row = {
   id: number
@@ -24,6 +25,7 @@ type Row = {
 }
 
 function PrescriptionsPage() {
+  const { t } = useT()
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -107,140 +109,144 @@ function PrescriptionsPage() {
   }
 
   return (
-    <div className="p-6 lg:p-10 max-w-6xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-white mb-2">E-Prescribe / prescriptions</h1>
-        <p className="text-blue-200/90 text-sm max-w-2xl">
-          Medications you have recorded as prescriber. External e-prescribe networks can sync into{' '}
-          <code className="text-cyan-300">external_rx_id</code> via integration later. Payment is handled outside MEMR.
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('rx.title')}</h1>
+        <p className="text-slate-500 text-sm max-w-2xl">
+          {t('rx.subtitle_part1')}{' '}
+          <code className="text-[#2E6EF3] bg-[#2E6EF3]/10 px-1.5 py-0.5 rounded text-xs">external_rx_id</code> {t('rx.subtitle_part2')}
         </p>
       </div>
 
-      <form onSubmit={submit} className="bg-white/5 border border-white/10 rounded-2xl p-6 mb-8 space-y-4">
-        <h2 className="text-lg font-semibold text-white">Add prescription</h2>
+      <form onSubmit={submit} className="bg-white border border-slate-200 rounded-2xl p-5 mb-6 space-y-4">
+        <h2 className="text-base font-semibold text-slate-900">{t('rx.add')}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="text-sm text-blue-200">Patient ID *</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.patient_id')} *</label>
             <input
               required
               value={form.patient_id}
               onChange={(e) => setForm((f) => ({ ...f, patient_id: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
               placeholder="e.g. 42"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Encounter ID (optional)</label>
+            <label className="text-xs font-semibold text-slate-600">{t('followups.encounter_id')} ({t('common.optional')})</label>
             <input
               value={form.encounter_id}
               onChange={(e) => setForm((f) => ({ ...f, encounter_id: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
-              placeholder="Link to visit"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+              placeholder={t('rx.encounter_placeholder')}
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-blue-200">Medication *</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.medication')} *</label>
             <input
               required
               value={form.medication_name}
               onChange={(e) => setForm((f) => ({ ...f, medication_name: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Dosage</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.dosage')}</label>
             <input
               value={form.dosage}
               onChange={(e) => setForm((f) => ({ ...f, dosage: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Quantity</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.quantity')}</label>
             <input
               value={form.quantity}
               onChange={(e) => setForm((f) => ({ ...f, quantity: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div>
-            <label className="text-sm text-blue-200">Refills</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.refills')}</label>
             <input
               value={form.refills}
               onChange={(e) => setForm((f) => ({ ...f, refills: e.target.value }))}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full h-10 bg-[#f9fbff] border border-slate-200 rounded-lg px-3 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
               type="number"
               min={0}
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-blue-200">Instructions (sig)</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.instructions')}</label>
             <textarea
               value={form.instructions}
               onChange={(e) => setForm((f) => ({ ...f, instructions: e.target.value }))}
               rows={2}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full bg-[#f9fbff] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
           <div className="md:col-span-2">
-            <label className="text-sm text-blue-200">Notes</label>
+            <label className="text-xs font-semibold text-slate-600">{t('rx.notes')}</label>
             <textarea
               value={form.notes}
               onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
               rows={2}
-              className="mt-1 w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white"
+              className="mt-1 w-full bg-[#f9fbff] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
             />
           </div>
         </div>
         <button
           type="submit"
           disabled={submitting}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-medium disabled:opacity-50"
+          className="px-5 h-10 rounded-lg bg-[#2E6EF3] hover:bg-[#1f5ad2] text-white text-sm font-semibold disabled:opacity-50 transition-colors"
         >
-          {submitting ? 'Saving…' : 'Save prescription'}
+          {submitting ? t('common.saving') : t('rx.save')}
         </button>
       </form>
 
-      <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/10">
-          <h2 className="text-lg font-semibold text-white">Your prescriptions</h2>
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-slate-200">
+          <h2 className="text-base font-semibold text-slate-900">{t('rx.your_rx')}</h2>
         </div>
         {loading ? (
           <div className="p-12 flex justify-center">
-            <LoadingSpinner message="Loading…" />
+            <LoadingSpinner message={t('rx.loading')} />
           </div>
         ) : rows.length === 0 ? (
-          <p className="p-8 text-blue-200">No prescriptions recorded yet.</p>
+          <p className="p-8 text-slate-500 text-sm">{t('rx.empty')}</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
-              <thead className="bg-white/5 text-blue-200">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-3">Date</th>
-                  <th className="px-4 py-3">Patient</th>
-                  <th className="px-4 py-3">Medication</th>
-                  <th className="px-4 py-3">Dosage</th>
-                  <th className="px-4 py-3">Enc.</th>
-                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_date')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_patient')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_medication')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_dosage')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_enc')}</th>
+                  <th className="px-4 py-3 font-semibold">{t('rx.col_status')}</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((r) => (
-                  <tr key={r.id} className="border-t border-white/10 text-gray-200">
-                    <td className="px-4 py-3 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
+                  <tr key={r.id} className="border-t border-slate-100 text-slate-700 hover:bg-slate-50 transition-colors">
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{new Date(r.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3">
                       {r.patients ? `${r.patients.first_name} ${r.patients.last_name}` : `#${r.patient_id}`}
                       <Link
                         href={`/patient-file/${r.patient_id}`}
-                        className="ml-2 text-cyan-400 hover:underline text-xs"
+                        className="ml-2 text-[#2E6EF3] hover:text-[#1f5ad2] text-xs font-semibold"
                       >
-                        File
+                        {t('rx.file')}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 font-medium text-white">{r.medication_name}</td>
+                    <td className="px-4 py-3 font-semibold text-slate-900">{r.medication_name}</td>
                     <td className="px-4 py-3">{r.dosage || '—'}</td>
-                    <td className="px-4 py-3">{r.encounter_id ?? '—'}</td>
-                    <td className="px-4 py-3 capitalize">{r.status}</td>
+                    <td className="px-4 py-3 text-slate-500">{r.encounter_id ?? '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold capitalize bg-[#2E6EF3]/10 text-[#2E6EF3] border border-[#2E6EF3]/20">
+                        {r.status}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>

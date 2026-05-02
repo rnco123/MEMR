@@ -129,14 +129,25 @@ export function validateRequest(request: NextRequest): { valid: boolean; error?:
     return headerCheck
   }
 
+  // Multipart payloads (file uploads) can contain binary sequences that trip
+  // generic pattern checks. We still enforce auth/rate-limit/size elsewhere.
+  const contentType = (request.headers.get('content-type') || '').toLowerCase()
+  if (contentType.includes('multipart/form-data')) {
+    return { valid: true }
+  }
+
+  // Only inspect URL path + query, not full absolute URL.
+  const url = new URL(request.url)
+  const target = `${url.pathname}${url.search}`
+
   // Check for SQL injection
-  const sqlCheck = checkSqlInjection(request.url)
+  const sqlCheck = checkSqlInjection(target)
   if (!sqlCheck.valid) {
     return sqlCheck
   }
 
   // Check for XSS
-  const xssCheck = checkXss(request.url)
+  const xssCheck = checkXss(target)
   if (!xssCheck.valid) {
     return xssCheck
   }

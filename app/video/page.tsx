@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { DailyCall, DailyParticipantsObject } from '@daily-co/daily-js'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
@@ -39,6 +40,7 @@ interface Encounter {
 
 interface Appointment {
   id: number
+  patient_id?: number | null
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string | null
@@ -106,7 +108,9 @@ function cleanSoapSection(
 
 function formatDate(dateString: string | null) {
   if (!dateString) return 'N/A'
-  return new Date(dateString).toLocaleDateString('en-US', {
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dateString) ? `${dateString}T00:00:00` : dateString)
+  if (Number.isNaN(d.getTime())) return 'N/A'
+  return d.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -123,6 +127,27 @@ function calculateAge(dob: string | null) {
   return `${age} years`
 }
 
+function mergeParticipantsIntoNames(
+  participants: DailyParticipantsObject,
+  map: Record<string, string>
+) {
+  for (const p of Object.values(participants)) {
+    if (!p || typeof p !== 'object') continue
+    if (p.session_id && p.user_name) {
+      map[p.session_id] = p.user_name
+      if (p.user_id) map[p.user_id] = p.user_name
+    }
+  }
+}
+
+/** Deepgram / Daily may omit rawResponse; treat as final unless explicitly interim. */
+function isFinalTranscriptionSegment(rawResponse: Record<string, unknown> | undefined): boolean {
+  if (rawResponse == null) return true
+  if (typeof rawResponse.is_final === 'boolean') return rawResponse.is_final
+  if (typeof rawResponse.speech_final === 'boolean') return rawResponse.speech_final
+  return true
+}
+
 function VideoPage() {
   const { user, loading: authLoading, role } = useAuth()
   const router = useRouter()
@@ -136,7 +161,7 @@ function VideoPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showConnectionModal, setShowConnectionModal] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
-  const [dailyIframeSrc, setDailyIframeSrc] = useState<string | null>(null)
+  const [dailyJoinUrl, setDailyJoinUrl] = useState<string | null>(null)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
@@ -157,6 +182,43 @@ function VideoPage() {
   const [sessionEnded, setSessionEnded] = useState(false)
   const [endMessage, setEndMessage] = useState<string | null>(null)
   const [userName, setUserName] = useState<string>('')
+  const transcriptBufferRef = useRef<Array<{ speaker_role: string; speaker_name: string; message: string; created_at: string }>>([])
+  const [transcriptCount, setTranscriptCount] = useState(0)
+  const participantNamesRef = useRef<Record<string, string>>({})
+  // AI summary after consultation
+  const [aiSummary, setAiSummary] = useState<Record<string, unknown> | null>(null)
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [aiSummaryError, setAiSummaryError] = useState<string | null>(null)
+  const [showSummaryPanel, setShowSummaryPanel] = useState(false)
+
+  type TranscriptReviewLine = {
+    id: number
+    speaker_role: string
+    speaker_name: string
+    message: string
+    cleaned_transcript: string
+  }
+  const [transcriptReviewOpen, setTranscriptReviewOpen] = useState(false)
+  const [transcriptReviewLoading, setTranscriptReviewLoading] = useState(false)
+  const [transcriptReviewLines, setTranscriptReviewLines] = useState<TranscriptReviewLine[]>([])
+  const [transcriptReviewNotice, setTranscriptReviewNotice] = useState<string | null>(null)
+  const [transcriptReviewShowAi, setTranscriptReviewShowAi] = useState(false)
+  const transcriptReviewOnCloseRef = useRef<(() => void) | null>(null)
+
+  const dailyCallRef = useRef<DailyCall | null>(null)
+  const dailyFrameContainerRef = useRef<HTMLDivElement | null>(null)
+  const roleRef = useRef(role)
+  const userNameRef = useRef(userName)
+
+  useEffect(() => {
+    roleRef.current = role
+  }, [role])
+  useEffect(() => {
+    userNameRef.current = userName
+  }, [userName])
+
+  /** Prevents re-fetching Daily room on Supabase session refresh (new `user` object) — a common cause of mid-call timeouts and full-screen errors. */
+  const roomFetchCompletedForEncounterRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -165,20 +227,30 @@ function VideoPage() {
   }, [user, authLoading, router])
 
   useEffect(() => {
-    if (!encounterId || !user || authLoading) {
+    if (!encounterId || !user?.id || authLoading) {
+      setIsLoading(false)
+      return
+    }
+
+    // Same encounter already resolved — do not race again (token still valid in state).
+    if (roomFetchCompletedForEncounterRef.current === encounterId) {
       setIsLoading(false)
       return
     }
 
     let cancelled = false
-    const timeoutMs = 15000
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+    const timeoutMs = 30000
 
     const fetchRoom = async () => {
       setIsLoading(true)
       setError(null)
 
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Connection timed out. Please try again.')), timeoutMs)
+        timeoutId = setTimeout(
+          () => reject(new Error('Connection timed out. Please try again.')),
+          timeoutMs
+        )
       })
 
       const work = async () => {
@@ -196,10 +268,11 @@ function VideoPage() {
       }
 
       try {
-        const { response, room } = await Promise.race([
-          work(),
-          timeoutPromise,
-        ])
+        const { response, room } = await Promise.race([work(), timeoutPromise])
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+          timeoutId = undefined
+        }
 
         if (cancelled) return
 
@@ -215,11 +288,16 @@ function VideoPage() {
           throw new Error('Could not get join token. Please try again.')
         }
 
+        roomFetchCompletedForEncounterRef.current = encounterId
         setRoomName(room.name)
         setRoomToken(room.token)
         setRoomUrl(room.room_url ?? null)
         setIsLoading(false)
       } catch (err) {
+        if (timeoutId) {
+          clearTimeout(timeoutId)
+          timeoutId = undefined
+        }
         if (!cancelled) {
           setError(err instanceof Error ? err.message : 'Failed to join video room')
         }
@@ -231,8 +309,9 @@ function VideoPage() {
     fetchRoom()
     return () => {
       cancelled = true
+      if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [encounterId, user, authLoading])
+  }, [encounterId, user?.id, authLoading, supabase])
 
   useEffect(() => {
     if (!encounterId || !supabase) return
@@ -253,26 +332,36 @@ function VideoPage() {
 
         setEncounter(enc as Encounter)
 
-        if (enc.patient_id != null && enc.patient_id !== undefined) {
-          const { data: pat } = await supabase
-            .from('patients')
-            .select('*')
-            .eq('id', enc.patient_id)
-            .maybeSingle()
-          setPatient(pat as Patient)
-        } else {
-          setPatient(null)
-        }
-
+        let apptRow: Appointment | null = null
         if (enc.appointment_id != null && enc.appointment_id !== undefined) {
           const { data: appt } = await supabase
             .from('appointments')
-            .select('id, appointment_date, appointment_time, onsite_type')
+            .select('id, patient_id, appointment_date, appointment_time, onsite_type')
             .eq('id', enc.appointment_id)
             .maybeSingle()
-          setAppointment(appt as Appointment)
+          apptRow = appt as Appointment
+          setAppointment(apptRow)
         } else {
           setAppointment(null)
+        }
+
+        const resolvedPatientId =
+          enc.patient_id != null && enc.patient_id !== undefined
+            ? enc.patient_id
+            : apptRow?.patient_id != null
+              ? apptRow.patient_id
+              : null
+
+        if (resolvedPatientId != null) {
+          const { data: pat, error: patErr } = await supabase
+            .from('patients')
+            .select('*')
+            .eq('id', resolvedPatientId)
+            .maybeSingle()
+          if (patErr) console.error('Error loading patient for video sidebar:', patErr)
+          setPatient((pat as Patient) ?? null)
+        } else {
+          setPatient(null)
         }
 
         // Intake: try encounter.intake_id first, then by appointment_id
@@ -385,7 +474,7 @@ function VideoPage() {
     fetchDetails()
   }, [encounterId, supabase])
 
-  // For nurses/staff: watch encounter status; if doctor concludes, show message then send them back to flowboard
+  // For nurses/staff: watch encounter status; if doctor concludes, show message then send them back to virtual waiting room
   useEffect(() => {
     if (!encounterId || !supabase) return
     if (role === 'doctor') return
@@ -405,12 +494,14 @@ function VideoPage() {
         if (!error && data?.status === 'consultation_concluded') {
           setSessionEnded(true)
           setEndMessage(
-            `Doctor has concluded the consultation for room #${encounterIdNum}. Returning to flowboard...`
+            `Doctor has concluded the consultation. Returning to virtual waiting room...`
           )
-          // Give nurse ~6 seconds to read the message
           setTimeout(() => {
-            router.push(`/dashboard/flowboard?encounter=${encounterIdNum}`)
-          }, 6000)
+            const dest = role === 'nurse' || role === 'staff'
+              ? `/dashboard/nurse-flowboard?encounter=${encounterIdNum}`
+              : `/dashboard/flowboard?encounter=${encounterIdNum}`
+            router.push(dest)
+          }, 5000)
         }
       } catch (e) {
         // Ignore polling errors; try again on next tick
@@ -421,6 +512,290 @@ function VideoPage() {
     return () => clearInterval(interval)
   }, [encounterId, supabase, role, sessionEnded, router])
 
+  const addTranscriptEntry = useCallback((speakerRole: string, speakerName: string, message: string) => {
+    transcriptBufferRef.current.push({
+      speaker_role: speakerRole,
+      speaker_name: speakerName,
+      message,
+      created_at: new Date().toISOString(),
+    })
+    setTranscriptCount(transcriptBufferRef.current.length)
+  }, [])
+
+  // Daily call object receives transcription + app-message; raw iframe embed does not post these to window.
+  useEffect(() => {
+    if (!dailyJoinUrl || !isConnected) {
+      const existing = dailyCallRef.current
+      if (existing) {
+        dailyCallRef.current = null
+        void existing.destroy()
+      }
+      return
+    }
+
+    const container = dailyFrameContainerRef.current
+    if (!container) return
+
+    let cancelled = false
+
+    const setup = async () => {
+      const { default: Daily } = await import('@daily-co/daily-js')
+      if (cancelled) return
+
+      const prev = dailyCallRef.current
+      if (prev) {
+        dailyCallRef.current = null
+        await prev.destroy().catch(() => {})
+      }
+
+      const call = Daily.createFrame(container, {
+        iframeStyle: {
+          width: '100%',
+          height: '100%',
+          border: '0',
+          position: 'absolute',
+          top: '0',
+          left: '0',
+        },
+        showLeaveButton: false,
+        userName: userNameRef.current || undefined,
+      })
+
+      if (cancelled) {
+        void call.destroy()
+        return
+      }
+
+      dailyCallRef.current = call
+
+      const onJoinedMeeting = (ev: { participants: DailyParticipantsObject }) => {
+        mergeParticipantsIntoNames(ev.participants, participantNamesRef.current)
+        try {
+          call.startTranscription({ includeRawResponse: true })
+        } catch (err) {
+          console.warn('Daily startTranscription:', err)
+        }
+      }
+
+      const onParticipant = (ev: {
+        participant: { session_id: string; user_id: string; user_name: string }
+      }) => {
+        const p = ev.participant
+        if (p.session_id && p.user_name) {
+          participantNamesRef.current[p.session_id] = p.user_name
+          if (p.user_id) participantNamesRef.current[p.user_id] = p.user_name
+        }
+      }
+
+      const onTranscriptionMessage = (ev: {
+        participantId: string
+        text: string
+        rawResponse?: Record<string, unknown>
+      }) => {
+        const text = ev.text?.trim()
+        if (!text) return
+        if (!isFinalTranscriptionSegment(ev.rawResponse)) return
+        const pid = ev.participantId ?? ''
+        const uname = userNameRef.current
+        const r = roleRef.current
+        const resolvedName = participantNamesRef.current[pid] || uname || 'Participant'
+        const speakerRole =
+          r === 'doctor' && resolvedName === uname
+            ? 'doctor'
+            : r === 'nurse' && resolvedName === uname
+              ? 'nurse'
+              : 'patient'
+        addTranscriptEntry(speakerRole, resolvedName, text)
+      }
+
+      const onAppMessage = (ev: {
+        fromId: string
+        data: { message?: string; name?: string }
+      }) => {
+        const text = ev.data?.message?.trim()
+        if (!text) return
+        const uname = userNameRef.current
+        const r = roleRef.current
+        const resolvedName = participantNamesRef.current[ev.fromId] || ev.data?.name || 'Participant'
+        const speakerRole = resolvedName === uname ? (r ?? 'staff') : 'patient'
+        addTranscriptEntry(speakerRole, resolvedName, `[chat] ${text}`)
+      }
+
+      call.on('joined-meeting', onJoinedMeeting)
+      call.on('participant-joined', onParticipant)
+      call.on('participant-updated', onParticipant)
+      call.on('transcription-message', onTranscriptionMessage)
+      call.on('app-message', onAppMessage)
+      call.on('transcription-error', (ev) => console.warn('Daily transcription-error:', ev))
+
+      try {
+        await call.join({ url: dailyJoinUrl })
+      } catch (e) {
+        console.error('Daily join failed:', e)
+        if (!cancelled) {
+          dailyCallRef.current = null
+          void call.destroy()
+          setDailyJoinUrl(null)
+          setIsConnected(false)
+          setError(e instanceof Error ? e.message : 'Failed to join video call')
+        }
+      }
+    }
+
+    void setup()
+
+    return () => {
+      cancelled = true
+      const c = dailyCallRef.current
+      dailyCallRef.current = null
+      if (c) void c.destroy()
+    }
+  }, [dailyJoinUrl, isConnected, addTranscriptEntry])
+
+  /** Saves buffered transcript lines; returns inserted row ids in order, or null on failure. */
+  const flushTranscript = async (encounterIdNum: number): Promise<number[] | null> => {
+    const items = transcriptBufferRef.current
+    if (!items.length) return []
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+      const res = await fetch('/api/transcripts/save', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ encounterId: encounterIdNum, items }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { ids?: number[]; error?: string }
+      if (!res.ok) {
+        console.error('Failed to save transcript:', data.error ?? res.status)
+        return null
+      }
+      const ids = data.ids
+      if (!Array.isArray(ids) || ids.length !== items.length) {
+        console.error('Save transcript: missing or mismatched ids')
+        return null
+      }
+      transcriptBufferRef.current = []
+      setTranscriptCount(0)
+      return ids.map((id) => Number(id))
+    } catch (e) {
+      console.error('Failed to save transcript:', e)
+      return null
+    }
+  }
+
+  const closeTranscriptReview = () => {
+    setTranscriptReviewOpen(false)
+    setTranscriptReviewLines([])
+    setTranscriptReviewNotice(null)
+    setTranscriptReviewShowAi(false)
+    setAiSummary(null)
+    setAiSummaryError(null)
+    setAiSummaryLoading(false)
+    const fn = transcriptReviewOnCloseRef.current
+    transcriptReviewOnCloseRef.current = null
+    fn?.()
+  }
+
+  const fetchAndOpenTranscriptReview = async (
+    encounterIdNum: number,
+    items: Array<{ speaker_role: string; speaker_name: string; message: string; created_at: string }>,
+    ids: number[],
+    options: { showAiSummary: boolean; onClose: () => void }
+  ) => {
+    transcriptReviewOnCloseRef.current = options.onClose
+    setTranscriptReviewShowAi(options.showAiSummary)
+    setTranscriptReviewOpen(true)
+    setTranscriptReviewLoading(true)
+    setTranscriptReviewNotice(null)
+    setTranscriptReviewLines([])
+
+    if (options.showAiSummary) {
+      void triggerAiSummary(encounterIdNum, items, { showPanel: false })
+    }
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+      const res = await fetch('/api/clean-transcript', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          encounterId: encounterIdNum,
+          items: items.map((t, i) => ({
+            id: ids[i]!,
+            speaker_role: t.speaker_role,
+            speaker_name: t.speaker_name,
+            message: t.message,
+          })),
+        }),
+      })
+      const data = (await res.json()) as {
+        lines?: TranscriptReviewLine[]
+        skipped_clean?: boolean
+        skip_reason?: string
+        error?: string
+      }
+      if (!res.ok) {
+        throw new Error(data.error ?? 'Clean transcript failed')
+      }
+      setTranscriptReviewLines(data.lines ?? [])
+      if (data.skipped_clean && data.skip_reason === 'line_limit_500') {
+        setTranscriptReviewNotice(
+          'Transcript was not AI-cleaned (over 500 lines). Showing original text.'
+        )
+      }
+    } catch (e) {
+      console.error(e)
+      setTranscriptReviewNotice(
+        e instanceof Error ? e.message : 'Could not clean transcript. Showing original text.'
+      )
+      setTranscriptReviewLines(
+        items.map((t, i) => ({
+          id: ids[i]!,
+          speaker_role: t.speaker_role,
+          speaker_name: t.speaker_name,
+          message: t.message,
+          cleaned_transcript: t.message,
+        }))
+      )
+    } finally {
+      setTranscriptReviewLoading(false)
+    }
+  }
+
+  const triggerAiSummary = async (
+    encounterIdNum: number,
+    inlineItems: Array<{ speaker_role: string; speaker_name: string; message: string; created_at: string }>,
+    opts?: { showPanel?: boolean }
+  ) => {
+    const showPanel = opts?.showPanel !== false
+    setAiSummaryLoading(true)
+    setAiSummaryError(null)
+    if (showPanel) setShowSummaryPanel(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+      const res = await fetch(`/api/encounters/${encounterIdNum}/ai-summary`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ inlineTranscript: inlineItems }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setAiSummaryError(data.error ?? 'AI summary failed')
+      } else {
+        setAiSummary(data.summary as Record<string, unknown>)
+      }
+    } catch (e) {
+      setAiSummaryError(e instanceof Error ? e.message : 'AI summary failed')
+    } finally {
+      setAiSummaryLoading(false)
+    }
+  }
+
   const handleConnect = () => {
     if (!roomToken) return
     const baseUrl = roomUrl || (() => {
@@ -429,19 +804,41 @@ function VideoPage() {
       return `https://${d}/${roomName}`
     })()
     const sep = baseUrl.includes('?') ? '&' : '?'
-    setDailyIframeSrc(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
     setShowConnectionModal(false)
     setError(null)
     setIsConnected(true)
   }
 
   const handleEndCall = async () => {
-    setDailyIframeSrc(null)
+    setDailyJoinUrl(null)
     setIsConnected(false)
     if (role === 'doctor' && encounterId && doctorId) {
       await handleEndConsultation()
+      return
+    }
+    const encounterIdNum = encounterId ? Number(encounterId) : NaN
+    if (!encounterId || Number.isNaN(encounterIdNum)) {
+      router.push('/dashboard')
+      return
+    }
+    const items = [...transcriptBufferRef.current]
+    const ids = await flushTranscript(encounterIdNum)
+    const dest =
+      role === 'nurse' || role === 'staff'
+        ? `/dashboard/nurse-flowboard?encounter=${encounterId}`
+        : `/dashboard/flowboard?encounter=${encounterId}`
+    const go = () => router.push(dest)
+    if (items.length > 0 && ids && ids.length === items.length) {
+      await fetchAndOpenTranscriptReview(encounterIdNum, items, ids, {
+        showAiSummary: false,
+        onClose: go,
+      })
     } else {
-      router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+      if (items.length > 0) {
+        alert('Transcript could not be saved.')
+      }
+      go()
     }
   }
 
@@ -541,22 +938,33 @@ function VideoPage() {
         })
       }
 
-      // Best-effort: tell backend to delete the Daily.co room for this encounter
-      try {
-        await fetch('/api/daily/end-room', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ encounterId: encounterIdNum }),
-        })
-      } catch (endRoomError) {
-        // Ignore errors here; room cleanup is not user-facing
-        console.error('Failed to end Daily.co room:', endRoomError)
+      const inlineItems = [...transcriptBufferRef.current]
+      const transcriptIds = await flushTranscript(encounterIdNum)
+
+      const endRoomAndGo = async () => {
+        try {
+          await fetch('/api/daily/end-room', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ encounterId: encounterIdNum }),
+          })
+        } catch (endRoomError) {
+          console.error('Failed to end Daily.co room:', endRoomError)
+        }
+        router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
       }
 
-      // Navigate back to flowboard / EMR
-      router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+      if (inlineItems.length > 0 && transcriptIds && transcriptIds.length === inlineItems.length) {
+        await fetchAndOpenTranscriptReview(encounterIdNum, inlineItems, transcriptIds, {
+          showAiSummary: true,
+          onClose: endRoomAndGo,
+        })
+      } else {
+        if (inlineItems.length > 0) {
+          alert('Transcript could not be saved. You can continue; lines were not persisted.')
+        }
+        await endRoomAndGo()
+      }
     } catch (e) {
       console.error('Error ending consultation:', e)
       alert('Failed to end consultation. Please try again.')
@@ -565,13 +973,29 @@ function VideoPage() {
     }
   }
 
-  const aiPlaceholder = (section: 'subjective' | 'objective' | 'assessment' | 'plan') => {
-    if (!soapNotes) return 'AI note will appear here when available'
+  const getAiSectionText = (section: 'subjective' | 'objective' | 'assessment' | 'plan'): string => {
+    if (!soapNotes) return ''
     const text = cleanSoapSection(
       soapNotes[`${section}_text` as keyof SOAPNotes] as string | null,
       section
     )
-    return text || 'Will be updated.'
+    return (text ?? '').trim()
+  }
+
+  const aiPlaceholder = (section: 'subjective' | 'objective' | 'assessment' | 'plan') => {
+    if (!soapNotes) return 'AI note will appear here when available'
+    const t = getAiSectionText(section)
+    return t || 'Will be updated.'
+  }
+
+  const handleCopyAllFromAi = () => {
+    if (!soapNotes) return
+    setSoapForm({
+      subjective_text: getAiSectionText('subjective'),
+      objective_text: getAiSectionText('objective'),
+      assessment_text: getAiSectionText('assessment'),
+      plan_text: getAiSectionText('plan'),
+    })
   }
 
 
@@ -579,7 +1003,7 @@ function VideoPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <div className="text-red-500 mb-4 text-center max-w-md">
-          Encounter ID is required. Please join from the flowboard.
+          Encounter ID is required. Please join from the virtual waiting room.
         </div>
         <button
           onClick={() => router.push('/dashboard')}
@@ -601,7 +1025,8 @@ function VideoPage() {
 
   if (!user) return null
 
-  if (error && !showConnectionModal) {
+  // Do not replace the whole page while the Daily iframe is active (avoids kicking users out mid-call if a late error fires).
+  if (error && !showConnectionModal && !dailyJoinUrl) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center p-24">
         <div className="text-red-500 mb-4 text-center max-w-md">Error: {error}</div>
@@ -625,14 +1050,299 @@ function VideoPage() {
         userName={userName || 'User'}
         userRole={roleLabel}
         onConnect={handleConnect}
-        onCancel={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+        onCancel={() => {
+          const dest =
+            role === 'nurse' || role === 'staff'
+              ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
+              : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+          router.push(dest)
+        }}
       />
+
+      {/* Cleaned transcript review — after call ends; must dismiss to continue */}
+      {transcriptReviewOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 flex-shrink-0">
+              <div>
+                <h2 className="text-white font-semibold text-base">Session transcript</h2>
+                <p className="text-gray-500 text-xs mt-0.5">AI-cleaned for grammar and clarity</p>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 min-h-[200px]">
+              {transcriptReviewLoading && (
+                <div className="flex flex-col items-center justify-center py-10 gap-3">
+                  <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-gray-400 text-sm">Cleaning transcript…</p>
+                </div>
+              )}
+              {transcriptReviewNotice && !transcriptReviewLoading && (
+                <div className="bg-amber-900/25 border border-amber-700/40 rounded-lg px-3 py-2 text-amber-200/90 text-xs">
+                  {transcriptReviewNotice}
+                </div>
+              )}
+              {!transcriptReviewLoading &&
+                transcriptReviewLines.map((line) => {
+                  const isPatient = line.speaker_role === 'patient'
+                  const label = `${line.speaker_role.charAt(0).toUpperCase()}${line.speaker_role.slice(1)} · ${line.speaker_name}`
+                  return (
+                    <div
+                      key={line.id}
+                      className={`flex flex-col gap-0.5 ${isPatient ? 'items-end' : 'items-start'}`}
+                    >
+                      <span className="text-[10px] uppercase tracking-wide text-gray-500 px-1">{label}</span>
+                      <div
+                        className={`max-w-[95%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
+                          isPatient
+                            ? 'bg-teal-900/40 text-gray-100 rounded-br-md border border-teal-800/50'
+                            : 'bg-gray-800 text-gray-100 rounded-bl-md border border-gray-700'
+                        }`}
+                      >
+                        {line.cleaned_transcript}
+                      </div>
+                    </div>
+                  )
+                })}
+
+              {transcriptReviewShowAi && !transcriptReviewLoading && (
+                <div className="mt-4 pt-4 border-t border-gray-800 space-y-4">
+                  <h3 className="text-cyan-400 text-xs font-semibold uppercase tracking-wide">AI consultation summary</h3>
+                  {aiSummaryLoading && (
+                    <p className="text-gray-500 text-sm">Generating summary…</p>
+                  )}
+                  {aiSummaryError && (
+                    <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-3 text-red-300 text-xs">
+                      {aiSummaryError === 'No transcript available for this encounter'
+                        ? 'No transcript was captured for this session.'
+                        : aiSummaryError}
+                    </div>
+                  )}
+                  {aiSummary && !aiSummaryLoading && (
+                    <div className="space-y-3 text-sm text-gray-200">
+                      {aiSummary.summary ? (
+                        <div>
+                          <p className="text-gray-500 text-[10px] uppercase mb-1">Summary</p>
+                          <p className="bg-white/5 rounded-lg p-2">{String(aiSummary.summary)}</p>
+                        </div>
+                      ) : null}
+                      <div className="grid grid-cols-2 gap-2">
+                        {aiSummary.chief_complaint ? (
+                          <div>
+                            <p className="text-gray-500 text-[10px] uppercase mb-1">Chief complaint</p>
+                            <p className="bg-white/5 rounded-lg p-2 text-xs">{String(aiSummary.chief_complaint)}</p>
+                          </div>
+                        ) : null}
+                        {aiSummary.diagnosis ? (
+                          <div>
+                            <p className="text-gray-500 text-[10px] uppercase mb-1">Diagnosis</p>
+                            <p className="bg-white/5 rounded-lg p-2 text-xs">{String(aiSummary.diagnosis)}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-4 border-t border-gray-800 flex-shrink-0">
+              <button
+                type="button"
+                onClick={closeTranscriptReview}
+                disabled={transcriptReviewLoading}
+                className="w-full py-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium transition-colors"
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Summary Panel — shown to doctor after consultation ends */}
+      {showSummaryPanel && role === 'doctor' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+            {/* Panel header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-800 flex-shrink-0">
+              <div>
+                <h2 className="text-white font-semibold text-base">AI Consultation Summary</h2>
+                <p className="text-gray-500 text-xs mt-0.5">
+                  {transcriptCount > 0
+                    ? `Generated from ${transcriptCount} transcript lines`
+                    : 'Generated from session transcript'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowSummaryPanel(false)}
+                className="text-gray-400 hover:text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Panel body */}
+            <div className="flex-1 overflow-auto px-6 py-5 space-y-5 text-sm">
+              {aiSummaryLoading && (
+                <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-gray-400 text-sm">Analyzing session transcript...</p>
+                </div>
+              )}
+
+              {aiSummaryError && (
+                <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 text-red-300 text-sm">
+                  {aiSummaryError === 'No transcript available for this encounter'
+                    ? 'No transcript was captured for this session. Transcript capture requires Daily.co captioning to be active during the call.'
+                    : aiSummaryError}
+                </div>
+              )}
+
+              {aiSummary && !aiSummaryLoading && (
+                <>
+                  {/* Summary */}
+                  {aiSummary.summary ? (
+                    <div>
+                      <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Summary</label>
+                      <p className="bg-white/5 rounded-lg p-3 text-gray-200 leading-relaxed">{String(aiSummary.summary)}</p>
+                    </div>
+                  ) : null}
+
+                  {/* Chief Complaint + Diagnosis row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {aiSummary.chief_complaint ? (
+                      <div>
+                        <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Chief Complaint</label>
+                        <p className="bg-white/5 rounded-lg p-3 text-gray-200">{String(aiSummary.chief_complaint)}</p>
+                      </div>
+                    ) : null}
+                    {aiSummary.diagnosis ? (
+                      <div>
+                        <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Diagnosis</label>
+                        <p className="bg-white/5 rounded-lg p-3 text-gray-200">{String(aiSummary.diagnosis)}</p>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  {/* Follow-up */}
+                  {aiSummary.follow_up != null && typeof aiSummary.follow_up === 'object' ? (
+                    <div className={`rounded-lg p-4 border ${(aiSummary.follow_up as Record<string, unknown>).needed ? 'bg-amber-900/20 border-amber-600/40' : 'bg-white/5 border-gray-700'}`}>
+                      <label className="text-amber-300 text-xs font-semibold uppercase tracking-wide block mb-2">Follow-Up</label>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <p className="text-gray-500 text-xs mb-0.5">Needed</p>
+                          <p className={`font-medium ${(aiSummary.follow_up as Record<string, unknown>).needed ? 'text-amber-300' : 'text-gray-400'}`}>
+                            {(aiSummary.follow_up as Record<string, unknown>).needed ? 'Yes' : 'No'}
+                          </p>
+                        </div>
+                        {(aiSummary.follow_up as Record<string, unknown>).timeframe ? (
+                          <div>
+                            <p className="text-gray-500 text-xs mb-0.5">Timeframe</p>
+                            <p className="text-white font-medium">{String((aiSummary.follow_up as Record<string, unknown>).timeframe)}</p>
+                          </div>
+                        ) : null}
+                        {(aiSummary.follow_up as Record<string, unknown>).reason ? (
+                          <div>
+                            <p className="text-gray-500 text-xs mb-0.5">Reason</p>
+                            <p className="text-gray-200">{String((aiSummary.follow_up as Record<string, unknown>).reason)}</p>
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Plan */}
+                  {aiSummary.plan ? (
+                    <div>
+                      <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Plan</label>
+                      <p className="bg-white/5 rounded-lg p-3 text-gray-200 leading-relaxed">{String(aiSummary.plan)}</p>
+                    </div>
+                  ) : null}
+
+                  {/* Tests + Medications row */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {Array.isArray(aiSummary.tests_ordered) && aiSummary.tests_ordered.length > 0 && (
+                      <div>
+                        <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Tests Ordered</label>
+                        <ul className="bg-white/5 rounded-lg p-3 space-y-0.5">
+                          {(aiSummary.tests_ordered as string[]).map((t, i) => (
+                            <li key={i} className="text-gray-200 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
+                              {t}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Array.isArray(aiSummary.medications_mentioned) && aiSummary.medications_mentioned.length > 0 && (
+                      <div>
+                        <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Medications</label>
+                        <ul className="bg-white/5 rounded-lg p-3 space-y-0.5">
+                          {(aiSummary.medications_mentioned as string[]).map((m, i) => (
+                            <li key={i} className="text-gray-200 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" />
+                              {m}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Patient Instructions */}
+                  {aiSummary.patient_instructions ? (
+                    <div>
+                      <label className="text-cyan-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Patient Instructions</label>
+                      <p className="bg-white/5 rounded-lg p-3 text-gray-200 leading-relaxed">{String(aiSummary.patient_instructions)}</p>
+                    </div>
+                  ) : null}
+
+                  {/* Red Flags */}
+                  {Array.isArray(aiSummary.red_flags) && aiSummary.red_flags.length > 0 && (
+                    <div>
+                      <label className="text-red-400 text-xs font-semibold uppercase tracking-wide block mb-1.5">Red Flags / Warning Signs</label>
+                      <ul className="bg-red-900/20 border border-red-700/30 rounded-lg p-3 space-y-0.5">
+                        {(aiSummary.red_flags as string[]).map((f, i) => (
+                          <li key={i} className="text-red-300 flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
+                            {f}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            {!aiSummaryLoading && (
+              <div className="px-6 py-4 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
+                <p className="text-gray-600 text-xs">AI-generated — verify before acting on clinical decisions</p>
+                <button
+                  onClick={() => setShowSummaryPanel(false)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+                >
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Global session-ended overlay for nurses/staff */}
       {endMessage && role !== 'doctor' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-amber-500 text-white px-6 py-4 rounded-xl shadow-2xl max-w-md text-center text-sm">
-            {endMessage}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-amber-500/50 text-white px-8 py-6 rounded-2xl shadow-2xl max-w-sm text-center">
+            <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <p className="text-amber-300 font-semibold text-base mb-1">Session Ended</p>
+            <p className="text-gray-400 text-sm">{endMessage}</p>
           </div>
         </div>
       )}
@@ -640,24 +1350,53 @@ function VideoPage() {
       {/* Top fixed header */}
       <header className="sticky top-0 z-50 flex-shrink-0 h-14 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 flex items-center px-4 gap-4">
         <button
-          onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+          onClick={() => {
+            const dest =
+              role === 'nurse' || role === 'staff'
+                ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
+                : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+            router.push(dest)
+          }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
-          Back to EMR
+          Back to virtual waiting room
         </button>
-        <span className="text-gray-400 text-sm">
+        <span className="text-gray-400 text-sm font-medium">
           {patient ? `${patient.first_name} ${patient.last_name}` : 'Telemedicine Session'}
         </span>
+
+        {/* Patient link: copy room URL for sharing with patient */}
+        {roomUrl && (
+          <button
+            title="Copy patient join link"
+            onClick={() => {
+              navigator.clipboard.writeText(roomUrl).then(() => alert('Patient link copied!')).catch(() => {})
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-xs font-medium transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            Copy Patient Link
+          </button>
+        )}
+
+        {transcriptCount > 0 && (
+          <span className="text-xs text-gray-500 hidden sm:block">
+            {transcriptCount} transcript {transcriptCount === 1 ? 'entry' : 'entries'}
+          </span>
+        )}
+
         {isConnected && (
           <button
             onClick={handleEndCall}
-            className="ml-auto px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center gap-1"
+            className="ml-auto px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-sm font-medium flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M16 8l2 2m0 0l2 2m-2-2l-2 2m2-2l-2-2" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
             End Call
           </button>
@@ -677,12 +1416,10 @@ function VideoPage() {
               <p className="text-lg mb-4">Preparing video call...</p>
             </div>
           )}
-          {dailyIframeSrc && (
-            <iframe
-              src={dailyIframeSrc}
-              className="absolute inset-x-0 top-2 bottom-0 w-full h-full border-0"
-              allow="camera; microphone; fullscreen; display-capture"
-              title="Daily video call"
+          {isConnected && dailyJoinUrl && (
+            <div
+              ref={dailyFrameContainerRef}
+              className="absolute inset-x-0 top-2 bottom-0 w-full h-full"
             />
           )}
         </div>
@@ -690,10 +1427,19 @@ function VideoPage() {
         {/* Sidebar */}
         <div className="w-full max-w-md bg-gray-900 border-l border-gray-800 text-white flex flex-col overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-800 flex-shrink-0">
-            <h2 className="text-lg font-semibold">Patient Details</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-semibold">Patient Details</h2>
+              {isConnected && (
+                <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Live
+                </span>
+              )}
+            </div>
             {encounter && (
-              <span className="text-xs text-gray-400 block mt-0.5">
+              <span className="text-xs text-gray-500 block mt-0.5">
                 {getStatusInfo(encounter.status as any)?.label || encounter.status}
+                {encounter.encounter_code && ` · ${encounter.encounter_code}`}
               </span>
             )}
           </div>
@@ -719,32 +1465,83 @@ function VideoPage() {
               <>
                 {detailsTab === 'patient' && (
                   <div className="space-y-4">
+                    <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                      <p className="text-blue-300 font-semibold mb-3">Patient information</p>
+                      {patient ? (
+                        <div className="space-y-2.5 text-gray-300 text-sm">
+                          <div>
+                            <p className="text-gray-500 text-xs uppercase tracking-wide">Name</p>
+                            <p className="text-white font-medium">
+                              {patient.first_name} {patient.last_name}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                            <div>
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Patient code</p>
+                              <p className="font-mono text-gray-200">{patient.patient_code || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Age</p>
+                              <p>{calculateAge(patient.date_of_birth)}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Date of birth</p>
+                              <p>{formatDate(patient.date_of_birth)}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Gender</p>
+                              <p>{patient.gender || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Email</p>
+                              <p className="break-all">{patient.email || '—'}</p>
+                            </div>
+                            <div>
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Phone</p>
+                              <p>{patient.phone || '—'}</p>
+                            </div>
+                            <div className="sm:col-span-2">
+                              <p className="text-gray-500 text-xs uppercase tracking-wide">Address</p>
+                              <p>
+                                {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).length > 0
+                                  ? [patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')
+                                  : '—'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-gray-400 text-sm">
+                          Could not load patient demographics (check patient link on encounter/appointment or access
+                          permissions).
+                        </p>
+                      )}
+                    </div>
+
                     {intake && patient && (
                       <PreVisitSummary
                         intake={intake}
                         patientName={`${patient.first_name} ${patient.last_name}`}
                       />
                     )}
-                    {patient && (
-                      <div className="space-y-1 text-gray-300">
-                        <p className="font-medium text-white">{patient.first_name} {patient.last_name}</p>
-                        <p>Code: {patient.patient_code || 'N/A'}</p>
-                        <p>Age: {calculateAge(patient.date_of_birth)}</p>
-                        <p>DOB: {formatDate(patient.date_of_birth)}</p>
-                        <p>Gender: {patient.gender || 'N/A'}</p>
-                        <p>Email: {patient.email || 'N/A'}</p>
-                        <p>Phone: {patient.phone || 'N/A'}</p>
-                        {(patient.street_address || patient.state || patient.zip_code) && (
-                          <p>Address: {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')}</p>
-                        )}
-                      </div>
-                    )}
+
                     {appointment && (
-                      <div className="pt-3 border-t border-gray-700">
-                        <p className="text-blue-300 font-semibold mb-2">Appointment</p>
-                        <p>Date: {formatDate(appointment.appointment_date)}</p>
-                        <p>Time: {appointment.appointment_time || 'N/A'}</p>
-                        <p>Type: {appointment.onsite_type || 'N/A'}</p>
+                      <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
+                        <p className="text-blue-300 font-semibold mb-3">Appointment</p>
+                        <div className="space-y-2 text-gray-300 text-sm">
+                          <p>
+                            <span className="text-gray-500">Date: </span>
+                            {formatDate(appointment.appointment_date)}
+                          </p>
+                          <p>
+                            <span className="text-gray-500">Time: </span>
+                            {appointment.appointment_time || '—'}
+                          </p>
+                          <p>
+                            <span className="text-gray-500">Type: </span>
+                            {appointment.onsite_type || '—'}
+                          </p>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -797,7 +1594,20 @@ function VideoPage() {
                   <div className="space-y-3">
                     {role === 'doctor' && doctorId ? (
                       <>
-                        <p className="text-cyan-200 text-xs mb-2">Add your SOAP note. Placeholders show AI suggestions.</p>
+                        <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
+                          <p className="text-cyan-200 text-xs flex-1 min-w-[12rem]">
+                            Add your SOAP note. Placeholders show AI suggestions.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleCopyAllFromAi}
+                            disabled={!soapNotes}
+                            title={soapNotes ? 'Copy AI suggestions into all fields so you can edit and save' : 'AI SOAP not loaded yet'}
+                            className="shrink-0 py-1 px-2.5 rounded-md text-xs font-medium bg-cyan-900/50 text-cyan-200 border border-cyan-700/50 hover:bg-cyan-800/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            Copy from AI
+                          </button>
+                        </div>
                         <div>
                           <label className="text-cyan-200 text-xs font-medium block mb-1">Subjective</label>
                           <textarea
@@ -896,13 +1706,29 @@ function VideoPage() {
               </>
             )}
           </div>
-          <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0">
+          <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
             <button
-              onClick={() => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')}
+              onClick={() => {
+                const dest = (role === 'nurse' || role === 'staff')
+                  ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
+                  : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+                router.push(dest)
+              }}
               className="text-sm text-blue-400 hover:text-blue-300"
             >
-              ← Back to EMR
+              ← Back to virtual waiting room
             </button>
+            {roomUrl && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(roomUrl).catch(() => {})
+                }}
+                title="Copy patient join link"
+                className="text-xs text-teal-400 hover:text-teal-300"
+              >
+                Copy patient link
+              </button>
+            )}
           </div>
         </div>
       </div>

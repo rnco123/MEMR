@@ -8,12 +8,18 @@ import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { FinalReviewModal } from '@/components/FinalReviewModal'
-import { canJoinTelemedicine, getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
+import {
+  canJoinTelemedicine,
+  getStatusInfo,
+  type EncounterStatus,
+  getStatusAccentBarClass,
+} from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
 import { UserRole } from '@/lib/roles'
+import { useT } from '@/lib/i18n'
 
 interface Appointment {
   id: number
@@ -70,9 +76,17 @@ function dobForSearch(dateString: string | null | undefined): string {
   return `${y}-${m}-${day}`
 }
 
+function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {
+  if (!date) return null
+  const normalizedTime = time && time.trim() ? time : '00:00:00'
+  const dt = new Date(`${date}T${normalizedTime}`)
+  return Number.isNaN(dt.getTime()) ? null : dt
+}
+
 function NurseFlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
+  const { t } = useT()
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -296,9 +310,9 @@ function NurseFlowboardPage() {
     switch (sortBy) {
       case 'time':
         result = [...result].sort((a, b) => {
-          const dateA = a.appointment_date && a.appointment_time ? new Date(`${a.appointment_date}T${a.appointment_time}`) : new Date(0)
-          const dateB = b.appointment_date && b.appointment_time ? new Date(`${b.appointment_date}T${b.appointment_time}`) : new Date(0)
-          return dateA.getTime() - dateB.getTime()
+          const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
+          const dateB = parseAppointmentDateTime(b.appointment_date, b.appointment_time)
+          return (dateA?.getTime() ?? 0) - (dateB?.getTime() ?? 0)
         })
         break
       case 'name':
@@ -422,8 +436,9 @@ function NurseFlowboardPage() {
   }
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'N/A'
-    const date = new Date(dateString)
+    if (!dateString) return t('common.em_dash')
+    const date = new Date(`${dateString}T00:00:00`)
+    if (Number.isNaN(date.getTime())) return t('common.em_dash')
     return date.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -431,10 +446,11 @@ function NurseFlowboardPage() {
   }
 
   const formatTime = (timeString: string | null) => {
-    if (!timeString) return 'N/A'
+    if (!timeString) return t('common.em_dash')
     const time = timeString.split(':')
-    if (time.length < 2 || !time[0] || !time[1]) return 'N/A'
+    if (time.length < 2 || !time[0] || !time[1]) return t('common.em_dash')
     const hours = parseInt(time[0])
+    if (Number.isNaN(hours)) return t('common.em_dash')
     const minutes = time[1]
     const ampm = hours >= 12 ? 'PM' : 'AM'
     const displayHours = hours % 12 || 12
@@ -445,45 +461,44 @@ function NurseFlowboardPage() {
     <div className="p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">Flowboard</h1>
-          <p className="text-blue-200">
-            Manage appointments and assign providers
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('flow.title')}</h1>
+          <p className="text-slate-500 text-sm">
+            {t('flow.subtitle_nurse')}
           </p>
         </div>
 
         {/* Stats Cards - Only for Nurse */}
         {role === 'nurse' && !loading && appointments.length > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Total Appointments</p>
-              <p className="text-2xl font-bold text-white">{appointments.length}</p>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_total')}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{appointments.length}</p>
             </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Assigned</p>
-              <p className="text-2xl font-bold text-green-300">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_assigned')}</p>
+              <p className="text-2xl font-bold text-emerald-600 mt-1">
                 {appointments.filter(a => a.assigned_doctor).length}
               </p>
             </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Unassigned</p>
-              <p className="text-2xl font-bold text-yellow-300">
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_unassigned')}</p>
+              <p className="text-2xl font-bold text-amber-600 mt-1">
                 {appointments.filter(a => !a.assigned_doctor).length}
               </p>
             </div>
-            <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl p-4">
-              <p className="text-blue-200 text-sm">Available Providers</p>
-              <p className="text-2xl font-bold text-white">{availableDoctors.length}</p>
+            <div className="bg-white border border-slate-200 rounded-xl p-4">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_available')}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{availableDoctors.length}</p>
             </div>
           </div>
         )}
 
         {/* Search and Filters */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-4 mb-6">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
+          <div className="flex flex-col lg:flex-row gap-3">
             <div className="flex-1 relative">
-              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
@@ -493,51 +508,49 @@ function NurseFlowboardPage() {
                   setSearchQuery(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Search by patient name, ID, or provider..."
-                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
+                placeholder={t('flow.search_placeholder_nurse')}
+                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
 
-            {/* Refresh Button */}
             <button
               onClick={handleRefresh}
               disabled={loading || isRefreshing}
-              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="h-11 w-11 inline-flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              title={t('common.refresh')}
             >
-              <svg className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
 
-            {/* Sort */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Sort:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.sort')}</span>
               <select
                 value={sortBy}
                 onChange={(e) => {
                   setSortBy(e.target.value as typeof sortBy)
                   setPage(1)
                 }}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="time">Appointment Time</option>
-                <option value="name">Patient Name</option>
-                <option value="treatment">Treatment Type</option>
+                <option value="time">{t('flow.sort_time')}</option>
+                <option value="name">{t('flow.sort_name')}</option>
+                <option value="treatment">{t('flow.sort_treatment')}</option>
               </select>
             </div>
 
-            {/* Status Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Status:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.status')}</span>
               <select
                 value={filterStatus}
                 onChange={(e) => {
                   setFilterStatus(e.target.value)
                   setPage(1)
                 }}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="all">All</option>
+                <option value="all">{t('common.all')}</option>
                 <option value="appointment_initiated">Appointment Initiated</option>
                 <option value="provider_assigned">Provider Assigned</option>
                 <option value="vitals_assessed">Vitals Assessed</option>
@@ -550,7 +563,7 @@ function NurseFlowboardPage() {
           </div>
 
             {/* Search by DOB — Year, then Month, then Day */}
-            <div className="mt-3 pt-3 border-t border-white/10">
+            <div className="mt-3 pt-3 border-t border-slate-200">
               <SearchByDobDropdowns
                 year={dobYear}
                 month={dobMonth}
@@ -562,29 +575,27 @@ function NurseFlowboardPage() {
             </div>
           </div>
 
-          {/* Results count, page size, and available doctors */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm text-blue-200">
-              Showing{' '}
-              <span className="text-white font-medium">
-                {filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1}–
-                {Math.min(page * pageSize, filteredAppointments.length)}
-              </span>{' '}
-              of <span className="text-white font-medium">{filteredAppointments.length}</span> appointments
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-xs text-slate-500">
+              {t('flow.showing_x_of_y', {
+                start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
+                end: Math.min(page * pageSize, filteredAppointments.length),
+                total: filteredAppointments.length,
+              })}
               {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
-                ? ` (filtered from ${appointments.length})`
+                ? ` ${t('flow.filtered_from', { total: appointments.length })}`
                 : ''}
             </p>
             <div className="flex items-center gap-4">
-              <label className="text-sm text-blue-200 flex items-center gap-2">
-                Per page:
+              <label className="text-xs text-slate-500 flex items-center gap-2">
+                {t('flow.per_page')}
                 <select
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value))
                     setPage(1)
                   }}
-                  className="px-2 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => (
                     <option key={n} value={n}>
@@ -594,8 +605,8 @@ function NurseFlowboardPage() {
                 </select>
               </label>
               {availableDoctors.length > 0 && (
-                <p className="text-sm text-green-300">
-                  <span className="font-semibold">{availableDoctors.length}</span> provider(s) available
+                <p className="text-xs text-emerald-600 font-medium">
+                  {t('flow.providers_available', { count: availableDoctors.length })}
                 </p>
               )}
               {(searchQuery || dobYear || dobMonth || dobDay) && (
@@ -608,9 +619,9 @@ function NurseFlowboardPage() {
                     setDobDay('')
                     setPage(1)
                   }}
-                  className="text-sm text-blue-300 hover:text-white transition-colors"
+                  className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors"
                 >
-                  Clear filters
+                  {t('common.clear_filters')}
                 </button>
               )}
             </div>
@@ -618,38 +629,36 @@ function NurseFlowboardPage() {
 
         {/* Appointments Table */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <LoadingSpinner message="Loading appointments..." />
+          <div className="bg-white border border-slate-200 rounded-2xl p-16 flex items-center justify-center">
+            <LoadingSpinner message={t('flow.loading')} />
           </div>
         ) : filteredAppointments.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-12 text-center">
-            <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
+            <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-white mb-2">
-              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay ? 'No Results Found' : 'No Appointments'}
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">
+              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay ? t('common.no_results') : t('flow.no_appointments')}
             </h3>
-            <p className="text-blue-200">
+            <p className="text-slate-500 text-sm">
               {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
-                ? 'Try adjusting your search or filters.'
-                : 'No appointments have been created yet.'}
+                ? t('common.try_adjust_filters')
+                : t('flow.empty_message')}
             </p>
           </div>
         ) : (
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl overflow-hidden">
-            {/* Table Header */}
-            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-4 bg-white/5 border-b border-white/10 text-sm font-medium text-blue-200">
-              <div className="col-span-3">Patient</div>
-              <div className="col-span-2">Status</div>
-              <div className="col-span-2">Appointment</div>
-              <div className="col-span-2">Provider</div>
-              <div className="col-span-3 text-right">Actions</div>
+          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              <div className="col-span-3">{t('flow.col_patient')}</div>
+              <div className="col-span-2">{t('flow.col_status')}</div>
+              <div className="col-span-2">{t('flow.col_appointment')}</div>
+              <div className="col-span-2">{t('flow.col_provider')}</div>
+              <div className="col-span-3 text-right">{t('common.actions')}</div>
             </div>
 
-            {/* Table Body */}
-            <div className="divide-y divide-white/10">
+            <div className="divide-y divide-slate-100">
               {paginatedAppointments.map((appointment) => (
                 <div
                   key={appointment.id}
@@ -663,81 +672,86 @@ function NurseFlowboardPage() {
                       })
                     }
                   }}
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 hover:bg-white/5 transition-colors cursor-pointer"
+                  className="flex hover:bg-slate-50 transition-colors cursor-pointer"
                 >
-                  {/* Patient Info */}
+                  <div
+                    className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
+                    title={
+                      appointment.encounter_status
+                        ? getStatusInfo(appointment.encounter_status as EncounterStatus)?.label
+                        : undefined
+                    }
+                    aria-hidden
+                  />
+                  <div className="grid flex-1 grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 min-w-0">
                   <div className="lg:col-span-3 flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0 text-sm">
+                    <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 text-sm">
                       {appointment.patient?.first_name?.charAt(0) || '?'}{appointment.patient?.last_name?.charAt(0) || ''}
                     </div>
-                    <div>
-                      <p className="text-blue-300/90 text-xs mb-0.5">
-                        DOB: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
+                    <div className="min-w-0">
+                      <p className="text-slate-400 text-xs mb-0.5">
+                        {t('common.dob')}: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
                       </p>
-                      <h3 className="text-white font-semibold text-sm">
+                      <h3 className="text-slate-900 font-semibold text-sm truncate">
                         {appointment.patient
                           ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
-                          : 'Unknown Patient'}
+                          : t('flow.unknown_patient')}
                       </h3>
-                      <p className="text-blue-300 text-xs font-mono">ID: {appointment.patient_id}</p>
+                      <p className="text-slate-400 text-xs font-mono">{t('common.id')}: {appointment.patient_id}</p>
                     </div>
                   </div>
 
-                  {/* Status */}
                   <div className="lg:col-span-2 flex items-center">
                     {appointment.encounter_status ? (
                       (() => {
                         const info = getStatusInfo(appointment.encounter_status as EncounterStatus)
                         const baseColor =
                           info?.value === 'appointment_initiated'
-                            ? 'bg-gray-500/20 text-gray-200 border border-gray-500/40'
+                            ? 'bg-fuchsia-50 text-fuchsia-900 border border-fuchsia-200'
                             : info?.value === 'provider_assigned'
-                            ? 'bg-blue-500/20 text-blue-200 border border-blue-500/40'
+                            ? 'bg-blue-50 text-blue-800 border border-blue-200'
                             : info?.value === 'vitals_assessed'
-                            ? 'bg-purple-500/20 text-purple-200 border border-purple-500/40'
+                            ? 'bg-lime-50 text-lime-900 border border-lime-200'
                             : info?.value === 'in_consultation'
-                            ? 'bg-yellow-500/20 text-yellow-200 border border-yellow-500/40'
+                            ? 'bg-yellow-50 text-yellow-900 border border-yellow-200'
                             : info?.value === 'consultation_concluded'
-                            ? 'bg-orange-500/20 text-orange-200 border border-orange-500/40'
+                            ? 'bg-red-50 text-red-800 border border-red-200'
                             : info?.value === 'final_review'
-                            ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-500/40'
-                            : 'bg-green-500/20 text-green-200 border border-green-500/40'
+                            ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
 
                         return (
-                          <span className={`px-3 py-1 rounded-lg text-xs font-medium ${baseColor}`}>
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${baseColor}`}>
                             {info?.label || appointment.encounter_status}
                           </span>
                         )
                       })()
                     ) : (
-                      <span className="px-3 py-1 rounded-lg text-xs font-medium bg-white/10 text-blue-200 border border-white/20">
-                        Not Started
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-900 border border-purple-200">
+                        {t('flow.not_started')}
                       </span>
                     )}
                   </div>
 
-                  {/* Appointment Time */}
                   <div className="lg:col-span-2 flex flex-col justify-center">
-                    <p className="text-white text-sm">{appointment.appointment_date ? formatDate(appointment.appointment_date) : 'N/A'}</p>
-                    <p className="text-blue-200 text-xs">{appointment.appointment_time ? formatTime(appointment.appointment_time) : 'N/A'}</p>
+                    <p className="text-slate-700 text-sm">{formatDate(appointment.appointment_date)}</p>
+                    <p className="text-slate-500 text-xs">{formatTime(appointment.appointment_time)}</p>
                   </div>
 
-                  {/* Provider */}
                   <div className="lg:col-span-2 flex items-center">
                     {appointment.assigned_doctor ? (
                       <div>
-                        <p className="text-white text-sm">{appointment.assigned_doctor.full_name}</p>
-                        <span className="text-xs text-green-300">Assigned</span>
+                        <p className="text-slate-700 text-sm">{appointment.assigned_doctor.full_name}</p>
+                        <span className="text-xs text-emerald-600 font-medium">{t('common.assigned')}</span>
                       </div>
                     ) : (
-                      <span className="px-2 py-1 bg-yellow-500/20 text-yellow-300 rounded text-xs">
-                        Unassigned
+                      <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold">
+                        {t('common.unassigned')}
                       </span>
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div className="lg:col-span-3 flex items-center justify-end gap-2">
+                  <div className="lg:col-span-3 flex items-center justify-end gap-2 flex-wrap">
                     {appointment.encounter_id && (
                       <button
                         onClick={(e) => {
@@ -749,9 +763,9 @@ function NurseFlowboardPage() {
                             encounterStatus: appointment.encounter_status,
                           })
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-lg text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all"
+                        className="px-3 py-1.5 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors"
                       >
-                        View
+                        {t('common.view')}
                       </button>
                     )}
                     {!appointment.assigned_doctor && availableDoctors.length > 0 && (
@@ -761,9 +775,9 @@ function NurseFlowboardPage() {
                           setShowAssignModal({ appointmentId: appointment.id, appointment })
                         }}
                         disabled={assigningDoctor === appointment.id.toString()}
-                        className="px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg text-sm font-medium hover:from-green-600 hover:to-emerald-600 transition-all disabled:opacity-50"
+                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
                       >
-                        Assign Provider
+                        {t('flow.assign_provider')}
                       </button>
                     )}
                     {appointment.assigned_doctor && appointment.encounter_status === 'provider_assigned' && (
@@ -773,9 +787,9 @@ function NurseFlowboardPage() {
                           setShowAssignModal({ appointmentId: appointment.id, appointment })
                         }}
                         disabled={assigningDoctor === appointment.id.toString()}
-                        className="px-4 py-2 bg-gradient-to-r from-yellow-500 to-amber-500 text-white rounded-lg text-sm font-medium hover:from-yellow-600 hover:to-amber-600 transition-all disabled:opacity-50"
+                        className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50"
                       >
-                        Edit
+                        {t('common.edit')}
                       </button>
                     )}
                     {appointment.assigned_doctor &&
@@ -787,9 +801,9 @@ function NurseFlowboardPage() {
                           e.stopPropagation()
                           setShowVitalsModal(appointment.encounter_id!)
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm font-medium hover:from-purple-600 hover:to-pink-600 transition-all"
+                        className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition-colors"
                       >
-                        Vitals
+                        {t('flow.vitals')}
                       </button>
                     )}
                     {appointment.encounter_status === 'consultation_concluded' &&
@@ -803,14 +817,15 @@ function NurseFlowboardPage() {
                             patientId: appointment.patient_id,
                           })
                         }}
-                        className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-lg text-sm font-medium hover:from-cyan-600 hover:to-blue-600 transition-all"
+                        className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-semibold hover:bg-cyan-700 transition-colors"
                       >
-                        Final Review
+                        {t('flow.final_review')}
                       </button>
                     )}
                     {availableDoctors.length === 0 && !appointment.assigned_doctor && (
-                      <span className="text-red-300 text-xs">No providers available</span>
+                      <span className="text-red-500 text-xs font-medium">{t('flow.no_providers')}</span>
                     )}
+                  </div>
                   </div>
                 </div>
               ))}
@@ -820,27 +835,27 @@ function NurseFlowboardPage() {
 
         {/* Pagination below table */}
         {!loading && filteredAppointments.length > 0 && (
-          <div className="mt-6 flex items-center justify-center gap-4">
+          <div className="mt-5 flex items-center justify-center gap-3">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Previous
+              {t('common.previous')}
             </button>
-            <span className="text-blue-200 font-medium">
-              Page {page} of {totalPages}
+            <span className="text-slate-500 text-sm font-medium">
+              {t('common.page_x_of_y', { page, total: totalPages })}
             </span>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              Next
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {t('common.next')}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>

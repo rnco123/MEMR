@@ -1,21 +1,9 @@
 'use client'
 
+import { useT } from '@/lib/i18n'
+
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = Array.from({ length: CURRENT_YEAR - 1919 }, (_, i) => CURRENT_YEAR - i) // 1920..current
-const MONTHS = [
-  { value: '', label: 'Month' },
-  ...Array.from({ length: 12 }, (_, i) => ({
-    value: String(i + 1).padStart(2, '0'),
-    label: new Date(2000, i, 1).toLocaleString('en-US', { month: 'short' }),
-  })),
-]
-const DAYS = [
-  { value: '', label: 'Day' },
-  ...Array.from({ length: 31 }, (_, i) => ({
-    value: String(i + 1).padStart(2, '0'),
-    label: String(i + 1),
-  })),
-]
 
 export interface SearchByDobDropdownsProps {
   year: string
@@ -36,18 +24,34 @@ export function SearchByDobDropdowns({
   onDayChange,
   className = '',
 }: SearchByDobDropdownsProps) {
+  const { t, language } = useT()
+  const monthLocale = language === 'es' ? 'es-ES' : 'en-US'
+  const months = [
+    { value: '', label: t('flow.month') },
+    ...Array.from({ length: 12 }, (_, i) => ({
+      value: String(i + 1).padStart(2, '0'),
+      label: new Date(2000, i, 1).toLocaleString(monthLocale, { month: 'short' }),
+    })),
+  ]
+  const days = [
+    { value: '', label: t('flow.day') },
+    ...Array.from({ length: 31 }, (_, i) => ({
+      value: String(i + 1).padStart(2, '0'),
+      label: String(i + 1),
+    })),
+  ]
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <span className="text-blue-200 text-sm whitespace-nowrap font-medium">
-        Search by DOB
+      <span className="text-slate-500 text-xs whitespace-nowrap font-semibold uppercase tracking-wide">
+        {t('flow.search_dob')}
       </span>
       <select
         value={year}
         onChange={(e) => onYearChange(e.target.value)}
-        className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none cursor-pointer min-w-[4.5rem]"
-        aria-label="Year"
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer min-w-[4.5rem]"
+        aria-label={t('flow.year')}
       >
-        <option value="">Year</option>
+        <option value="">{t('flow.year')}</option>
         {YEARS.map((y) => (
           <option key={y} value={String(y)}>
             {y}
@@ -57,10 +61,10 @@ export function SearchByDobDropdowns({
       <select
         value={month}
         onChange={(e) => onMonthChange(e.target.value)}
-        className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none cursor-pointer min-w-[5rem]"
-        aria-label="Month"
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer min-w-[5rem]"
+        aria-label={t('flow.month')}
       >
-        {MONTHS.map((m) => (
+        {months.map((m) => (
           <option key={m.value || 'any'} value={m.value}>
             {m.label}
           </option>
@@ -69,10 +73,10 @@ export function SearchByDobDropdowns({
       <select
         value={day}
         onChange={(e) => onDayChange(e.target.value)}
-        className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-blue-500 focus:outline-none cursor-pointer min-w-[4rem]"
-        aria-label="Day"
+        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer min-w-[4rem]"
+        aria-label={t('flow.day')}
       >
-        {DAYS.map((d) => (
+        {days.map((d) => (
           <option key={d.value || 'any'} value={d.value}>
             {d.label}
           </option>

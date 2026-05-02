@@ -6,9 +6,16 @@ import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { getStatusInfo, type EncounterStatus, ENCOUNTER_STATUSES, canJoinTelemedicine } from '@/lib/encounter-status'
+import {
+  getStatusInfo,
+  type EncounterStatus,
+  ENCOUNTER_STATUSES,
+  canJoinTelemedicine,
+  getStatusAccentBarClass,
+} from '@/lib/encounter-status'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { UserRole } from '@/lib/roles'
+import { useT } from '@/lib/i18n'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -18,6 +25,13 @@ function formatDob(dateString: string | null | undefined): string | null {
   const d = new Date(dateString + 'T00:00:00')
   if (isNaN(d.getTime())) return null
   return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+}
+
+function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {
+  if (!date) return null
+  const normalizedTime = time && time.trim() ? time : '00:00:00'
+  const dt = new Date(`${date}T${normalizedTime}`)
+  return Number.isNaN(dt.getTime()) ? null : dt
 }
 
 interface Appointment {
@@ -45,6 +59,7 @@ function FlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
+  const { t } = useT()
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -58,7 +73,7 @@ function FlowboardPage() {
     if (typeof window === 'undefined') return true
     return !sessionStorage.getItem(CACHE_KEY)
   })
-  const [viewMode, setViewMode] = useState<'mine' | 'all'>('all')
+  const viewMode: 'mine' = 'mine'
   const [searchQuery, setSearchQuery] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
@@ -130,9 +145,9 @@ function FlowboardPage() {
         console.error('Error fetching encounters:', encountersError)
       }
 
-      // Get doctor ID if filtering by "mine"
+      // Resolve current doctor ID (virtual waiting room is doctor-only and must show assigned patients only)
       let doctorId: number | null = null
-      if (viewMode === 'mine' && user?.id) {
+      if (user?.id) {
         const { data: doctorData, error: doctorError } = await supabase
           .from('doctors')
           .select('id')
@@ -166,13 +181,12 @@ function FlowboardPage() {
             encounter_id: encounter?.id || null,
           }
         })
-        // Filter by doctor assignment if "mine" mode
+        // Always show only appointments assigned to the current doctor
         .filter(appointment => {
-          if (viewMode === 'mine' && doctorId !== null) {
-            const encounter = encountersData?.find(e => e.appointment_id === appointment.id)
-            return encounter?.doctor_id === doctorId
-          }
-          return true
+          if (doctorId === null) return false
+          const encounter = encountersData?.find(e => e.appointment_id === appointment.id)
+          if (!encounter) return false
+          return encounter.doctor_id === doctorId
         })
 
       setAppointments(appointmentsWithDetails)
@@ -188,7 +202,7 @@ function FlowboardPage() {
       setLoading(false)
       setIsRefreshing(false)
     }
-  }, [user, supabase, viewMode])
+  }, [user, supabase])
 
   useEffect(() => {
     if (user && role === 'doctor' && !initialLoadDone.current) {
@@ -210,8 +224,9 @@ function FlowboardPage() {
 
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'N/A'
-    const date = new Date(dateString)
+    if (!dateString) return t('common.em_dash')
+    const date = new Date(`${dateString}T00:00:00`)
+    if (Number.isNaN(date.getTime())) return t('common.em_dash')
     return date.toLocaleDateString('en-US', {
       weekday: 'short',
       year: 'numeric',
@@ -221,12 +236,13 @@ function FlowboardPage() {
   }
 
   const formatTime = (timeString: string | null) => {
-    if (!timeString) return 'N/A'
+    if (!timeString) return t('common.em_dash')
     // Handle time format (HH:MM:SS or HH:MM)
     const time = timeString.split(':')
-    if (time.length < 2 || !time[0] || !time[1]) return 'N/A'
+    if (time.length < 2 || !time[0] || !time[1]) return t('common.em_dash')
     const hours = parseInt(time[0])
     const minutes = time[1]
+    if (Number.isNaN(hours)) return t('common.em_dash')
     const ampm = hours >= 12 ? 'PM' : 'AM'
     const displayHours = hours % 12 || 12
     return `${displayHours}:${minutes} ${ampm}`
@@ -258,9 +274,9 @@ function FlowboardPage() {
     switch (sortBy) {
       case 'time':
         result = [...result].sort((a, b) => {
-          const dateA = a.appointment_date && a.appointment_time ? new Date(`${a.appointment_date}T${a.appointment_time}`) : new Date(0)
-          const dateB = b.appointment_date && b.appointment_time ? new Date(`${b.appointment_date}T${b.appointment_time}`) : new Date(0)
-          return dateA.getTime() - dateB.getTime()
+          const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
+          const dateB = parseAppointmentDateTime(b.appointment_date, b.appointment_time)
+          return (dateA?.getTime() ?? 0) - (dateB?.getTime() ?? 0)
         })
         break
       case 'name':
@@ -287,46 +303,31 @@ function FlowboardPage() {
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
 
   return (
-    <div className="p-6 lg:p-12">
+    <div className="p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-8 flex items-start justify-between gap-4">
+        <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Flowboard</h1>
-            <p className="text-blue-200 text-lg">
-              {viewMode === 'all' ? 'All active encounters' : 'Your assigned active encounters'}
-            </p>
+            <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('flow.title')}</h1>
+            <p className="text-slate-500 text-sm">{t('flow.subtitle_assigned')}</p>
           </div>
           <button
             onClick={refreshData}
             disabled={loading || isRefreshing}
-            className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 rounded-xl text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg text-slate-600 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isRefreshing ? (
-              <>
-                <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-                Refreshing...
-              </>
-            ) : (
-              <>
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Refresh
-              </>
-            )}
+            <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            {isRefreshing ? t('common.refreshing') : t('common.refresh')}
           </button>
         </div>
 
         {/* Search and Filters */}
-        <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-4 mb-6">
-          <div className="flex flex-col lg:flex-row gap-4">
-            {/* Search */}
+        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
+          <div className="flex flex-col lg:flex-row gap-3">
             <div className="flex-1 relative">
-              <svg className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
               <input
@@ -336,71 +337,62 @@ function FlowboardPage() {
                   setSearchQuery(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Search by patient ID, name, email, or phone..."
-                className="w-full pl-12 pr-4 py-3 bg-white/5 border border-white/20 rounded-xl text-white placeholder-blue-300/50 focus:outline-none focus:border-blue-500"
+                placeholder={t('flow.search_placeholder')}
+                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
 
-            {/* Refresh Button */}
             <button
               type="button"
               onClick={refreshData}
               disabled={loading || isRefreshing}
-              className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="h-11 w-11 inline-flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              title={t('common.refresh')}
             >
-              <svg className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
 
-            {/* Sort */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Sort:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.sort')}</span>
               <select
                 value={sortBy}
                 onChange={(e) => {
                   setSortBy(e.target.value as 'time' | 'name' | 'treatment')
                   setPage(1)
                 }}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="time">Appointment Time</option>
-                <option value="name">Patient Name</option>
-                <option value="treatment">Treatment Type</option>
+                <option value="time">{t('flow.sort_time')}</option>
+                <option value="name">{t('flow.sort_name')}</option>
+                <option value="treatment">{t('flow.sort_treatment')}</option>
               </select>
             </div>
 
-            {/* View mode: All encounters vs Assigned to me */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">View:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.view')}</span>
               <select
-                value={viewMode}
-                onChange={(e) => {
-                  const mode = e.target.value as 'mine' | 'all'
-                  setViewMode(mode)
-                  setPage(1)
-                  try { sessionStorage.removeItem(CACHE_KEY) } catch { /* ignore */ }
-                  fetchAssignedAppointments(true)
-                }}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                value="mine"
+                onChange={() => {}}
+                disabled
+                className="h-11 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed"
               >
-                <option value="all">All encounters</option>
-                <option value="mine">Assigned to me</option>
+                <option value="mine">{t('flow.view_mine')}</option>
               </select>
             </div>
 
-            {/* Status Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-blue-200 text-sm whitespace-nowrap">Status:</span>
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.status')}</span>
               <select
                 value={filterStatus}
                 onChange={(e) => {
                   setFilterStatus(e.target.value)
                   setPage(1)
                 }}
-                className="px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
               >
-                <option value="all">All</option>
+                <option value="all">{t('common.all')}</option>
                 {ENCOUNTER_STATUSES.map((status) => (
                   <option key={status.value} value={status.value}>
                     {status.label}
@@ -410,26 +402,25 @@ function FlowboardPage() {
             </div>
           </div>
 
-          {/* Results count */}
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-sm text-blue-200">
-              Showing <span className="text-white font-medium">
-                {filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1}–
-                {Math.min(page * pageSize, filteredAppointments.length)}
-              </span>
-              {' '}of <span className="text-white font-medium">{filteredAppointments.length}</span> appointments
-              {searchQuery || filterStatus !== 'all' ? ` (filtered from ${appointments.length})` : ''}
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
+            <p className="text-xs text-slate-500">
+              {t('flow.showing_x_of_y', {
+                start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
+                end: Math.min(page * pageSize, filteredAppointments.length),
+                total: filteredAppointments.length,
+              })}
+              {searchQuery || filterStatus !== 'all' ? ` ${t('flow.filtered_from', { total: appointments.length })}` : ''}
             </p>
             <div className="flex items-center gap-4">
-              <label className="text-sm text-blue-200 flex items-center gap-2">
-                Per page:
+              <label className="text-xs text-slate-500 flex items-center gap-2">
+                {t('flow.per_page')}
                 <select
                   value={pageSize}
                   onChange={(e) => {
                     setPageSize(Number(e.target.value))
                     setPage(1)
                   }}
-                  className="px-2 py-1 rounded-lg bg-white/10 border border-white/20 text-white text-sm focus:outline-none focus:border-blue-500 cursor-pointer"
+                  className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
                 >
                   {PAGE_SIZE_OPTIONS.map((n) => (
                     <option key={n} value={n}>{n}</option>
@@ -442,9 +433,9 @@ function FlowboardPage() {
                     setSearchQuery('')
                     setPage(1)
                   }}
-                  className="text-sm text-blue-300 hover:text-white transition-colors"
+                  className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors"
                 >
-                  Clear filters
+                  {t('common.clear_filters')}
                 </button>
               )}
             </div>
@@ -453,27 +444,27 @@ function FlowboardPage() {
 
         {/* Appointments List */}
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <LoadingSpinner message="Loading appointments..." />
+          <div className="bg-white border border-slate-200 rounded-2xl p-16 flex items-center justify-center">
+            <LoadingSpinner message={t('flow.loading')} />
           </div>
         ) : appointments.length === 0 ? (
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-12 text-center">
-            <div className="w-20 h-20 bg-blue-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
+            <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <h3 className="text-2xl font-bold text-white mb-2">
-              {searchQuery || filterStatus !== 'all' ? 'No Results Found' : 'No Active Encounters'}
+            <h3 className="text-lg font-semibold text-slate-900 mb-1">
+              {searchQuery || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}
             </h3>
-            <p className="text-blue-200">
+            <p className="text-slate-500 text-sm">
               {searchQuery || filterStatus !== 'all'
-                ? 'Try adjusting your search or filters.'
-                : 'You don\'t have any active encounters assigned to you at this time.'}
+                ? t('common.try_adjust_filters')
+                : t('flow.no_active_message')}
             </p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {paginatedAppointments.map((appointment) => (
               <div
                 key={appointment.id}
@@ -487,63 +478,66 @@ function FlowboardPage() {
                     })
                   }
                 }}
-                className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all cursor-pointer"
+                className="flex rounded-2xl overflow-hidden border border-slate-200 bg-white hover:border-[#2E6EF3]/40 hover:shadow-[0_8px_24px_rgba(30,64,175,0.06)] transition-all cursor-pointer"
               >
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div
+                  className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
+                  title={getStatusInfo(appointment.encounter_status as EncounterStatus)?.label ?? 'Status'}
+                  aria-hidden
+                />
+                <div className="flex flex-1 flex-col md:flex-row md:items-center md:justify-between gap-4 p-5 min-w-0">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <div className="w-11 h-11 bg-[#2E6EF3] rounded-xl flex items-center justify-center">
+                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
                       </div>
                       <div>
-                        <p className="text-sm text-blue-300/90 mb-0.5">
-                          DOB: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
+                        <p className="text-xs text-slate-400 mb-0.5">
+                          {t('common.dob')}: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
                         </p>
-                        <h3 className="text-xl font-bold text-white">
+                        <h3 className="text-base font-semibold text-slate-900">
                           {appointment.patient
                             ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
-                            : 'Unknown Patient'}
+                            : t('flow.unknown_patient')}
                         </h3>
                         {appointment.patient?.email && (
-                          <p className="text-sm text-blue-200">{appointment.patient.email}</p>
+                          <p className="text-xs text-slate-500">{appointment.patient.email}</p>
                         )}
                       </div>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                      <div className="flex items-center gap-2 text-blue-200">
+                      <div className="flex items-center gap-2 text-slate-500">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
-                        <span>{appointment.appointment_date ? formatDate(appointment.appointment_date) : 'N/A'}</span>
+                        <span>{formatDate(appointment.appointment_date)}</span>
                       </div>
-                      <div className="flex items-center gap-2 text-blue-200">
+                      <div className="flex items-center gap-2 text-slate-500">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span>{appointment.appointment_time ? formatTime(appointment.appointment_time) : 'N/A'}</span>
+                        <span>{formatTime(appointment.appointment_time)}</span>
                       </div>
-                      {appointment.patient?.phone && (
-                        <div className="flex items-center gap-2 text-blue-200">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                          </svg>
-                          <span>{appointment.patient.phone}</span>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-2 text-slate-500">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                        <span>{appointment.patient?.phone || t('common.em_dash')}</span>
+                      </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2.5">
                     {appointment.encounter_status && (
-                      <div className={`px-4 py-2 rounded-xl text-white text-sm font-medium ${
-                        appointment.encounter_status === 'appointment_initiated' ? 'bg-gray-500/20 border border-gray-500/50' :
-                        appointment.encounter_status === 'provider_assigned' ? 'bg-blue-500/20 border border-blue-500/50' :
-                        appointment.encounter_status === 'vitals_assessed' ? 'bg-purple-500/20 border border-purple-500/50' :
-                        appointment.encounter_status === 'in_consultation' ? 'bg-yellow-500/20 border border-yellow-500/50' :
-                        appointment.encounter_status === 'consultation_concluded' ? 'bg-orange-500/20 border border-orange-500/50' :
-                        appointment.encounter_status === 'final_review' ? 'bg-cyan-500/20 border border-cyan-500/50' :
-                        'bg-green-500/20 border border-green-500/50'
+                      <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${
+                        appointment.encounter_status === 'appointment_initiated' ? 'bg-fuchsia-50 text-fuchsia-900 border-fuchsia-200' :
+                        appointment.encounter_status === 'provider_assigned' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                        appointment.encounter_status === 'vitals_assessed' ? 'bg-lime-50 text-lime-900 border-lime-200' :
+                        appointment.encounter_status === 'in_consultation' ? 'bg-yellow-50 text-yellow-900 border-yellow-200' :
+                        appointment.encounter_status === 'consultation_concluded' ? 'bg-red-50 text-red-800 border-red-200' :
+                        appointment.encounter_status === 'final_review' ? 'bg-teal-50 text-teal-800 border-teal-200' :
+                        'bg-emerald-50 text-emerald-800 border-emerald-200'
                       }`}>
                         {getStatusInfo(appointment.encounter_status as EncounterStatus)?.label || appointment.encounter_status}
                       </div>
@@ -561,7 +555,6 @@ function FlowboardPage() {
                           })
                           return
                         }
-                        // Fallback: fetch encounter by appointment_id (in case batch query missed it)
                         const { data: encounter } = await supabase
                           .from('encounters')
                           .select('id, status')
@@ -578,9 +571,9 @@ function FlowboardPage() {
                           alert('You are not assigned to this patient.')
                         }
                       }}
-                      className="px-4 py-2 bg-gradient-to-r from-blue-500 to-cyan-500 text-white rounded-xl text-sm font-medium hover:from-blue-600 hover:to-cyan-600 transition-all shrink-0"
+                      className="px-3.5 py-2 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
                     >
-                      View
+                      {t('common.view')}
                     </button>
                   </div>
                 </div>
@@ -589,29 +582,29 @@ function FlowboardPage() {
           </div>
         )}
 
-        {/* Pagination - below the list */}
+        {/* Pagination */}
         {!loading && appointments.length > 0 && filteredAppointments.length > 0 && (
-          <div className="mt-6 flex items-center justify-center gap-4">
+          <div className="mt-5 flex items-center justify-center gap-3">
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Previous
+              {t('common.previous')}
             </button>
-            <span className="text-blue-200 font-medium">
-              Page {page} of {totalPages}
+            <span className="text-slate-500 text-sm font-medium">
+              {t('common.page_x_of_y', { page, total: totalPages })}
             </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-white/20 transition-colors"
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
-              Next
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {t('common.next')}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </button>

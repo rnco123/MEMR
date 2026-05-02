@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useT } from '@/lib/i18n'
 
 interface Appointment {
   id: number
@@ -51,13 +52,13 @@ export function AssignProviderModal({
   onAssign,
   onClose,
 }: AssignProviderModalProps) {
-  // Get today's date in YYYY-MM-DD format
+  const { t } = useT()
+
   const getTodayDate = () => {
     const today = new Date()
     return today.toISOString().split('T')[0]
   }
 
-  // Get current time in HH:MM format
   const getCurrentTime = () => {
     const now = new Date()
     const hours = now.getHours().toString().padStart(2, '0')
@@ -71,87 +72,127 @@ export function AssignProviderModal({
   const [appointmentDate, setAppointmentDate] = useState(appointment.appointment_date || getTodayDate())
   const [appointmentTime, setAppointmentTime] = useState(appointment.appointment_time || getCurrentTime())
 
+  const isBusy = assigningDoctor === appointment.id.toString()
+
   const handleAssign = () => {
     if (!selectedDoctorId) {
-      alert('Please select a provider')
+      alert(t('flow.alert_select_provider'))
       return
     }
     if (!appointmentDate) {
-      alert('Please select an appointment date')
+      alert(t('flow.alert_select_appt_date'))
       return
     }
     if (!appointmentTime) {
-      alert('Please select an appointment time')
+      alert(t('flow.alert_select_appt_time'))
       return
     }
     onAssign(selectedDoctorId, appointmentDate, appointmentTime)
   }
 
+  const fieldClass =
+    'w-full px-4 py-3 bg-[#f9fbff] border border-slate-200 rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 [color-scheme:light]'
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-slate-800 border border-white/20 rounded-2xl p-6 max-w-md w-full">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold text-white">Assign Provider</h3>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-[2px] p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="assign-provider-title"
+    >
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-xl shadow-slate-300/40 max-w-md w-full overflow-hidden">
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100">
+          <h3 id="assign-provider-title" className="text-xl font-semibold text-slate-900 tracking-tight">
+            {t('flow.assign_provider')}
+          </h3>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+            className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
+            aria-label={t('common.close')}
           >
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
         </div>
-        <div className="space-y-4">
+
+        <div className="px-6 py-5 space-y-5">
           <div>
-            <label className="block text-blue-200 text-sm mb-2">Select Provider</label>
+            <label
+              htmlFor="assign-provider-select"
+              className="block text-slate-500 text-xs font-medium uppercase tracking-wide mb-2"
+            >
+              {t('flow.assign_select_provider')}
+            </label>
             <select
+              id="assign-provider-select"
               value={selectedDoctorId}
               onChange={(e) => setSelectedDoctorId(e.target.value)}
-              disabled={assigningDoctor === appointment.id.toString()}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+              disabled={isBusy}
+              className={`${fieldClass} cursor-pointer`}
             >
-              <option value="">Select a provider...</option>
+              <option value="">{t('flow.assign_provider_placeholder')}</option>
               {availableDoctors.map((doctor) => (
                 <option key={doctor.id} value={doctor.id.toString()}>
-                  {doctor.full_name} {doctor.specialty ? `(${doctor.specialty})` : ''}
+                  {doctor.full_name}
+                  {doctor.specialty ? ` (${doctor.specialty})` : ''}
                 </option>
               ))}
             </select>
           </div>
 
-          <div>
-            <label className="block text-blue-200 text-sm mb-2">Appointment Date</label>
-            <input
-              type="date"
-              value={appointmentDate}
-              onChange={(e) => setAppointmentDate(e.target.value)}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label
+                htmlFor="assign-appt-date"
+                className="block text-slate-500 text-xs font-medium uppercase tracking-wide mb-2"
+              >
+                {t('flow.assign_appt_date')}
+              </label>
+              <input
+                id="assign-appt-date"
+                type="date"
+                value={appointmentDate}
+                onChange={(e) => setAppointmentDate(e.target.value)}
+                disabled={isBusy}
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="assign-appt-time"
+                className="block text-slate-500 text-xs font-medium uppercase tracking-wide mb-2"
+              >
+                {t('flow.assign_appt_time')}
+              </label>
+              <input
+                id="assign-appt-time"
+                type="time"
+                value={appointmentTime}
+                onChange={(e) => setAppointmentTime(e.target.value)}
+                disabled={isBusy}
+                className={fieldClass}
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="block text-blue-200 text-sm mb-2">Appointment Time</label>
-            <input
-              type="time"
-              value={appointmentTime}
-              onChange={(e) => setAppointmentTime(e.target.value)}
-              className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500"
-            />
-          </div>
-
-          <div className="flex gap-3 pt-4">
+          <div className="flex gap-3 pt-2">
             <button
+              type="button"
               onClick={onClose}
-              className="flex-1 px-4 py-2 bg-white/10 border border-white/20 text-white rounded-lg hover:bg-white/20 transition-all"
+              disabled={isBusy}
+              className="flex-1 px-4 py-2.5 bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
+              type="button"
               onClick={handleAssign}
-              disabled={!selectedDoctorId || assigningDoctor === appointment.id.toString()}
-              className="flex-1 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg font-medium hover:from-green-600 hover:to-emerald-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!selectedDoctorId || isBusy}
+              className="flex-1 px-4 py-2.5 bg-[#2E6EF3] text-white text-sm font-semibold rounded-xl hover:bg-[#256ae8] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/60 focus-visible:ring-offset-2"
             >
-              {assigningDoctor === appointment.id.toString() ? 'Assigning...' : 'Assign Provider'}
+              {isBusy ? t('flow.assigning') : t('flow.assign_provider')}
             </button>
           </div>
         </div>

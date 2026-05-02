@@ -4,15 +4,17 @@ import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { ROLE_PERMISSIONS, getRoleLabel, UserRole } from '@/lib/roles'
 import Link from 'next/link'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { useT } from '@/lib/i18n'
 
 interface UpcomingAppointment {
   id: string
   appointment_date: string
   appointment_time: string | null
   onsite_type: string | null
+  encounter_id: number | null
   status?: string | null
   patient: {
     first_name: string
@@ -22,6 +24,8 @@ interface UpcomingAppointment {
 
 function DashboardPage() {
   const { user, role } = useAuth()
+  const { t } = useT()
+  const router = useRouter()
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [isToggling, setIsToggling] = useState(false)
   const [totalPatients, setTotalPatients] = useState<number>(0)
@@ -29,6 +33,7 @@ function DashboardPage() {
   const [loadingStats, setLoadingStats] = useState(true)
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([])
   const [loadingAppointments, setLoadingAppointments] = useState(false)
+  const [startingEncounterId, setStartingEncounterId] = useState<number | null>(null)
   const supabase = createClient()
 
   const permissions = role ? ROLE_PERMISSIONS[role] : null
@@ -141,7 +146,7 @@ function DashboardPage() {
 
       const { data: encounters } = await supabase
         .from('encounters')
-        .select('appointment_id')
+        .select('id, appointment_id, status')
         .eq('doctor_id', doctorData.id)
 
       if (!encounters || encounters.length === 0) {
@@ -178,6 +183,8 @@ function DashboardPage() {
         appointment_date: appointment.appointment_date,
         appointment_time: appointment.appointment_time ?? null,
         onsite_type: (appointment as { onsite_type?: string | null }).onsite_type ?? null,
+        encounter_id: encounters.find((e) => e.appointment_id === appointment.id)?.id ?? null,
+        status: encounters.find((e) => e.appointment_id === appointment.id)?.status ?? 'scheduled',
         patient: patientsData?.find(p => p.id === appointment.patient_id) || null,
       }))
 
@@ -189,6 +196,42 @@ function DashboardPage() {
       setLoadingAppointments(false)
     }
   }, [user, role, supabase])
+
+  const startConsultation = useCallback(
+    async (appointment: UpcomingAppointment) => {
+      if (!appointment.encounter_id || startingEncounterId === appointment.encounter_id) return
+      setStartingEncounterId(appointment.encounter_id)
+      try {
+        const { error: statusError } = await supabase
+          .from('encounters')
+          .update({
+            status: 'in_consultation',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', appointment.encounter_id)
+
+        if (statusError) {
+          console.error('Error updating encounter status:', statusError)
+        }
+
+        const { error: appointmentError } = await supabase
+          .from('appointments')
+          .update({ status: 'in_progress' })
+          .eq('id', Number(appointment.id))
+
+        if (appointmentError) {
+          console.error('Error updating appointment status:', appointmentError)
+        }
+
+        router.push(`/video?encounter=${appointment.encounter_id}`)
+      } catch (error) {
+        console.error('Error starting consultation:', error)
+      } finally {
+        setStartingEncounterId(null)
+      }
+    },
+    [router, startingEncounterId, supabase]
+  )
 
   const refreshAllData = useCallback(() => {
     if (role === 'doctor' && user) {
@@ -228,26 +271,26 @@ function DashboardPage() {
   }, [user, role, refreshAllData])
 
   return (
-    <div className="p-6 lg:p-12">
+    <div className="p-6 lg:p-10">
       <div className="max-w-7xl mx-auto">
         {/* Welcome Section */}
-        <div className="mb-12">
-          <h2 className="text-4xl font-bold text-white mb-2">
-            Welcome back, {user?.user_metadata?.full_name?.split(' ')[0] || 'User'}!
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-slate-900 mb-1">
+            {t('dashboard.welcome_back_name', { name: user?.user_metadata?.full_name?.split(' ')[0] || 'User' })}
           </h2>
-          <p className="text-blue-200 text-lg">
-            {role === 'doctor' 
-              ? 'Manage all patients and medical records' 
-              : 'View and manage your assigned patients'}
+          <p className="text-slate-500 text-sm">
+            {role === 'doctor'
+              ? t('dashboard.subtitle_doctor')
+              : t('dashboard.subtitle_nurse')}
           </p>
         </div>
 
         {/* Role Badge, Refresh, and Availability Toggle (for doctors) */}
         <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-xl border border-white/20 rounded-xl">
-            <div className={`w-3 h-3 rounded-full ${role === 'doctor' ? 'bg-blue-500' : 'bg-green-500'}`}></div>
-            <span className="text-white font-medium">
-              {role && getRoleLabel(role)} Dashboard
+          <div className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 rounded-lg shadow-sm">
+            <div className={`w-2.5 h-2.5 rounded-full ${role === 'doctor' ? 'bg-[#2E6EF3]' : 'bg-emerald-500'}`}></div>
+            <span className="text-slate-700 text-sm font-semibold">
+              {t('dashboard.role_dashboard', { role: role ? (role === 'doctor' ? t('auth.role_doctor') : role === 'nurse' ? t('auth.role_nurse') : getRoleLabel(role)) : '' })}
             </span>
           </div>
           
@@ -256,27 +299,27 @@ function DashboardPage() {
               <button
                 onClick={refreshAllData}
                 disabled={loadingStats || loadingAppointments}
-                className="px-4 py-2 bg-white/10 border border-white/20 rounded-xl text-blue-200 hover:bg-white/20 transition-colors disabled:opacity-50 flex items-center gap-2"
-                title="Refresh data"
+                className="px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50 flex items-center gap-2 text-sm font-medium"
+                title={t('common.refresh')}
               >
-                <svg className={`w-5 h-5 ${loadingStats || loadingAppointments ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className={`w-4 h-4 ${loadingStats || loadingAppointments ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Refresh
+                {t('common.refresh')}
               </button>
             )}
             {role === 'doctor' && (
               <button
                 onClick={toggleAvailability}
                 disabled={isToggling}
-                className={`px-6 py-3 rounded-xl font-medium transition-all duration-200 flex items-center gap-2 ${
+                className={`px-4 py-2 rounded-lg font-medium transition-colors flex items-center gap-2 text-sm border ${
                   isAvailable
-                    ? 'bg-green-500/20 border border-green-500/50 text-green-200 hover:bg-green-500/30'
-                    : 'bg-gray-500/20 border border-gray-500/50 text-gray-200 hover:bg-gray-500/30'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
               >
-                <div className={`w-3 h-3 rounded-full ${isAvailable ? 'bg-green-500' : 'bg-gray-500'}`}></div>
-                <span>{isToggling ? 'Updating...' : isAvailable ? 'Available' : 'Unavailable'}</span>
+                <div className={`w-2.5 h-2.5 rounded-full ${isAvailable ? 'bg-emerald-500' : 'bg-slate-400'}`}></div>
+                <span>{isToggling ? t('dashboard.updating') : isAvailable ? t('dashboard.available') : t('dashboard.unavailable')}</span>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
                 </svg>
@@ -286,158 +329,160 @@ function DashboardPage() {
         </div>
 
         {/* Quick Actions Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mb-6">
           {/* Patient Records Card */}
           <Link
             href="/dashboard/patients-history"
-            className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all duration-300"
+            className="group bg-white border border-slate-200 rounded-2xl p-6 hover:border-[#2E6EF3]/40 hover:shadow-[0_8px_24px_rgba(30,64,175,0.08)] transition-all"
           >
-            <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 bg-[#2E6EF3]/10 rounded-xl flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">
-              {role === 'doctor' ? 'All Patients' : 'Assigned Patients'}
+            <h3 className="text-base font-semibold text-slate-900 mb-1">
+              {role === 'doctor' ? t('dashboard.all_patients') : t('dashboard.assigned_patients')}
             </h3>
-            <p className="text-blue-200 text-sm">
-              {role === 'doctor' 
-                ? 'Access and manage all patient records' 
-                : 'View and manage your assigned patients'}
+            <p className="text-slate-500 text-sm">
+              {role === 'doctor'
+                ? t('dashboard.access_records')
+                : t('dashboard.view_assigned')}
             </p>
-            <div className="mt-4 flex items-center text-purple-400 text-sm font-medium group-hover:translate-x-2 transition-transform">
-              View All
-              <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="mt-4 inline-flex items-center text-[#2E6EF3] text-sm font-medium group-hover:translate-x-1 transition-transform">
+              {t('dashboard.view_all')}
+              <svg className="w-4 h-4 ml-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
             </div>
           </Link>
 
           {/* Permissions Card */}
-          <div className="group bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6 hover:bg-white/15 transition-all duration-300">
-            <div className="w-14 h-14 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center mb-4 group-hover:scale-110 transition-transform shadow-lg">
-              <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="w-12 h-12 bg-[#2E6EF3]/10 rounded-xl flex items-center justify-center mb-4">
+              <svg className="w-6 h-6 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
-            <h3 className="text-xl font-bold text-white mb-2">Your Permissions</h3>
-            <div className="space-y-2 text-sm text-blue-200">
+            <h3 className="text-base font-semibold text-slate-900 mb-3">{t('dashboard.your_permissions')}</h3>
+            <div className="space-y-2 text-sm text-slate-600">
               <div className="flex items-center gap-2">
                 {permissions?.canEditPatients ? (
-                  <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-rose-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 )}
-                <span>Edit Patients</span>
+                <span>{t('dashboard.edit_patients')}</span>
               </div>
               <div className="flex items-center gap-2">
                 {permissions?.canCreateAppointments ? (
-                  <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-rose-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 )}
-                <span>Create Appointments</span>
+                <span>{t('dashboard.create_appointments')}</span>
               </div>
               <div className="flex items-center gap-2">
                 {permissions?.canViewAllRecords ? (
-                  <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-emerald-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                   </svg>
                 ) : (
-                  <svg className="w-4 h-4 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                  <svg className="w-4 h-4 text-rose-500" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
                   </svg>
                 )}
-                <span>View All Records</span>
+                <span>{t('dashboard.view_all_records')}</span>
               </div>
             </div>
           </div>
         </div>
 
         {/* Stats Section */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-blue-200 text-sm font-medium">
-                {role === 'doctor' ? 'Total Patients' : 'Assigned Patients'}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                {role === 'doctor' ? t('dashboard.total_patients') : t('dashboard.assigned_patients_stat')}
               </p>
-              <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <div className="w-9 h-9 bg-[#2E6EF3]/10 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
               </div>
             </div>
             {loadingStats ? (
-              <LoadingSpinner message="" />
+              <div className="h-9 w-16 bg-slate-100 rounded animate-pulse" />
             ) : (
               <>
-                <p className="text-3xl font-bold text-white">{totalPatients}</p>
-                <p className="text-xs text-blue-300 mt-1">Currently active</p>
+                <p className="text-3xl font-bold text-slate-900">{totalPatients}</p>
+                <p className="text-xs text-slate-500 mt-1">{t('dashboard.currently_active')}</p>
               </>
             )}
           </div>
 
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-blue-200 text-sm font-medium">Total Consultations</p>
-              <div className="w-10 h-10 bg-green-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('dashboard.total_consultations')}</p>
+              <div className="w-9 h-9 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
             </div>
             {loadingStats ? (
-              <LoadingSpinner message="" />
+              <div className="h-9 w-16 bg-slate-100 rounded animate-pulse" />
             ) : (
               <>
-                <p className="text-3xl font-bold text-white">{totalConsultations}</p>
-                <p className="text-xs text-green-300 mt-1">Completed consultations</p>
+                <p className="text-3xl font-bold text-slate-900">{totalConsultations}</p>
+                <p className="text-xs text-slate-500 mt-1">{t('dashboard.completed_consultations')}</p>
               </>
             )}
           </div>
 
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6">
-            <div className="flex items-center justify-between mb-4">
-              <p className="text-blue-200 text-sm font-medium">System Status</p>
-              <div className="w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('dashboard.system_status')}</p>
+              <div className="w-9 h-9 bg-emerald-500/10 rounded-lg flex items-center justify-center">
+                <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
             </div>
-            <p className="text-3xl font-bold text-white">Online</p>
-            <p className="text-xs text-cyan-300 mt-1">All systems operational</p>
+            <p className="text-3xl font-bold text-slate-900">{t('common.online')}</p>
+            <p className="text-xs text-emerald-600 mt-1">{t('dashboard.systems_operational')}</p>
           </div>
         </div>
 
         {/* Upcoming Appointments (Doctor only) */}
         {role === 'doctor' && (
-          <div className="mt-4 bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h3 className="text-xl font-bold text-white">Upcoming Appointments</h3>
-                <p className="text-blue-200 text-sm">
-                  Scheduled visits for today
+                <h3 className="text-base font-semibold text-slate-900">{t('dashboard.upcoming_appointments')}</h3>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  {t('dashboard.scheduled_visits')}
                 </p>
               </div>
             </div>
 
             {loadingAppointments ? (
-              <div className="py-6 flex justify-center">
-                <LoadingSpinner message="Loading appointments..." />
+              <div className="py-6 space-y-3">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-14 rounded-xl bg-slate-100 animate-pulse" />
+                ))}
               </div>
             ) : upcomingAppointments.length === 0 ? (
-              <p className="text-blue-200 text-sm">No upcoming appointments.</p>
+              <p className="text-slate-500 text-sm">{t('dashboard.no_upcoming')}</p>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2">
                 {upcomingAppointments.map((appt) => {
                   const dateTimeStr = appt.appointment_time
                     ? `${appt.appointment_date}T${appt.appointment_time}`
@@ -455,28 +500,40 @@ function DashboardPage() {
                   return (
                     <div
                       key={appt.id}
-                      className="flex items-center justify-between bg-white/5 border border-white/10 rounded-xl px-4 py-3"
+                      className="flex items-center justify-between gap-3 border border-slate-200 rounded-xl px-4 py-3 hover:bg-slate-50 transition-colors"
                     >
                       <div>
-                        <p className="text-white font-medium">
+                        <p className="text-slate-900 font-medium text-sm">
                           {appt.patient
                             ? `${appt.patient.first_name} ${appt.patient.last_name}`
-                            : 'Unknown patient'}
+                            : t('dashboard.unknown_patient')}
                         </p>
-                        <p className="text-blue-200 text-xs">
+                        <p className="text-slate-500 text-xs mt-0.5">
                           {dateLabel}{timeLabel ? ` • ${timeLabel}` : ''}
                         </p>
                         {appt.onsite_type && (
-                          <p className="text-blue-300 text-xs mt-1">
+                          <p className="text-slate-400 text-xs mt-0.5">
                             Type: {String(appt.onsite_type).replace(/_/g, ' ')}
                           </p>
                         )}
                       </div>
-                      <span className="px-3 py-1 rounded-full text-xs font-medium bg-emerald-500/20 text-emerald-200 border border-emerald-500/40">
-                        {!appt.status || appt.status === 'scheduled'
-                          ? 'Scheduled'
-                          : appt.status.charAt(0).toUpperCase() + appt.status.slice(1)}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          {!appt.status || appt.status === 'scheduled'
+                            ? t('common.scheduled')
+                            : appt.status.charAt(0).toUpperCase() + appt.status.slice(1)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void startConsultation(appt)}
+                          disabled={!appt.encounter_id || startingEncounterId === appt.encounter_id}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-[#2E6EF3] text-white hover:bg-[#1f5ad2] disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {startingEncounterId === appt.encounter_id
+                            ? t('dashboard.starting_consultation')
+                            : t('dashboard.start_consultation')}
+                        </button>
+                      </div>
                     </div>
                   )
                 })}

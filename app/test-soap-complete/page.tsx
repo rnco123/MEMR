@@ -127,7 +127,7 @@ function TestSoapCompleteInner() {
             Railway checks the <strong className="text-amber-100">vitals</strong> table (BP, HR, temp, etc.) for{' '}
             <code className="text-amber-100/90">encounter_id</code> — not intake/chief complaint. Intake can exist
             without vitals. To verify in Supabase: open table <code className="text-amber-100/90">vitals</code>, filter{' '}
-            <code className="text-amber-100/90">encounter_id = …</code>. If empty, save vitals from the flowboard first,
+            <code className="text-amber-100/90">encounter_id = …</code>. If empty, save vitals from the virtual waiting room first,
             then trigger again.
           </p>
         </div>

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { useT } from '@/lib/i18n'
 
 type ConsentKey =
   | 'telemedicine'
@@ -23,6 +24,10 @@ interface EncounterRooming {
   ready_for_doctor_at?: string | null
   ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
+  mcm_encounter_id?: number | null
+  mcm_sync_status?: 'not_copied' | 'copy_in_progress' | 'copied' | 'copy_failed' | string | null
+  mcm_sync_error?: string | null
+  mcm_synced_at?: string | null
 }
 
 interface Props {
@@ -32,24 +37,29 @@ interface Props {
   onUpdated: () => void
 }
 
-const CONSENT_LABELS: { key: ConsentKey; label: string }[] = [
-  { key: 'telemedicine', label: 'Telemedicine consent' },
-  { key: 'hipaa', label: 'HIPAA acknowledgment' },
-  { key: 'cash_pay', label: 'Cash-pay policy' },
-  { key: 'texas_ai', label: 'AI usage (Texas)' },
-  { key: 'surgery', label: 'Surgery / treatment consent' },
-  { key: 'no_insurance', label: 'No insurance billing' },
-  { key: 'immigration', label: 'Immigration (if applicable)' },
-  { key: 'dot', label: 'DOT (if applicable)' },
-  { key: 'ma_supervision', label: 'MA in-room supervision' },
+const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
+  { key: 'telemedicine', labelKey: 'encounter_modal.consent_telemedicine' },
+  { key: 'hipaa', labelKey: 'encounter_modal.consent_hipaa' },
+  { key: 'cash_pay', labelKey: 'encounter_modal.consent_cash_pay' },
+  { key: 'texas_ai', labelKey: 'encounter_modal.consent_texas_ai' },
+  { key: 'surgery', labelKey: 'encounter_modal.consent_surgery' },
+  { key: 'no_insurance', labelKey: 'encounter_modal.consent_no_insurance' },
+  { key: 'immigration', labelKey: 'encounter_modal.consent_immigration' },
+  { key: 'dot', labelKey: 'encounter_modal.consent_dot' },
+  { key: 'ma_supervision', labelKey: 'encounter_modal.consent_ma_supervision' },
 ]
 
 export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUpdated }: Props) {
+  const { t } = useT()
   const [saving, setSaving] = useState(false)
+  const [syncingToMcm, setSyncingToMcm] = useState(false)
   const [findings, setFindings] = useState(encounter.ma_exam_findings ?? '')
   const [pharmacyId, setPharmacyId] = useState<string>(encounter.pharmacy_id ? String(encounter.pharmacy_id) : '')
 
   const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
+
+  const selectClass =
+    'bg-[#f9fbff] border border-slate-200 rounded-xl px-3 py-2 text-slate-900 text-sm min-w-[200px] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 [color-scheme:light]'
 
   const patchRooming = async (body: Record<string, unknown>) => {
     setSaving(true)
@@ -61,11 +71,11 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
         body: JSON.stringify(body),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Update failed')
-      toast.success('Saved')
+      if (!res.ok) throw new Error(json.error || t('encounter_modal.toast_save_failed'))
+      toast.success(t('encounter_modal.toast_saved'))
       onUpdated()
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Failed to save')
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.toast_save_failed'))
     } finally {
       setSaving(false)
     }
@@ -78,37 +88,110 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
     void patchRooming({ consent_ack: next })
   }
 
+  const syncEncounterToMcm = async () => {
+    setSyncingToMcm(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/mcm-sync`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || t('encounter_modal.toast_mcm_failed'))
+      toast.success(t('encounter_modal.toast_mcm_copied', { id: json.mcm_encounter_id }))
+      onUpdated()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.toast_mcm_failed'))
+    } finally {
+      setSyncingToMcm(false)
+    }
+  }
+
+  const mcmStatus = encounter.mcm_sync_status || 'not_copied'
+  const mcmStatusClass =
+    mcmStatus === 'copied'
+      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+      : mcmStatus === 'copy_failed'
+        ? 'bg-red-50 text-red-800 border-red-200'
+        : mcmStatus === 'copy_in_progress'
+          ? 'bg-amber-50 text-amber-900 border-amber-200'
+          : 'bg-slate-50 text-slate-700 border-slate-200'
+
+  const workflowRows = [
+    {
+      k: 'identity_verified' as const,
+      labelKey: 'encounter_modal.rooming_identity',
+      at: encounter.identity_verified_at,
+    },
+    {
+      k: 'prescribing_location_ack' as const,
+      labelKey: 'encounter_modal.rooming_prescribing_loc',
+      at: encounter.prescribing_location_ack_at,
+    },
+    {
+      k: 'ma_supervision_ack' as const,
+      labelKey: 'encounter_modal.rooming_ma_supervision',
+      at: encounter.ma_supervision_ack_at,
+    },
+    {
+      k: 'ready_for_doctor' as const,
+      labelKey: 'encounter_modal.rooming_ready_doctor',
+      at: encounter.ready_for_doctor_at,
+    },
+  ]
+
   return (
-    <div className="bg-white/5 border border-white/10 rounded-xl p-6 space-y-6">
-      <h3 className="text-xl font-bold text-white flex items-center gap-2">
-        <span className="text-amber-400">Rooming & compliance</span>
-      </h3>
+    <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-6 shadow-sm">
+      <h3 className="text-lg font-bold text-slate-900">{t('encounter_modal.rooming_title')}</h3>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {[
-          { k: 'identity_verified' as const, label: 'Identity verified (in person)', at: encounter.identity_verified_at },
-          { k: 'prescribing_location_ack' as const, label: 'Prescribing location acknowledged', at: encounter.prescribing_location_ack_at },
-          { k: 'ma_supervision_ack' as const, label: 'MA supervision / in-room', at: encounter.ma_supervision_ack_at },
-          { k: 'ready_for_doctor' as const, label: 'Ready for doctor', at: encounter.ready_for_doctor_at },
-        ].map((row) => (
+        {workflowRows.map((row) => (
           <label
             key={row.k}
-            className="flex items-center gap-3 p-3 rounded-lg bg-white/5 border border-white/10 cursor-pointer hover:bg-white/10"
+            className="flex items-center gap-3 p-3 rounded-xl bg-[#f9fbff] border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
           >
             <input
               type="checkbox"
               checked={!!row.at}
               disabled={saving}
               onChange={(e) => void patchRooming({ [row.k]: e.target.checked })}
-              className="rounded border-white/30"
+              className="rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]/35"
             />
-            <span className="text-sm text-blue-100">{row.label}</span>
+            <span className="text-sm text-slate-800">{t(row.labelKey)}</span>
           </label>
         ))}
       </div>
 
+      <div className="rounded-xl border border-slate-200 bg-[#f9fbff] p-4">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p className="text-sm text-slate-500 mb-1">{t('encounter_modal.rooming_mcm_status')}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium uppercase tracking-wide ${mcmStatusClass}`}>
+                {mcmStatus.replaceAll('_', ' ')}
+              </span>
+              {encounter.mcm_encounter_id && (
+                <span className="text-xs text-emerald-800 font-medium">
+                  {t('encounter_modal.rooming_mcm_encounter_id')} {encounter.mcm_encounter_id}
+                </span>
+              )}
+            </div>
+            {encounter.mcm_sync_error && (
+              <p className="text-xs text-red-700 mt-2">{encounter.mcm_sync_error}</p>
+            )}
+          </div>
+          <button
+            type="button"
+            disabled={syncingToMcm || saving}
+            onClick={syncEncounterToMcm}
+            className="px-4 py-2 bg-[#2E6EF3] hover:bg-[#256ae8] text-white rounded-xl text-sm font-semibold disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
+          >
+            {syncingToMcm ? t('encounter_modal.rooming_copying') : t('encounter_modal.rooming_copy_mcm')}
+          </button>
+        </div>
+      </div>
+
       <div>
-        <label className="text-sm text-blue-200 block mb-1">Pharmacy</label>
+        <label className="text-sm text-slate-500 block mb-1">{t('encounter_modal.rooming_pharmacy')}</label>
         <div className="flex gap-2 flex-wrap">
           <select
             value={pharmacyId}
@@ -119,12 +202,12 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
               const num = v ? Number(v) : null
               void patchRooming({ pharmacy_id: num })
             }}
-            className="bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm min-w-[200px]"
+            className={`${selectClass} cursor-pointer`}
           >
-            <option value="">— Select pharmacy —</option>
+            <option value="">{t('encounter_modal.rooming_pharmacy_select')}</option>
             {pharmacies.map((p) => (
               <option key={p.id} value={p.id}>
-                {p.name || `Pharmacy #${p.id}`}
+                {p.name || t('encounter_modal.pharmacy_numbered', { id: p.id })}
               </option>
             ))}
           </select>
@@ -132,25 +215,25 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
       </div>
 
       <div>
-        <p className="text-sm text-blue-200 mb-2">Consent acknowledgments (timestamp recorded)</p>
+        <p className="text-sm text-slate-500 mb-2">{t('encounter_modal.rooming_consent_header')}</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {CONSENT_LABELS.map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-2 text-sm text-gray-200">
+          {CONSENT_LABEL_KEYS.map(({ key, labelKey }) => (
+            <label key={key} className="flex items-center gap-2 text-sm text-slate-800">
               <input
                 type="checkbox"
                 checked={!!ack[key]}
                 disabled={saving}
                 onChange={(e) => toggleConsent(key, e.target.checked)}
-                className="rounded border-white/30"
+                className="rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]/35"
               />
-              {label}
+              {t(labelKey)}
             </label>
           ))}
         </div>
       </div>
 
       <div>
-        <label className="text-sm text-blue-200 block mb-1">MA exam findings</label>
+        <label className="text-sm text-slate-500 block mb-1">{t('encounter_modal.rooming_ma_findings')}</label>
         <textarea
           value={findings}
           disabled={saving}
@@ -161,8 +244,8 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
             }
           }}
           rows={4}
-          placeholder="Document MA-reported findings during exam…"
-          className="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-white text-sm placeholder:text-gray-500"
+          placeholder={t('encounter_modal.rooming_ma_placeholder')}
+          className="w-full bg-[#f9fbff] border border-slate-200 rounded-xl px-3 py-2 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 [color-scheme:light]"
         />
       </div>
     </div>

@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { LoadingSpinner } from './LoadingSpinner'
+import { toast } from 'sonner'
 
 interface Patient {
   id: number
@@ -74,20 +75,52 @@ interface Pharmacy {
   id: number
   name?: string | null
   address?: string | null
+  city?: string | null
+  state?: string | null
+  zip_code?: string | null
   phone?: string | null
+  phone_number?: string | null
   email?: string | null
+  spanish_language_service?: boolean | null
+  disabled_access?: boolean | null
+  license_status?: string | null
+  opening_hours?: unknown
+  delivers?: boolean | null
+  is_active?: boolean | null
 }
+
+/** EMR `prescriptions` row (Final Review pharmacy step); maps to DB columns after migration 041. */
+interface RxLine {
+  id: string
+  medication_name: string
+  strength: string
+  dosage_instruction: string
+  route: string
+  frequency: string
+  duration: string
+  notes: string
+}
+
+const emptyRxForm = (): Omit<RxLine, 'id'> => ({
+  medication_name: '',
+  strength: '',
+  dosage_instruction: '',
+  route: '',
+  frequency: '',
+  duration: '',
+  notes: '',
+})
 
 interface CategoryMemr {
-  id: number
-  name: string
+  category_id: number
+  category_name: string
 }
 
-/** Product from public.products (pre_sales.product_id references products.product_id) */
+/** Product row from MCM catalog API (`/api/mcm/catalog` reads EXTERNAL_SUPABASE `products` or `product_memr`). */
 interface ProductRow {
   product_id: number
   product_name: string
-  category_id?: number
+  category_id?: number | null
 }
 
 interface PreSalesProduct {
@@ -95,6 +128,13 @@ interface PreSalesProduct {
   product_id: number
   product_name: string
   quantity: number
+}
+
+interface EncounterSyncInfo {
+  mcm_encounter_id: number | null
+  mcm_sync_status: 'not_copied' | 'copy_in_progress' | 'copied' | 'copy_failed' | string
+  mcm_sync_error: string | null
+  mcm_synced_at: string | null
 }
 
 interface FinalReviewModalProps {
@@ -105,6 +145,16 @@ interface FinalReviewModalProps {
   onClose: () => void
   onComplete?: () => void
 }
+
+const REVIEW_STEP_KEYS = [
+  'patient_review',
+  'pre_sales_product',
+  'pharmacy_order',
+  'followup',
+  'final_summary',
+] as const
+
+type ReviewStep = (typeof REVIEW_STEP_KEYS)[number]
 
 export function FinalReviewModal({
   encounterId,
@@ -121,11 +171,21 @@ export function FinalReviewModal({
   const [vitals, setVitals] = useState<Vitals | null>(null)
   const [soapNotes, setSoapNotes] = useState<SOAPNotes | null>(null)
   const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
+  const [encounterDoctorId, setEncounterDoctorId] = useState<number | null>(null)
+  const [encounterPharmacyId, setEncounterPharmacyId] = useState<number | null>(null)
+  const [rxLines, setRxLines] = useState<RxLine[]>([])
+  const [rxForm, setRxForm] = useState<Omit<RxLine, 'id'>>(emptyRxForm())
+  /** Follow-up step: date/time UI only (not persisted). */
+  const [followupDate, setFollowupDate] = useState('')
+  const [followupTime, setFollowupTime] = useState('')
   const [preSalesProducts, setPreSalesProducts] = useState<PreSalesProduct[]>([])
-  const [activeTab, setActiveTab] = useState<'review' | 'products'>('review')
+  const [activeStep, setActiveStep] = useState<ReviewStep>('patient_review')
   const [saving, setSaving] = useState(false)
+  const [stepTransitionLoading, setStepTransitionLoading] = useState(false)
+  const [mcmCatalogLoading, setMcmCatalogLoading] = useState(false)
+  const [encounterSync, setEncounterSync] = useState<EncounterSyncInfo | null>(null)
 
-  // Categories (category_memr) and products (public.products – pre_sales refs products.product_id)
+  // Categories/products for dropdowns: loaded from EXTERNAL_SUPABASE via GET /api/mcm/catalog
   const [categories, setCategories] = useState<CategoryMemr[]>([])
   const [categoriesError, setCategoriesError] = useState<string | null>(null)
   const [products, setProducts] = useState<ProductRow[]>([])
@@ -135,27 +195,98 @@ export function FinalReviewModal({
   const [productQuantity, setProductQuantity] = useState(1)
 
   useEffect(() => {
+    if (isOpen) {
+      setActiveStep('patient_review')
+      setFollowupDate('')
+      setFollowupTime('')
+    }
+  }, [isOpen])
+
+  const followupDaysFromToday = useMemo(() => {
+    if (!followupDate) return null
+    const [y, m, d] = followupDate.split('-').map(Number)
+    if (!y || !m || !d) return null
+    const selected = new Date(y, m - 1, d)
+    selected.setHours(0, 0, 0, 0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return Math.round((selected.getTime() - today.getTime()) / 86_400_000)
+  }, [followupDate])
+
+  useEffect(() => {
     if (!isOpen) return
+
+    const fetchMcmCatalogAsync = () => {
+      void (async () => {
+        setMcmCatalogLoading(true)
+        setCategoriesError(null)
+        try {
+          const controller = new AbortController()
+          const tid = globalThis.setTimeout(() => controller.abort(), 15_000)
+          const mcmCatalogRes = await fetch('/api/mcm/catalog', {
+            method: 'GET',
+            credentials: 'include',
+            signal: controller.signal,
+          })
+          globalThis.clearTimeout(tid)
+          const mcmCatalogJson = await mcmCatalogRes.json().catch(() => ({}))
+          if (!mcmCatalogRes.ok) {
+            console.error('Error fetching MCM catalog:', mcmCatalogJson)
+            setCategoriesError(
+              typeof mcmCatalogJson.error === 'string' ? mcmCatalogJson.error : 'Failed to load MCM categories'
+            )
+            setCategories([])
+            setProducts([])
+          } else {
+            setCategories((mcmCatalogJson.categories as CategoryMemr[]) || [])
+            setProducts((mcmCatalogJson.products as ProductRow[]) || [])
+          }
+        } catch (e) {
+          const aborted =
+            (e instanceof DOMException && e.name === 'AbortError') ||
+            (e instanceof Error && e.name === 'AbortError')
+          console.error('MCM catalog fetch failed:', e)
+          setCategoriesError(
+            aborted
+              ? 'MCM catalog timed out. You can still review the encounter; try opening Pre-Sales again in a moment.'
+              : 'Could not load MCM catalog.'
+          )
+          setCategories([])
+          setProducts([])
+        } finally {
+          setMcmCatalogLoading(false)
+        }
+      })()
+    }
 
     const fetchData = async () => {
       setLoading(true)
       try {
-        // Fetch patient
-        const { data: patientData } = await supabase
-          .from('patients')
-          .select('*')
-          .eq('id', patientId)
-          .single()
-        setPatient(patientData as Patient)
+        const [{ data: patientData }, { data: encounterData }] = await Promise.all([
+          supabase.from('patients').select('*').eq('id', patientId).single(),
+          supabase.from('encounters').select('*').eq('id', encounterId).single(),
+        ])
+        setPatient((patientData as Patient) ?? null)
 
-        // Fetch encounter
-        const { data: encounterData } = await supabase
-          .from('encounters')
-          .select('*')
-          .eq('id', encounterId)
-          .single()
+        if (encounterData) {
+          setEncounterSync({
+            mcm_encounter_id: encounterData.mcm_encounter_id ?? null,
+            mcm_sync_status: encounterData.mcm_sync_status ?? 'not_copied',
+            mcm_sync_error: encounterData.mcm_sync_error ?? null,
+            mcm_synced_at: encounterData.mcm_synced_at ?? null,
+          })
+          setEncounterDoctorId(
+            typeof encounterData.doctor_id === 'number' ? encounterData.doctor_id : null
+          )
+          setEncounterPharmacyId(
+            typeof encounterData.pharmacy_id === 'number' ? encounterData.pharmacy_id : null
+          )
+        } else {
+          setEncounterSync(null)
+          setEncounterDoctorId(null)
+          setEncounterPharmacyId(null)
+        }
 
-        // Fetch intake form: try encounter.intake_id first, then by appointment_id
         let intakeData: unknown = null
         if (encounterData?.intake_id) {
           const res = await supabase
@@ -174,28 +305,29 @@ export function FinalReviewModal({
           intakeData = res.data
         }
         if (intakeData) setIntake(intakeData as IntakeForm)
+        else setIntake(null)
 
-        // Fetch vitals
-        const { data: vitalsData } = await supabase
-          .from('vitals')
-          .select('*')
-          .eq('encounter_id', encounterId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setVitals(vitalsData as Vitals)
+        const [vitalsRes, soapRes, preSalesRes] = await Promise.all([
+          supabase
+            .from('vitals')
+            .select('*')
+            .eq('encounter_id', encounterId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase
+            .from('ai_soapnotes')
+            .select('*')
+            .eq('encounter_id', encounterId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+          supabase.from('pre_sales').select('id, product_id, product_quantity').eq('encounter_id', encounterId),
+        ])
 
-        // Fetch SOAP notes
-        const { data: soapData } = await supabase
-          .from('ai_soapnotes')
-          .select('*')
-          .eq('encounter_id', encounterId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setSoapNotes(soapData as SOAPNotes)
+        setVitals(vitalsRes.data as Vitals)
+        setSoapNotes(soapRes.data as SOAPNotes)
 
-        // Fetch pharmacy
         if (encounterData?.pharmacy_id) {
           const { data: pharmacyData } = await supabase
             .from('pharmacy')
@@ -203,34 +335,44 @@ export function FinalReviewModal({
             .eq('id', encounterData.pharmacy_id)
             .maybeSingle()
           setPharmacy(pharmacyData as Pharmacy)
-        }
-
-        // Categories for pre-sales (category_memr)
-        setCategoriesError(null)
-        const { data: categoriesData, error: categoriesErr } = await supabase
-          .from('category_memr')
-          .select('id, name')
-          .order('name')
-        if (categoriesErr) {
-          console.error('Error fetching category_memr:', categoriesErr)
-          setCategoriesError(categoriesErr.message || 'Failed to load categories')
-          setCategories([])
         } else {
-          setCategories((categoriesData as CategoryMemr[]) || [])
+          setPharmacy(null)
         }
 
-        // Existing pre_sales for this encounter
-        const { data: preSalesData } = await supabase
-          .from('pre_sales')
-          .select('id, product_id, product_quantity')
-          .eq('encounter_id', encounterId)
+        const preSalesData = preSalesRes.data
         if (preSalesData?.length) {
-          const productIds = [...new Set(preSalesData.map((r: { product_id: number | null }) => r.product_id).filter(Boolean))]
-          const { data: productRows } = await supabase
+          const productIds = [
+            ...new Set(
+              preSalesData
+                .map((r: { product_id: number | null }) => r.product_id)
+                .filter((id): id is number => id != null && Number(id) > 0)
+            ),
+          ]
+          const nameMap = new Map<number, string>()
+          const { data: localProductRows } = await supabase
             .from('products')
             .select('product_id, product_name')
             .in('product_id', productIds)
-          const nameMap = new Map((productRows || []).map((p: { product_id: number; product_name: string }) => [p.product_id, p.product_name]))
+          for (const p of localProductRows || []) {
+            nameMap.set(p.product_id, p.product_name)
+          }
+          const missingIds = productIds.filter((id) => !nameMap.has(id))
+          if (missingIds.length > 0) {
+            try {
+              const res = await fetch(
+                `/api/mcm/catalog?product_ids=${missingIds.map(String).join(',')}`,
+                { method: 'GET', credentials: 'include' }
+              )
+              const json = await res.json().catch(() => ({}))
+              if (res.ok && Array.isArray(json.products)) {
+                for (const row of json.products as { product_id: number; product_name: string }[]) {
+                  if (row.product_name) nameMap.set(row.product_id, row.product_name)
+                }
+              }
+            } catch {
+              /* keep Unknown for unresolved ids */
+            }
+          }
           setPreSalesProducts(
             preSalesData.map((r: { id: number; product_id: number | null; product_quantity: number }) => ({
               id: `db-${r.id}`,
@@ -239,9 +381,39 @@ export function FinalReviewModal({
               quantity: r.product_quantity,
             }))
           )
+        } else {
+          setPreSalesProducts([])
         }
+
+        const { data: rxRows } = await supabase
+          .from('prescriptions')
+          .select('*')
+          .eq('encounter_id', encounterId)
+          .order('created_at', { ascending: true })
+        setRxLines(
+          (rxRows || []).map((r: Record<string, unknown>) => {
+            const dose =
+              (r.dosage_instruction as string) ||
+              (r.instructions as string) ||
+              (r.dosage as string) ||
+              ''
+            return {
+              id: `db-${r.id as number}`,
+              medication_name: String(r.medication_name ?? ''),
+              strength: String(r.strength ?? ''),
+              dosage_instruction: dose,
+              route: String(r.route ?? ''),
+              frequency: String(r.frequency ?? ''),
+              duration: String(r.duration ?? ''),
+              notes: String(r.notes ?? ''),
+            }
+          })
+        )
+
+        fetchMcmCatalogAsync()
       } catch (error) {
         console.error('Error fetching final review data:', error)
+        toast.error('Could not load review data. Check permissions or try again.')
       } finally {
         setLoading(false)
       }
@@ -250,8 +422,7 @@ export function FinalReviewModal({
     fetchData()
   }, [isOpen, encounterId, appointmentId, patientId, supabase])
 
-  // When category changes, fetch products from public.products (pre_sales refs products.product_id)
-  // Load all products so dropdown always populates (category_id in products may not match category_memr ids)
+  // When category changes, fetch products from MCM catalog.
   useEffect(() => {
     if (!selectedCategoryId) {
       setProducts([])
@@ -261,21 +432,22 @@ export function FinalReviewModal({
     }
     const load = async () => {
       setProductsError(null)
-      const { data, error } = await supabase
-        .from('products')
-        .select('product_id, product_name')
-        .order('product_name')
-      if (error) {
-        console.error('Error fetching products:', error)
-        setProductsError(error.message || 'Failed to load products')
+      const res = await fetch(`/api/mcm/catalog?category_id=${selectedCategoryId}`, {
+        method: 'GET',
+        credentials: 'include',
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.error('Error fetching MCM products:', json)
+        setProductsError(json.error || 'Failed to load products')
         setProducts([])
       } else {
-        setProducts((data as ProductRow[]) || [])
+        setProducts((json.products as ProductRow[]) || [])
       }
       setSelectedProductId('')
     }
     load()
-  }, [selectedCategoryId, supabase])
+  }, [selectedCategoryId])
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
@@ -317,9 +489,224 @@ export function FinalReviewModal({
     setPreSalesProducts(preSalesProducts.filter(p => p.id !== id))
   }
 
+  const reviewStepIndex = REVIEW_STEP_KEYS.indexOf(activeStep)
+  const isLastReviewStep = activeStep === 'final_summary'
+
+  /** Save pending lines to EMR `pre_sales` with `encounter_id` = this EMR encounter. MCM `pre_sales` uses `mcm_encounter_id` only inside `/api/encounters/:id/mcm-presales`. If encounter is copied to MCM, sync there after EMR insert; on MCM failure roll back EMR rows so Next can be retried without duplicates. */
+  const persistPendingPreSales = useCallback(async (): Promise<boolean> => {
+    const pending = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
+    if (pending.length === 0) return true
+
+    const itemsPayload = pending.map((p) => ({ product_id: p.product_id, quantity: p.quantity }))
+    const rows = pending.map((p) => ({
+      encounter_id: encounterId,
+      product_id: p.product_id,
+      product_quantity: p.quantity,
+      product_quantity_taken: 0,
+      status: 'initiated' as const,
+    }))
+
+    const { data: inserted, error } = await supabase
+      .from('pre_sales')
+      .insert(rows)
+      .select('id, product_id, product_quantity')
+
+    if (error) {
+      console.error(error)
+      toast.error(error.message ?? 'Could not save pre-sales rows')
+      return false
+    }
+
+    const insertedIds = (inserted ?? []).map((r) => r.id).filter((id): id is number => id != null)
+
+    if (encounterSync?.mcm_sync_status === 'copied') {
+      try {
+        const mcmRes = await fetch(`/api/encounters/${encounterId}/mcm-presales`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ items: itemsPayload }),
+        })
+        const mcmJson = await mcmRes.json().catch(() => ({}))
+        if (!mcmRes.ok) {
+          if (insertedIds.length > 0) {
+            await supabase.from('pre_sales').delete().in('id', insertedIds)
+          }
+          toast.error(
+            typeof mcmJson.error === 'string' ? mcmJson.error : 'Pre-sales were not synced to MCM — try again'
+          )
+          return false
+        }
+        const syncedCount = Number(mcmJson.synced_count || 0)
+        if (syncedCount > 0) {
+          toast.success(`Synced ${syncedCount} pre-sale item(s) to MCM`)
+        }
+      } catch (e) {
+        console.error(e)
+        if (insertedIds.length > 0) {
+          await supabase.from('pre_sales').delete().in('id', insertedIds)
+        }
+        toast.error('Could not reach MCM — pre-sales not saved. Try again.')
+        return false
+      }
+    } else {
+      toast.success('Pre-sales saved for this encounter')
+    }
+
+    const mergedNew = (inserted ?? []).map((row, i) => ({
+      id: `db-${row.id}`,
+      product_id: row.product_id ?? pending[i]?.product_id ?? 0,
+      product_name: pending[i]?.product_name ?? 'Unknown',
+      quantity: row.product_quantity ?? pending[i]?.quantity ?? 0,
+    }))
+
+    setPreSalesProducts((prev) => [...prev.filter((p) => String(p.id).startsWith('db-')), ...mergedNew])
+
+    return true
+  }, [preSalesProducts, encounterId, encounterSync?.mcm_sync_status, supabase])
+
+  /** Persist session-only Rx lines to EMR `prescriptions` using encounter pharmacy_id + assigned doctor. */
+  const persistPendingPrescriptions = useCallback(async (): Promise<boolean> => {
+    const pending = rxLines.filter((r) => !String(r.id).startsWith('db-'))
+    if (pending.length === 0) return true
+
+    if (!encounterDoctorId) {
+      toast.error('This encounter has no assigned doctor — prescriptions cannot be saved.')
+      return false
+    }
+    if (!encounterPharmacyId) {
+      toast.error('This encounter has no pharmacy — assign a pharmacy on the encounter before adding prescriptions.')
+      return false
+    }
+
+    for (const line of pending) {
+      if (!line.medication_name.trim()) {
+        toast.error('Each prescription needs a medication name.')
+        return false
+      }
+    }
+
+    const doseOf = (line: RxLine) => line.dosage_instruction.trim() || null
+
+    const inserts = pending.map((line) => ({
+      prescriber_doctor_id: encounterDoctorId,
+      patient_id: patientId,
+      encounter_id: encounterId,
+      pharmacy_id: encounterPharmacyId,
+      medication_name: line.medication_name.trim(),
+      strength: line.strength.trim() || null,
+      dosage_instruction: doseOf(line),
+      dosage: doseOf(line),
+      instructions: doseOf(line),
+      route: line.route.trim() || null,
+      frequency: line.frequency.trim() || null,
+      duration: line.duration.trim() || null,
+      refills: 0,
+      status: 'recorded' as const,
+      notes: line.notes.trim() || null,
+    }))
+
+    const { data: inserted, error } = await supabase
+      .from('prescriptions')
+      .insert(inserts)
+      .select('id, medication_name, strength, dosage_instruction, dosage, instructions, route, frequency, duration, notes')
+
+    if (error) {
+      console.error(error)
+      toast.error(error.message ?? 'Could not save prescriptions')
+      return false
+    }
+
+    const mergedNew = (inserted ?? []).map((row: Record<string, unknown>, i: number) => {
+      const pend = pending[i]
+      const fromRow = String(row.dosage_instruction ?? row.instructions ?? row.dosage ?? '').trim()
+      const fromPending = pend != null ? doseOf(pend) ?? '' : ''
+      const dose = fromRow || fromPending
+      return {
+        id: `db-${row.id as number}`,
+        medication_name: String(row.medication_name ?? pend?.medication_name ?? ''),
+        strength: String(row.strength ?? pend?.strength ?? ''),
+        dosage_instruction: dose,
+        route: String(row.route ?? pend?.route ?? ''),
+        frequency: String(row.frequency ?? pend?.frequency ?? ''),
+        duration: String(row.duration ?? pend?.duration ?? ''),
+        notes: String(row.notes ?? pend?.notes ?? ''),
+      }
+    })
+
+    setRxLines((prev) => [...prev.filter((r) => String(r.id).startsWith('db-')), ...mergedNew])
+    toast.success(pending.length === 1 ? 'Prescription saved' : `${pending.length} prescriptions saved`)
+    return true
+  }, [rxLines, encounterDoctorId, encounterPharmacyId, patientId, encounterId, supabase])
+
+  const handleAddRxLine = () => {
+    if (!rxForm.medication_name.trim()) {
+      toast.error('Medication name is required')
+      return
+    }
+    const line: RxLine = {
+      id: `tmp-${Date.now()}`,
+      ...rxForm,
+      medication_name: rxForm.medication_name.trim(),
+    }
+    setRxLines((prev) => [...prev, line])
+    setRxForm(emptyRxForm())
+  }
+
+  const handleRemoveRxLine = (id: string) => {
+    if (String(id).startsWith('db-')) return
+    setRxLines((prev) => prev.filter((r) => r.id !== id))
+  }
+
+  const goNextStep = async () => {
+    const idx = REVIEW_STEP_KEYS.indexOf(activeStep)
+    if (activeStep === 'pre_sales_product') {
+      setStepTransitionLoading(true)
+      try {
+        const ok = await persistPendingPreSales()
+        if (!ok) return
+      } finally {
+        setStepTransitionLoading(false)
+      }
+    }
+    if (activeStep === 'pharmacy_order') {
+      setStepTransitionLoading(true)
+      try {
+        const ok = await persistPendingPrescriptions()
+        if (!ok) return
+      } finally {
+        setStepTransitionLoading(false)
+      }
+    }
+    if (idx < REVIEW_STEP_KEYS.length - 1) {
+      const nextStep = REVIEW_STEP_KEYS[idx + 1]
+      if (nextStep !== undefined) setActiveStep(nextStep)
+    }
+  }
+
+  const goPrevStep = () => {
+    if (reviewStepIndex > 0) {
+      const prevStep = REVIEW_STEP_KEYS[reviewStepIndex - 1]
+      if (prevStep !== undefined) setActiveStep(prevStep)
+    }
+  }
+
   const handleCompleteReview = async () => {
     setSaving(true)
     try {
+      const okRx = await persistPendingPrescriptions()
+      if (!okRx) {
+        setSaving(false)
+        return
+      }
+
+      const newProducts = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
+      if (newProducts.length > 0 && encounterSync?.mcm_sync_status !== 'copied') {
+        alert('Copy encounter to MCM first (status must be copied) before syncing pre-sales.')
+        setSaving(false)
+        return
+      }
+
       // Update encounter status to final_review
       const { error: updateError } = await supabase
         .from('encounters')
@@ -329,6 +716,7 @@ export function FinalReviewModal({
       if (updateError) {
         console.error('Error updating encounter status:', updateError)
         alert('Error updating encounter status. Please try again.')
+        setSaving(false)
         return
       }
 
@@ -340,18 +728,42 @@ export function FinalReviewModal({
         profileId,
       })
 
-      // Insert new pre_sales rows (only those added in this session, not already from DB)
-      for (const p of preSalesProducts) {
+      // Insert new pre_sales rows locally (only those added in this session, not already saved — e.g. skipped Pre-Sales Next)
+      for (const p of newProducts) {
         if (String(p.id).startsWith('db-')) continue
         const { error: insertErr } = await supabase.from('pre_sales').insert({
           encounter_id: encounterId,
           product_id: p.product_id,
           product_quantity: p.quantity,
-          status: 'pending',
+          product_quantity_taken: 0,
+          status: 'initiated',
         })
         if (insertErr) {
           console.error('Error inserting pre_sales:', insertErr)
         }
+      }
+
+      if (newProducts.length > 0) {
+        const mcmRes = await fetch(`/api/encounters/${encounterId}/mcm-presales`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            items: newProducts.map((p) => ({ product_id: p.product_id, quantity: p.quantity })),
+          }),
+        })
+        const mcmJson = await mcmRes.json().catch(() => ({}))
+        if (!mcmRes.ok) {
+          alert(mcmJson.error || 'Pre-sales saved locally, but failed to sync to MCM.')
+          setSaving(false)
+          return
+        }
+        const syncedCount = Number(mcmJson.synced_count || 0)
+        toast.success(
+          syncedCount > 0
+            ? `Synced ${syncedCount} pre-sale item(s) to MCM`
+            : 'Pre-sales synced to MCM'
+        )
       }
 
       if (onComplete) {
@@ -392,44 +804,46 @@ export function FinalReviewModal({
           </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-white/10 bg-slate-800 flex-shrink-0">
-          <button
-            onClick={() => setActiveTab('review')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'review'
-                ? 'text-white border-b-2 border-cyan-500 bg-white/5'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            Patient Review
-          </button>
-          <button
-            onClick={() => setActiveTab('products')}
-            className={`px-6 py-3 font-medium transition-colors ${
-              activeTab === 'products'
-                ? 'text-white border-b-2 border-cyan-500 bg-white/5'
-                : 'text-gray-400 hover:text-white'
-            }`}
-          >
-            Pre-Sales Products
-            {preSalesProducts.length > 0 && (
-              <span className="ml-2 px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded-full text-xs">
-                {preSalesProducts.length}
-              </span>
-            )}
-          </button>
+        {/* Stepper */}
+        <div className="border-b border-white/10 bg-slate-800 flex-shrink-0 px-4 py-3">
+          <div className="flex items-center gap-2 overflow-x-auto">
+            {[
+              { key: 'patient_review', label: '1. Patient Review' },
+              { key: 'pre_sales_product', label: '2. Pre-Sales Product' },
+              { key: 'pharmacy_order', label: '3. Pharmacy Order' },
+              { key: 'followup', label: '4. Followup' },
+              { key: 'final_summary', label: '5. Final Summary' },
+            ].map((step) => (
+              <button
+                key={step.key}
+                type="button"
+                onClick={() => setActiveStep(step.key as ReviewStep)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors ${
+                  activeStep === step.key
+                    ? 'text-white bg-cyan-600/20 border border-cyan-500/40'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5 border border-transparent'
+                }`}
+              >
+                {step.label}
+                {step.key === 'pre_sales_product' && preSalesProducts.length > 0 && (
+                  <span className="ml-2 px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded-full text-xs">
+                    {preSalesProducts.length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <LoadingSpinner message="Loading review data..." />
+            <div className="flex items-center justify-center min-h-[240px]">
+              <LoadingSpinner message="Loading review data..." variant="dark" showPercentage={false} />
             </div>
           ) : (
             <>
-              {activeTab === 'review' && (
+              {activeStep === 'patient_review' && (
                 <div className="space-y-6">
                   {/* Patient Information */}
                   <div className="bg-white/5 border border-white/10 rounded-xl p-6">
@@ -675,12 +1089,51 @@ export function FinalReviewModal({
                 </div>
               )}
 
-              {activeTab === 'products' && (
+              {activeStep === 'pre_sales_product' && (
                 <div className="space-y-6">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
+                    <p className="text-sm text-blue-200 mb-2">MCM Encounter Mapping</p>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-medium uppercase tracking-wide ${
+                          encounterSync?.mcm_sync_status === 'copied'
+                            ? 'bg-green-500/20 text-green-300 border-green-500/50'
+                            : encounterSync?.mcm_sync_status === 'copy_failed'
+                            ? 'bg-red-500/20 text-red-300 border-red-500/50'
+                            : encounterSync?.mcm_sync_status === 'copy_in_progress'
+                            ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
+                            : 'bg-white/10 text-blue-200 border-white/20'
+                        }`}
+                      >
+                        {(encounterSync?.mcm_sync_status || 'not_copied').replaceAll('_', ' ')}
+                      </span>
+                      {encounterSync?.mcm_encounter_id && (
+                        <span className="text-xs text-green-300">
+                          MCM Encounter ID: {encounterSync.mcm_encounter_id}
+                        </span>
+                      )}
+                    </div>
+                    {encounterSync?.mcm_sync_error && (
+                      <p className="text-xs text-red-300 mt-2">{encounterSync.mcm_sync_error}</p>
+                    )}
+                    {encounterSync?.mcm_sync_status !== 'copied' && (
+                      <p className="text-xs text-amber-300 mt-2">
+                        Pre-sales sync to MCM is blocked until encounter is copied.
+                      </p>
+                    )}
+                  </div>
+
                   {/* Add Product Form */}
                   <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                     <h3 className="text-xl font-bold text-white mb-4">Add Product to Pre-Sales</h3>
-                    <p className="text-blue-200/80 text-sm mb-4">One encounter can have multiple products.</p>
+                    <p className="text-blue-200/80 text-sm mb-4">
+                      One encounter can have multiple products. Categories and products come from the MCM catalog
+                      (secondary Supabase). New rows save to EMR pre_sales and, once the encounter is copied to MCM, sync to
+                      MCM pre_sales via the existing API.
+                    </p>
+                    {mcmCatalogLoading && (
+                      <p className="text-cyan-300/90 text-xs mb-3">Loading MCM categories and products…</p>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
                       <div>
                         <label className="text-blue-200 text-sm mb-1 block">Category</label>
@@ -691,8 +1144,8 @@ export function FinalReviewModal({
                         >
                           <option value="">Select category</option>
                           {categories.map((c) => (
-                            <option key={c.id} value={c.id}>
-                              {c.name}
+                            <option key={c.category_id} value={c.category_id}>
+                              {c.category_name}
                             </option>
                           ))}
                         </select>
@@ -700,7 +1153,7 @@ export function FinalReviewModal({
                           <p className="text-red-400 text-xs mt-1">{categoriesError}</p>
                         )}
                         {!categoriesError && categories.length === 0 && !loading && (
-                          <p className="text-amber-400 text-xs mt-1">No categories. Run migration 029 and add rows to category_memr.</p>
+                          <p className="text-amber-400 text-xs mt-1">No MCM categories found.</p>
                         )}
                       </div>
                       <div>
@@ -722,7 +1175,7 @@ export function FinalReviewModal({
                           <p className="text-red-400 text-xs mt-1">{productsError}</p>
                         )}
                         {selectedCategoryId && !productsError && products.length === 0 && (
-                          <p className="text-amber-400 text-xs mt-1">No products in this category. Add rows to products for this category.</p>
+                          <p className="text-amber-400 text-xs mt-1">No products in this MCM category.</p>
                         )}
                       </div>
                       <div>
@@ -780,31 +1233,316 @@ export function FinalReviewModal({
                   </div>
                 </div>
               )}
+              {activeStep === 'pharmacy_order' && (
+                <div className="space-y-6">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-2">Linked pharmacy</h3>
+                    <p className="text-blue-200/90 text-sm mb-4">
+                      Prescriptions use this encounter&apos;s{' '}
+                      <span className="text-cyan-300">pharmacy_id</span> (same row as the patient&apos;s encounter).
+                      Stored in EMR <span className="text-gray-400">public.prescriptions</span> with{' '}
+                      <span className="text-cyan-300">pharmacy_id</span>, not the external MCM DB.
+                    </p>
+                    {pharmacy ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div>
+                          <p className="text-blue-200 text-xs mb-0.5">Pharmacy ID</p>
+                          <p className="text-white font-mono">{pharmacy.id}</p>
+                        </div>
+                        <div>
+                          <p className="text-blue-200 text-xs mb-0.5">Name</p>
+                          <p className="text-white font-semibold">{pharmacy.name || '—'}</p>
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-blue-200 text-xs mb-0.5">Address</p>
+                          <p className="text-white">
+                            {[pharmacy.address, pharmacy.city, pharmacy.state, pharmacy.zip_code]
+                              .filter(Boolean)
+                              .join(', ') || '—'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-blue-200 text-xs mb-0.5">Phone</p>
+                          <p className="text-white">{pharmacy.phone_number || pharmacy.phone || '—'}</p>
+                        </div>
+                        <div>
+                          <p className="text-blue-200 text-xs mb-0.5">Email</p>
+                          <p className="text-white">{pharmacy.email || '—'}</p>
+                        </div>
+                        {pharmacy.license_status != null && (
+                          <div>
+                            <p className="text-blue-200 text-xs mb-0.5">License</p>
+                            <p className="text-white">{pharmacy.license_status}</p>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap gap-4 text-xs text-gray-400">
+                          {pharmacy.delivers != null && <span>Delivers: {pharmacy.delivers ? 'Yes' : 'No'}</span>}
+                          {pharmacy.spanish_language_service != null && (
+                            <span>Spanish: {pharmacy.spanish_language_service ? 'Yes' : 'No'}</span>
+                          )}
+                          {pharmacy.disabled_access != null && (
+                            <span>ADA access: {pharmacy.disabled_access ? 'Yes' : 'No'}</span>
+                          )}
+                          {pharmacy.is_active != null && (
+                            <span>Active: {pharmacy.is_active ? 'Yes' : 'No'}</span>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-amber-300 text-sm">
+                        No pharmacy on this encounter — set pharmacy on the encounter record before saving prescriptions.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-4">Add prescription</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="md:col-span-2">
+                        <label className="text-blue-200 text-xs block mb-1">Medication name *</label>
+                        <input
+                          value={rxForm.medication_name}
+                          onChange={(e) => setRxForm((f) => ({ ...f, medication_name: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                          placeholder="Required"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-blue-200 text-xs block mb-1">Strength</label>
+                        <input
+                          value={rxForm.strength}
+                          onChange={(e) => setRxForm((f) => ({ ...f, strength: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-blue-200 text-xs block mb-1">Dosage instruction</label>
+                        <input
+                          value={rxForm.dosage_instruction}
+                          onChange={(e) => setRxForm((f) => ({ ...f, dosage_instruction: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-blue-200 text-xs block mb-1">Route</label>
+                        <input
+                          value={rxForm.route}
+                          onChange={(e) => setRxForm((f) => ({ ...f, route: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                          placeholder="e.g. PO"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-blue-200 text-xs block mb-1">Frequency</label>
+                        <input
+                          value={rxForm.frequency}
+                          onChange={(e) => setRxForm((f) => ({ ...f, frequency: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                          placeholder="e.g. BID"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-blue-200 text-xs block mb-1">Duration</label>
+                        <input
+                          value={rxForm.duration}
+                          onChange={(e) => setRxForm((f) => ({ ...f, duration: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-blue-200 text-xs block mb-1">Notes</label>
+                        <textarea
+                          value={rxForm.notes}
+                          onChange={(e) => setRxForm((f) => ({ ...f, notes: e.target.value }))}
+                          rows={2}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddRxLine}
+                      disabled={!rxForm.medication_name.trim()}
+                      className="mt-4 px-5 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+                    >
+                      + Add to list
+                    </button>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-4">Prescriptions for this encounter</h3>
+                    {rxLines.length === 0 ? (
+                      <p className="text-blue-200 text-sm">None yet. Add above or click Next to skip.</p>
+                    ) : (
+                      <ul className="space-y-3">
+                        {rxLines.map((rx) => (
+                          <li
+                            key={rx.id}
+                            className="bg-white/5 border border-white/10 rounded-lg p-4 flex justify-between gap-4"
+                          >
+                            <div className="min-w-0 space-y-1 text-sm">
+                              <p className="text-white font-semibold">{rx.medication_name}</p>
+                              <p className="text-gray-400">
+                                {[rx.strength, rx.dosage_instruction, rx.route, rx.frequency, rx.duration]
+                                  .filter(Boolean)
+                                  .join(' · ') || '—'}
+                              </p>
+                              {rx.notes ? <p className="text-gray-500 text-xs">{rx.notes}</p> : null}
+                              {String(rx.id).startsWith('db-') ? (
+                                <span className="text-xs text-green-400/90">Saved</span>
+                              ) : (
+                                <span className="text-xs text-amber-300/90">Pending save (Next)</span>
+                              )}
+                            </div>
+                            {!String(rx.id).startsWith('db-') && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveRxLine(rx.id)}
+                                className="shrink-0 p-2 hover:bg-red-500/20 text-red-400 rounded-lg"
+                                aria-label="Remove"
+                              >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+              {activeStep === 'followup' && (
+                <div className="space-y-6">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-2">Followup</h3>
+                    <p className="text-blue-200/90 text-sm mb-6">
+                      Pick a follow-up date and time for discussion only — nothing here is saved to the database.
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
+                      <div>
+                        <label htmlFor="followup-date" className="text-blue-200 text-xs font-medium block mb-1">
+                          Date
+                        </label>
+                        <input
+                          id="followup-date"
+                          type="date"
+                          value={followupDate}
+                          onChange={(e) => setFollowupDate(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 [color-scheme:dark]"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="followup-time" className="text-blue-200 text-xs font-medium block mb-1">
+                          Time
+                        </label>
+                        <input
+                          id="followup-time"
+                          type="time"
+                          value={followupTime}
+                          onChange={(e) => setFollowupTime(e.target.value)}
+                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 [color-scheme:dark]"
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-6 pt-5 border-t border-white/10">
+                      <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">Days from today</p>
+                      {followupDaysFromToday === null ? (
+                        <p className="text-gray-500 text-sm">Choose a date above to see the day offset.</p>
+                      ) : (
+                        <p className="text-cyan-300 text-lg font-semibold tabular-nums">
+                          {followupDaysFromToday === 0
+                            ? '0 days (today)'
+                            : followupDaysFromToday > 0
+                              ? `${followupDaysFromToday} day${followupDaysFromToday === 1 ? '' : 's'} from today`
+                              : `${Math.abs(followupDaysFromToday)} day${Math.abs(followupDaysFromToday) === 1 ? '' : 's'} ago`}
+                        </p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-2">
+                        Calendar days compared to today in your local timezone (time above does not change this count).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {activeStep === 'final_summary' && (
+                <div className="space-y-6">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
+                    <h3 className="text-xl font-bold text-white mb-3">Final Summary</h3>
+                    <p className="text-blue-200">
+                      UI scaffold ready. Final summary checklist/confirmation will be connected in the next step.
+                    </p>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between p-6 border-t border-white/10 bg-slate-800 flex-shrink-0">
-          <div className="text-sm text-gray-400">
+        <div className="flex items-center justify-between gap-4 p-6 border-t border-white/10 bg-slate-800 flex-shrink-0 flex-wrap">
+          <div className="text-sm text-gray-400 min-w-0">
+            {!loading && (
+              <span className="text-gray-500">
+                Step {reviewStepIndex + 1} of {REVIEW_STEP_KEYS.length}
+              </span>
+            )}
             {preSalesProducts.length > 0 && (
-              <span>{preSalesProducts.length} product(s) in pre-sales</span>
+              <span className={loading ? '' : 'ml-2'}>
+                {preSalesProducts.length} product(s) in pre-sales
+              </span>
             )}
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-3 justify-end">
             <button
+              type="button"
               onClick={onClose}
-              className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg font-medium transition-colors"
+              disabled={stepTransitionLoading}
+              className="px-6 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
             >
               Cancel
             </button>
-            <button
-              onClick={handleCompleteReview}
-              disabled={saving}
-              className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
-            >
-              {saving ? 'Completing...' : 'Complete Final Review'}
-            </button>
+            {!loading && reviewStepIndex > 0 && (
+              <button
+                type="button"
+                onClick={goPrevStep}
+                disabled={saving || stepTransitionLoading}
+                className="px-6 py-2 bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+              >
+                Back
+              </button>
+            )}
+            {!loading && !isLastReviewStep && (
+              <button
+                type="button"
+                onClick={() => void goNextStep()}
+                disabled={saving || stepTransitionLoading}
+                className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+              >
+                {stepTransitionLoading ? 'Saving…' : 'Next'}
+              </button>
+            )}
+            {!loading && isLastReviewStep && (
+              <button
+                type="button"
+                onClick={handleCompleteReview}
+                disabled={
+                  saving ||
+                  stepTransitionLoading ||
+                  (preSalesProducts.some((p) => !String(p.id).startsWith('db-')) &&
+                    encounterSync?.mcm_sync_status !== 'copied')
+                }
+                className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
+              >
+                {saving ? 'Completing...' : 'Complete Final Review'}
+              </button>
+            )}
           </div>
         </div>
       </div>
