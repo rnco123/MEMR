@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { getUserFromRequest, getSupabaseForRequest } from '@/lib/encounters/auth-from-request'
 import { createClient as createServerClient } from '@/lib/supabase/server'
-import { config } from '@/lib/config'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,23 +25,6 @@ const SUMMARY_SYSTEM_PROMPT = `You are a clinical documentation assistant. Given
 
 Return ONLY valid JSON. Do not include markdown or explanation.`
 
-async function getUserFromRequest(request: Request): Promise<{ id: string } | null> {
-  const authHeader = request.headers.get('Authorization')
-  const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-
-  if (token) {
-    const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
-      global: { headers: { Authorization: `Bearer ${token}` } },
-    })
-    const { data: { user }, error } = await supabase.auth.getUser()
-    if (!error && user) return user
-  }
-
-  const supabaseServer = await createServerClient()
-  const { data: { session } } = await supabaseServer.auth.getSession()
-  return session?.user ?? null
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -62,14 +45,10 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid encounter ID' }, { status: 400 })
     }
 
-    // Use server client with user context
-    const authHeader = request.headers.get('Authorization')
-    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
-    const supabase = token
-      ? createClient(config.supabase.url, config.supabase.anonKey, {
-          global: { headers: { Authorization: `Bearer ${token}` } },
-        })
-      : await createServerClient()
+    const persist = request.nextUrl.searchParams.get('persist') === 'true'
+
+    const tokenClient = getSupabaseForRequest(request)
+    const supabase = tokenClient ?? (await createServerClient())
 
     // Verify caller is a doctor or nurse on this encounter
     const { data: profile } = await supabase
@@ -158,11 +137,28 @@ export async function POST(
       )
     }
 
+    if (persist) {
+      const admin = createAdminClient()
+      const { error: persistError } = await admin
+        .from('encounters')
+        .update({ transcript_summary_json: parsed })
+        .eq('id', encounterId)
+
+      if (persistError) {
+        console.error('Failed to persist transcript summary:', persistError.message)
+        return NextResponse.json(
+          { error: 'Summary generated but could not be saved', details: persistError.message },
+          { status: 500 }
+        )
+      }
+    }
+
     return NextResponse.json({
       success: true,
       encounter_id: encounterId,
       transcript_lines: allLines.length,
       summary: parsed,
+      persisted: persist,
     })
   } catch (e) {
     return NextResponse.json(

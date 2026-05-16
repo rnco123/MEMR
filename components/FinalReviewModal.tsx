@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { LoadingSpinner } from './LoadingSpinner'
 import { toast } from 'sonner'
+import type { FinalReviewSuggestions } from '@/lib/final-review/from-transcript'
 
 interface Patient {
   id: number
@@ -184,6 +185,11 @@ export function FinalReviewModal({
   const [stepTransitionLoading, setStepTransitionLoading] = useState(false)
   const [mcmCatalogLoading, setMcmCatalogLoading] = useState(false)
   const [encounterSync, setEncounterSync] = useState<EncounterSyncInfo | null>(null)
+  const [transcriptSuggestions, setTranscriptSuggestions] = useState<FinalReviewSuggestions | null>(null)
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false)
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
+  const [suggestionsNoTranscript, setSuggestionsNoTranscript] = useState(false)
+  const [followupReason, setFollowupReason] = useState('')
 
   // Categories/products for dropdowns: loaded from EXTERNAL_SUPABASE via GET /api/mcm/catalog
   const [categories, setCategories] = useState<CategoryMemr[]>([])
@@ -199,8 +205,43 @@ export function FinalReviewModal({
       setActiveStep('patient_review')
       setFollowupDate('')
       setFollowupTime('')
+      setFollowupReason('')
+      setTranscriptSuggestions(null)
+      setSuggestionsError(null)
+      setSuggestionsNoTranscript(false)
     }
   }, [isOpen])
+
+  const fetchTranscriptSuggestions = useCallback(
+    async (force = false) => {
+      setSuggestionsLoading(true)
+      setSuggestionsError(null)
+      setSuggestionsNoTranscript(false)
+      try {
+        const url = `/api/encounters/${encounterId}/final-review-suggestions${force ? '?force=true' : ''}`
+        const res = await fetch(url, { method: 'POST', credentials: 'include' })
+        const data = await res.json().catch(() => ({}))
+        if (res.status === 404 && data.error?.includes('No transcript')) {
+          setSuggestionsNoTranscript(true)
+          setTranscriptSuggestions(null)
+          return
+        }
+        if (!res.ok) {
+          setSuggestionsError(
+            typeof data.error === 'string' ? data.error : 'Could not generate transcript suggestions'
+          )
+          return
+        }
+        setTranscriptSuggestions(data.suggestions as FinalReviewSuggestions)
+      } catch (e) {
+        console.error(e)
+        setSuggestionsError('Could not reach suggestion service')
+      } finally {
+        setSuggestionsLoading(false)
+      }
+    },
+    [encounterId]
+  )
 
   const followupDaysFromToday = useMemo(() => {
     if (!followupDate) return null
@@ -269,6 +310,11 @@ export function FinalReviewModal({
         setPatient((patientData as Patient) ?? null)
 
         if (encounterData) {
+          const cached = encounterData.final_review_suggestions_json as FinalReviewSuggestions | null
+          if (cached && typeof cached === 'object' && Array.isArray(cached.pre_sales)) {
+            setTranscriptSuggestions(cached)
+          }
+
           setEncounterSync({
             mcm_encounter_id: encounterData.mcm_encounter_id ?? null,
             mcm_sync_status: encounterData.mcm_sync_status ?? 'not_copied',
@@ -422,6 +468,12 @@ export function FinalReviewModal({
     fetchData()
   }, [isOpen, encounterId, appointmentId, patientId, supabase])
 
+  useEffect(() => {
+    if (!isOpen || loading) return
+    if (transcriptSuggestions) return
+    void fetchTranscriptSuggestions(false)
+  }, [isOpen, loading, transcriptSuggestions, fetchTranscriptSuggestions])
+
   // When category changes, fetch products from MCM catalog.
   useEffect(() => {
     if (!selectedCategoryId) {
@@ -488,6 +540,97 @@ export function FinalReviewModal({
   const handleRemoveProduct = (id: string) => {
     setPreSalesProducts(preSalesProducts.filter(p => p.id !== id))
   }
+
+  const applyPreSalesSuggestions = () => {
+    if (!transcriptSuggestions?.pre_sales.length) return
+    const added: PreSalesProduct[] = transcriptSuggestions.pre_sales.map((s) => ({
+      id: `sug-${Date.now()}-${s.product_id}`,
+      product_id: s.product_id,
+      product_name: s.product_name,
+      quantity: s.quantity,
+    }))
+    setPreSalesProducts((prev) => [...prev, ...added])
+    toast.success(`Added ${added.length} suggested product(s)`)
+  }
+
+  const applyPharmacySuggestions = () => {
+    if (!transcriptSuggestions?.prescriptions.length) return
+    const added: RxLine[] = transcriptSuggestions.prescriptions.map((s) => ({
+      id: `sug-${Date.now()}-${s.medication_name}`,
+      medication_name: s.medication_name,
+      strength: s.strength,
+      dosage_instruction: s.dosage_instruction,
+      route: s.route,
+      frequency: s.frequency,
+      duration: s.duration,
+      notes: s.notes ?? '',
+    }))
+    setRxLines((prev) => [...prev, ...added])
+    toast.success(`Added ${added.length} suggested prescription(s)`)
+  }
+
+  const applyFollowupSuggestion = () => {
+    const fu = transcriptSuggestions?.follow_up
+    if (!fu?.needed) {
+      toast.error('No follow-up suggested in transcript')
+      return
+    }
+    if (fu.suggested_date) setFollowupDate(fu.suggested_date)
+    if (fu.suggested_time) setFollowupTime(fu.suggested_time)
+    if (fu.reason) setFollowupReason(fu.reason)
+    toast.success('Applied follow-up suggestion')
+  }
+
+  const renderTranscriptSuggestionsShell = (
+    children: ReactNode,
+    opts?: { applyLabel?: string; onApply?: () => void; applyDisabled?: boolean }
+  ) => (
+    <div className="bg-cyan-950/30 border border-cyan-500/30 rounded-xl p-4 mb-6">
+        <div className="flex items-start justify-between gap-3 flex-wrap mb-3">
+          <div>
+            <h4 className="text-white font-semibold text-sm">Transcript suggestions</h4>
+            <p className="text-blue-200/80 text-xs mt-0.5">
+              From telemedicine transcript — review and Apply to append (duplicates allowed).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void fetchTranscriptSuggestions(true)}
+            disabled={suggestionsLoading}
+            className="text-xs px-3 py-1.5 rounded-lg border border-cyan-500/40 text-cyan-300 hover:bg-cyan-500/10 disabled:opacity-50"
+          >
+            Refresh from transcript
+          </button>
+        </div>
+        {suggestionsLoading ? (
+          <div className="py-4">
+            <LoadingSpinner
+              message="Generating suggestions from transcript…"
+              variant="dark"
+              showPercentage={false}
+            />
+          </div>
+        ) : suggestionsNoTranscript ? (
+          <p className="text-amber-300 text-sm">
+            No transcript for this encounter — complete a video visit first.
+          </p>
+        ) : suggestionsError ? (
+          <p className="text-red-300 text-sm">{suggestionsError}</p>
+        ) : (
+          children
+        )}
+        {opts?.onApply && !suggestionsLoading && !suggestionsNoTranscript && !suggestionsError && (
+          <button
+            type="button"
+            onClick={opts.onApply}
+            disabled={opts.applyDisabled}
+            className="mt-3 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium"
+          >
+            {opts.applyLabel ?? 'Apply'}
+          </button>
+        )}
+    </div>
+  )
 
   const reviewStepIndex = REVIEW_STEP_KEYS.indexOf(activeStep)
   const isLastReviewStep = activeStep === 'final_summary'
@@ -1091,6 +1234,52 @@ export function FinalReviewModal({
 
               {activeStep === 'pre_sales_product' && (
                 <div className="space-y-6">
+                  {renderTranscriptSuggestionsShell(
+                    transcriptSuggestions ? (
+                      <div className="space-y-2 text-sm">
+                        {transcriptSuggestions.pre_sales.length === 0 ? (
+                          <p className="text-gray-400">No catalog-matched products in transcript.</p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {transcriptSuggestions.pre_sales.map((s) => (
+                              <li
+                                key={`${s.product_id}-${s.source_quote ?? ''}`}
+                                className="bg-white/5 border border-white/10 rounded-lg p-3"
+                              >
+                                <p className="text-white font-medium">
+                                  {s.product_name} × {s.quantity}
+                                </p>
+                                {s.source_quote && (
+                                  <p className="text-gray-400 text-xs mt-1 italic">&ldquo;{s.source_quote}&rdquo;</p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {transcriptSuggestions.unmatched_tests.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-amber-300 text-xs mb-1">Unmatched tests (not in catalog):</p>
+                            <div className="flex flex-wrap gap-2">
+                              {transcriptSuggestions.unmatched_tests.map((t) => (
+                                <span
+                                  key={t}
+                                  className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null,
+                    {
+                      applyLabel: 'Apply to pre-sales',
+                      onApply: applyPreSalesSuggestions,
+                      applyDisabled: !transcriptSuggestions?.pre_sales.length,
+                    }
+                  )}
+
                   <div className="bg-white/5 border border-white/10 rounded-xl p-4">
                     <p className="text-sm text-blue-200 mb-2">MCM Encounter Mapping</p>
                     <div className="flex items-center gap-2 flex-wrap">
@@ -1235,6 +1424,55 @@ export function FinalReviewModal({
               )}
               {activeStep === 'pharmacy_order' && (
                 <div className="space-y-6">
+                  {renderTranscriptSuggestionsShell(
+                    transcriptSuggestions ? (
+                      <div className="space-y-2 text-sm">
+                        {transcriptSuggestions.prescriptions.length === 0 ? (
+                          <p className="text-gray-400">No medications suggested from transcript.</p>
+                        ) : (
+                          <ul className="space-y-2">
+                            {transcriptSuggestions.prescriptions.map((s) => (
+                              <li
+                                key={`${s.medication_name}-${s.source_quote ?? ''}`}
+                                className="bg-white/5 border border-white/10 rounded-lg p-3"
+                              >
+                                <p className="text-white font-medium">{s.medication_name}</p>
+                                <p className="text-gray-400 text-xs mt-1">
+                                  {[s.strength, s.dosage_instruction, s.route, s.frequency, s.duration]
+                                    .filter(Boolean)
+                                    .join(' · ') || '—'}
+                                </p>
+                                {s.source_quote && (
+                                  <p className="text-gray-500 text-xs mt-1 italic">&ldquo;{s.source_quote}&rdquo;</p>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        {transcriptSuggestions.unmatched_medications.length > 0 && (
+                          <div className="mt-3">
+                            <p className="text-amber-300 text-xs mb-1">Unmatched medications:</p>
+                            <div className="flex flex-wrap gap-2">
+                              {transcriptSuggestions.unmatched_medications.map((t) => (
+                                <span
+                                  key={t}
+                                  className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : null,
+                    {
+                      applyLabel: 'Apply to prescriptions',
+                      onApply: applyPharmacySuggestions,
+                      applyDisabled: !transcriptSuggestions?.prescriptions.length,
+                    }
+                  )}
+
                   <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                     <h3 className="text-xl font-bold text-white mb-2">Linked pharmacy</h3>
                     <p className="text-blue-200/90 text-sm mb-4">
@@ -1420,6 +1658,46 @@ export function FinalReviewModal({
               )}
               {activeStep === 'followup' && (
                 <div className="space-y-6">
+                  {renderTranscriptSuggestionsShell(
+                    transcriptSuggestions?.follow_up?.needed ? (
+                      <div className="text-sm space-y-2">
+                        {transcriptSuggestions.follow_up.suggested_date && (
+                          <p className="text-white">
+                            Suggested date:{' '}
+                            <span className="text-cyan-300">{transcriptSuggestions.follow_up.suggested_date}</span>
+                            {transcriptSuggestions.follow_up.suggested_time && (
+                              <span className="text-cyan-300">
+                                {' '}
+                                at {transcriptSuggestions.follow_up.suggested_time}
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        {transcriptSuggestions.follow_up.timeframe_text && (
+                          <p className="text-gray-400 text-xs">
+                            Timeframe: {transcriptSuggestions.follow_up.timeframe_text}
+                          </p>
+                        )}
+                        {transcriptSuggestions.follow_up.reason && (
+                          <p className="text-gray-300">{transcriptSuggestions.follow_up.reason}</p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 text-sm">No follow-up visit suggested in transcript.</p>
+                    ),
+                    {
+                      applyLabel: 'Apply follow-up',
+                      onApply: applyFollowupSuggestion,
+                      applyDisabled: !transcriptSuggestions?.follow_up?.needed,
+                    }
+                  )}
+
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-3">
+                    <p className="text-amber-200 text-sm">
+                      Follow-up date, time, and reason are not saved to the database in this version.
+                    </p>
+                  </div>
+
                   <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                     <h3 className="text-xl font-bold text-white mb-2">Followup</h3>
                     <p className="text-blue-200/90 text-sm mb-6">
@@ -1450,6 +1728,19 @@ export function FinalReviewModal({
                           className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500 [color-scheme:dark]"
                         />
                       </div>
+                    </div>
+                    <div className="mt-4 max-w-xl">
+                      <label htmlFor="followup-reason" className="text-blue-200 text-xs font-medium block mb-1">
+                        Reason
+                      </label>
+                      <textarea
+                        id="followup-reason"
+                        value={followupReason}
+                        onChange={(e) => setFollowupReason(e.target.value)}
+                        rows={2}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-cyan-500"
+                        placeholder="Optional — from transcript or manual entry"
+                      />
                     </div>
                     <div className="mt-6 pt-5 border-t border-white/10">
                       <p className="text-gray-400 text-xs uppercase tracking-wide mb-1">Days from today</p>

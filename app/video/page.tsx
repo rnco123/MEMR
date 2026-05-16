@@ -677,10 +677,30 @@ function VideoPage() {
       }
       transcriptBufferRef.current = []
       setTranscriptCount(0)
+      void persistTranscriptSummary(encounterIdNum, items)
       return ids.map((id) => Number(id))
     } catch (e) {
       console.error('Failed to save transcript:', e)
       return null
+    }
+  }
+
+  /** Fire-and-forget: store lightweight clinical summary on encounter for Final Review. */
+  const persistTranscriptSummary = async (
+    encounterIdNum: number,
+    inlineItems: Array<{ speaker_role: string; speaker_name: string; message: string }>
+  ) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+      await fetch(`/api/encounters/${encounterIdNum}/ai-summary?persist=true`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ inlineTranscript: inlineItems }),
+      })
+    } catch (e) {
+      console.error('Failed to persist transcript summary on encounter:', e)
     }
   }
 
