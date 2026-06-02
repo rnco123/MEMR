@@ -265,7 +265,6 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           div: formLayerDiv,
           page,
           annotations: annotationsList,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           linkService: linkService as any,
           renderForms: true,
           annotationStorage: pdf.annotationStorage,
@@ -353,7 +352,6 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           div: annotationLayerDiv,
           page,
           annotations: annotationsList,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           linkService: linkService as any,
           renderForms: true,
           annotationStorage: pdf.annotationStorage,
