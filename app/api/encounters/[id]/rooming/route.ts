@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { roomingPatchSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { syncImmigrationCase } from '@/lib/immigration/case-sync'
+import { isImmigrationEncounter } from '@/lib/i693/types'
+import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
 
 export const dynamic = 'force-dynamic'
 
@@ -61,6 +65,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
     if (mergedConsent !== undefined) {
       patch.consent_ack = mergedConsent
+      if (isImmigrationEncounter(mergedConsent)) {
+        patch.program_type = IMMIGRATION_PROGRAM
+      }
     }
     if (v.pharmacy_id !== undefined) {
       patch.pharmacy_id = v.pharmacy_id
@@ -69,6 +76,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const { data, error } = await supabase.from('encounters').update(patch).eq('id', encounterId).select().single()
 
     if (error) throw error
+
+    if (isImmigrationEncounter(data.consent_ack)) {
+      const admin = createAdminClient()
+      await syncImmigrationCase(admin, encounterId)
+    }
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)

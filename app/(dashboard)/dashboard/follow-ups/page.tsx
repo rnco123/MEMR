@@ -262,6 +262,6 @@ function FollowUpsPage() {
 }
 
 export default withRoleProtection(FollowUpsPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF],
+  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
   redirectTo: '/dashboard',
 })

@@ -22,29 +22,34 @@ function normalizePathname(pathname: string): string {
 function getRequiredRolesForPath(pathname: string): UserRole[] | null {
   const p = normalizePathname(pathname)
 
+  // Removed from all flows (doctor/nurse/admin)
+  if (p.startsWith('/dashboard/orders') || p.startsWith('/dashboard/follow-ups')) {
+    return null
+  }
+
   if (p.startsWith('/dashboard/flowboard')) {
-    return [UserRole.DOCTOR]
+    return [UserRole.ADMIN, UserRole.DOCTOR]
   }
   if (p.startsWith('/dashboard/nurse-flowboard')) {
-    return [UserRole.NURSE, UserRole.STAFF]
+    return [UserRole.ADMIN, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/patients-history')) {
-    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/prescriptions')) {
-    return [UserRole.DOCTOR]
+    return [UserRole.ADMIN, UserRole.DOCTOR]
   }
   if (p === '/dashboard') {
-    return [UserRole.DOCTOR, UserRole.NURSE]
+    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/')) {
-    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
   }
   if (p.startsWith('/video')) {
-    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+    return [UserRole.DOCTOR, UserRole.NURSE]
   }
   if (p.startsWith('/patient-file')) {
-    return [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF]
+    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
   }
   return null
 }
@@ -62,6 +67,13 @@ function isPublicPath(pathname: string, production: boolean): boolean {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
+  const normalizedPathname = normalizePathname(pathname)
+
+  if (normalizedPathname.startsWith('/dashboard/orders') || normalizedPathname.startsWith('/dashboard/follow-ups')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/dashboard'
+    return NextResponse.redirect(redirectUrl)
+  }
 
   let supabaseUrl: string
   let supabaseAnonKey: string
@@ -220,6 +232,31 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Admin I-693 lives under /admin; preserve deep links from legacy /dashboard/i-693 URLs.
+  if (
+    isAuthenticated &&
+    userRole === UserRole.ADMIN &&
+    (normalizedPathname === '/dashboard/i-693' ||
+      normalizedPathname.startsWith('/dashboard/i-693/'))
+  ) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/admin/i-693'
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  // Keep admin in dedicated admin UX (don't switch into doctor/nurse dashboard shell).
+  if (isAuthenticated && userRole === UserRole.ADMIN && normalizedPathname.startsWith('/dashboard')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/admin'
+    return NextResponse.redirect(redirectUrl)
+  }
+
+  if (isAuthenticated && userRole === UserRole.ADMIN && normalizedPathname.startsWith('/patient-file/')) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = normalizedPathname.replace('/patient-file/', '/admin/patient-file/')
+    return NextResponse.redirect(redirectUrl)
+  }
+
   // Protect routes that require authentication
   if (!isAuthenticated && !pathname.startsWith('/login')) {
     if (!isPublicPath(pathname, isProduction)) {
@@ -244,7 +281,7 @@ export async function middleware(request: NextRequest) {
   // But allow access if session is invalid (after sign-out)
   if (isAuthenticated && userRole && pathname === '/login') {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/dashboard'
+    redirectUrl.pathname = userRole === UserRole.ADMIN ? '/admin' : '/dashboard'
     return NextResponse.redirect(redirectUrl)
   }
 

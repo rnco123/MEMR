@@ -1,0 +1,258 @@
+'use client'
+
+import { useAuth } from '@/lib/auth-context'
+import { useRouter, usePathname } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { BrandLogo } from '@/components/BrandLogo'
+import { Chat } from '@/components/Chat'
+import { LanguageToggle } from '@/components/LanguageToggle'
+import { useT } from '@/lib/i18n'
+import {
+  AppSidebar,
+  SidebarMenuButton,
+  type SidebarNavItem,
+  type SidebarNavSection,
+} from '@/components/AppSidebar'
+import { UserAvatar } from '@/components/UserAvatar'
+import { useUserProfile } from '@/lib/hooks/use-user-profile'
+import { resolveDisplayName } from '@/lib/display-name'
+import { AuditTracker } from '@/components/AuditTracker'
+
+const adminNavItems = [
+  {
+    nameKey: 'admin.nav.overview',
+    href: '/admin',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.users',
+    href: '/admin/users',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.audit',
+    href: '/admin/audit',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.pharmacies',
+    href: '/admin/pharmacies',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.flowboard',
+    href: '/admin/flowboard',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6M4 4h16v16H4V4z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.patients_history',
+    href: '/admin/patients-history',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h8M8 11h8M8 15h5M5 3h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.i693',
+    href: '/admin/i-693',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    ),
+  },
+]
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const { user, role, loading, signOut } = useAuth()
+  const router = useRouter()
+  const pathname = usePathname()
+  const { t } = useT()
+  const { profile } = useUserProfile()
+  const [isSigningOut, setIsSigningOut] = useState(false)
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  const displayName =
+    profile?.display_name ??
+    resolveDisplayName({
+      full_name: profile?.full_name,
+      email: profile?.email ?? user?.email,
+      role: role ?? 'admin',
+      userMetadata: user?.user_metadata,
+      fallback: 'Administrator',
+    })
+
+  const adminNav = useMemo(
+    () =>
+      adminNavItems.map((item) => ({
+        ...item,
+        name: t(item.nameKey),
+        isActive: (pathname: string) =>
+          pathname === item.href ||
+          (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
+      })),
+    [t]
+  )
+
+  const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
+    const profileNavItem: SidebarNavItem = {
+      name: t('nav.profile'),
+      href: '/admin/profile',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      isActive: (p) => p === '/admin/profile',
+    }
+    return [
+      {
+        title: t('admin.nav.section.clinical'),
+        items: adminNav.filter((item) =>
+          ['/admin', '/admin/flowboard', '/admin/patients-history', '/admin/i-693'].includes(item.href)
+        ),
+      },
+      {
+        title: t('admin.nav.section.administration'),
+        items: [
+          ...adminNav.filter((item) =>
+            ['/admin/users', '/admin/audit', '/admin/pharmacies'].includes(item.href)
+          ),
+          profileNavItem,
+        ],
+      },
+    ]
+  }, [adminNav, t])
+
+  useEffect(() => {
+    if (!loading && (!user || role !== 'admin')) {
+      router.push('/login')
+    }
+  }, [user, role, loading, router])
+
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [pathname])
+
+  if (loading || !user || role !== 'admin') {
+    return (
+      <div className="min-h-screen bg-[#f6f2ff] flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  const handleSignOut = async () => {
+    if (isSigningOut) return
+    setIsSigningOut(true)
+    try { await signOut() } finally { setIsSigningOut(false) }
+  }
+
+  return (
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f6f2ff]">
+      <header className="bg-[#fdfbff] border-b border-purple-100 sticky top-0 z-40">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center gap-2 h-16 min-h-[4rem]">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              <SidebarMenuButton
+                onClick={() => setMobileNavOpen(true)}
+                className="border-purple-200 lg:hidden"
+                label={t('nav.sidebar.open')}
+              />
+              <Link href="/admin" className="flex min-w-0 items-center gap-2 sm:gap-3 shrink-0">
+                <BrandLogo variant="header" className="shadow-md !py-1" />
+                <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
+                  {t('admin.badge')}
+                </span>
+              </Link>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+              <LanguageToggle />
+              <button
+                type="button"
+                onClick={() => setIsChatOpen(true)}
+                className="inline-flex items-center gap-2 px-2 sm:px-3 py-1.5 rounded-lg border border-purple-200 bg-white text-purple-700 text-sm font-medium hover:bg-purple-50 transition-colors"
+                title={t('admin.staff_chat')}
+              >
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+                <span className="hidden sm:inline">{t('chat.title')}</span>
+              </button>
+              <Link href="/admin/profile" title={t('nav.profile')}>
+                <UserAvatar
+                  key={profile?.avatar_id ?? 'avatar-none'}
+                  name={displayName}
+                  avatarId={profile?.avatar_id}
+                  avatarUrl={profile?.avatar_url}
+                  size="sm"
+                  ringClassName="ring-2 ring-white"
+                  className={!profile?.avatar_url && !profile?.avatar_id ? 'bg-purple-600' : ''}
+                />
+              </Link>
+              <button
+                onClick={handleSignOut}
+                disabled={isSigningOut}
+                className="px-2 sm:px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-xs sm:text-sm font-medium disabled:opacity-50"
+              >
+                {isSigningOut ? t('common.signing_out') : t('common.sign_out')}
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3">
+        <AppSidebar
+          sections={adminSidebarSections}
+          pathname={pathname}
+          theme="purple"
+          storageKey="memr-sidebar-admin"
+          collapseLabel={t('nav.sidebar.collapse')}
+          expandLabel={t('nav.sidebar.expand')}
+          closeLabel={t('nav.sidebar.close')}
+          mobileOpen={mobileNavOpen}
+          onMobileClose={() => setMobileNavOpen(false)}
+          homeHref="/admin"
+          user={{
+            name: displayName,
+            subtitle: t('admin.administrator'),
+            avatarId: profile?.avatar_id,
+            avatarUrl: profile?.avatar_url,
+            profileHref: '/admin/profile',
+          }}
+        />
+
+        <main className="min-w-0 flex-1 p-4 sm:p-6 text-slate-900 [color-scheme:light] bg-[#f8f4ff] overflow-y-auto rounded-xl sm:rounded-2xl">
+          {children}
+        </main>
+      </div>
+
+      <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <AuditTracker />
+    </div>
+  )
+}

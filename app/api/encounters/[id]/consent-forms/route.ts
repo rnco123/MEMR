@@ -11,7 +11,7 @@ import {
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'patient_consent_forms'
-const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
+const ALLOWED_ROLES = new Set(['nurse', 'doctor', 'admin'])
 
 export type ConsentFormPayload = {
   id: number

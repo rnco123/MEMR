@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
+import { UserProfileProvider } from "@/lib/user-profile-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { I18nProvider } from "@/lib/i18n";
 import { Toaster } from "sonner";
@@ -29,7 +30,9 @@ export default function RootLayout({
       <body className={inter.className} suppressHydrationWarning>
         <ErrorBoundary>
           <I18nProvider>
-            <AuthProvider>{children}</AuthProvider>
+            <AuthProvider>
+              <UserProfileProvider>{children}</UserProfileProvider>
+            </AuthProvider>
           </I18nProvider>
         </ErrorBoundary>
         <Toaster richColors position="top-center" />

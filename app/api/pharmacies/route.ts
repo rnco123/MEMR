@@ -1,57 +1,86 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { pharmacyCreateSchema } from '@/lib/validation'
-import { requireClinicalUser } from '@/lib/pharmacy-keys'
+import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+const MAX_PAGE_SIZE = 100
+
+function normalizePharmacyRow(p: Record<string, unknown>) {
+  const normalizedPhone = (p.phone ?? p.phone_number ?? null) as string | null
+  const fallbackAddress = [p.city, p.state, p.zip_code].filter(Boolean).join(', ')
+  const normalizedAddress = (p.address ?? (fallbackAddress || null)) as string | null
+  return {
+    id: p.id as number,
+    name: (p.name as string | null) ?? null,
+    address: normalizedAddress,
+    phone: normalizedPhone,
+    email: (p.email as string | null) ?? null,
+    created_at: p.created_at as string,
+    updated_at: p.updated_at as string,
+  }
+}
+
+export async function GET(req: NextRequest) {
   try {
-    const { supabase } = await requireClinicalUser()
+    await requirePharmacyAdminUser()
+    const admin = createAdminClient()
 
-    const { data: pharmacies, error: phErr } = await supabase
+    const page = Math.max(1, Number(req.nextUrl.searchParams.get('page') || '1'))
+    const pageSize = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, Number(req.nextUrl.searchParams.get('pageSize') || '20'))
+    )
+    const search = (req.nextUrl.searchParams.get('search') || '').trim()
+    const contactFilter = req.nextUrl.searchParams.get('contactFilter') || 'all'
+    const sortBy = req.nextUrl.searchParams.get('sort') || 'updated_desc'
+
+    let query = admin
       .from('pharmacy')
-      .select('id, name, address, phone, email, created_at, updated_at')
-      .order('name', { ascending: true })
+      .select('id, name, address, city, state, zip_code, phone_number, phone, email, created_at, updated_at', {
+        count: 'exact',
+      })
 
-    if (phErr) throw phErr
-
-    const ids = (pharmacies ?? [])
-      .map((p) => Number(p.id))
-      .filter((n) => Number.isFinite(n))
-
-    const keyCounts = new Map<number, { active: number; total: number }>()
-    if (ids.length > 0) {
-      const { data: keys, error: keyErr } = await supabase
-        .from('pharmacy_api_keys')
-        .select('pharmacy_id, is_active, expires_at')
-        .in('pharmacy_id', ids)
-
-      // Table may not exist on older DBs; surface 0/0 instead of failing the list.
-      if (!keyErr) {
-        const now = Date.now()
-        for (const k of keys ?? []) {
-          const pid = Number(k.pharmacy_id)
-          if (!Number.isFinite(pid)) continue
-          const slot = keyCounts.get(pid) ?? { active: 0, total: 0 }
-          slot.total += 1
-          const expired = k.expires_at && new Date(k.expires_at).getTime() <= now
-          if (k.is_active && !expired) slot.active += 1
-          keyCounts.set(pid, slot)
-        }
+    if (search) {
+      const term = `%${search}%`
+      const num = parseInt(search, 10)
+      if (!Number.isNaN(num)) {
+        query = query.or(`name.ilike.${term},address.ilike.${term},phone.ilike.${term},email.ilike.${term},id.eq.${num}`)
+      } else {
+        query = query.or(`name.ilike.${term},address.ilike.${term},phone.ilike.${term},email.ilike.${term}`)
       }
     }
 
-    const data = (pharmacies ?? []).map((p) => {
-      const counts = keyCounts.get(Number(p.id)) ?? { active: 0, total: 0 }
-      return {
-        ...p,
-        active_key_count: counts.active,
-        total_key_count: counts.total,
-      }
-    })
+    if (contactFilter === 'with-contact') {
+      query = query.or('phone.not.is.null,phone_number.not.is.null,email.not.is.null')
+    } else if (contactFilter === 'missing-contact') {
+      query = query.is('phone', null).is('phone_number', null).is('email', null)
+    }
 
-    return NextResponse.json({ data })
+    if (sortBy === 'name_asc') {
+      query = query.order('name', { ascending: true, nullsFirst: false })
+    } else if (sortBy === 'name_desc') {
+      query = query.order('name', { ascending: false, nullsFirst: false })
+    } else {
+      query = query.order('updated_at', { ascending: false })
+    }
+
+    const from = (page - 1) * pageSize
+    const to = from + pageSize - 1
+    const { data: pharmacies, error: phErr, count } = await query.range(from, to)
+
+    if (phErr) throw phErr
+
+    const data = (pharmacies ?? []).map((p) => normalizePharmacyRow(p as Record<string, unknown>))
+
+    return NextResponse.json({
+      data,
+      total: count ?? data.length,
+      page,
+      pageSize,
+    })
   } catch (e) {
     return handleApiError(e)
   }
@@ -59,7 +88,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { supabase } = await requireClinicalUser()
+    const { supabase } = await requirePharmacyAdminUser()
 
     let body: unknown
     try {
@@ -78,6 +107,7 @@ export async function POST(request: Request) {
         name: v.name,
         address: v.address ?? null,
         phone: v.phone ?? null,
+        phone_number: v.phone ?? null,
         email: v.email ?? null,
       })
       .select('id, name, address, phone, email, created_at, updated_at')
@@ -86,7 +116,7 @@ export async function POST(request: Request) {
     if (error) throw error
     return NextResponse.json({
       success: true,
-      data: { ...data, active_key_count: 0, total_key_count: 0 },
+      data,
     })
   } catch (e) {
     return handleApiError(e)

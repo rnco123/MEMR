@@ -18,8 +18,17 @@ import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
+import { FlowboardKanban } from '@/components/FlowboardKanban'
+import {
+  FlowboardViewToggle,
+  readFlowboardDisplayMode,
+  writeFlowboardDisplayMode,
+  type FlowboardDisplayMode,
+} from '@/components/FlowboardViewToggle'
 import { UserRole } from '@/lib/roles'
 import { useT } from '@/lib/i18n'
+import { useUserLocations } from '@/lib/hooks/use-user-locations'
+import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 
 interface Appointment {
   id: number
@@ -32,6 +41,8 @@ interface Appointment {
   created_at: string
   encounter_status?: string
   encounter_id?: number
+  location_id?: number | null
+  location_title?: string | null
   assigned_doctor?: {
     id: number
     full_name: string
@@ -87,6 +98,12 @@ function NurseFlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
   const { t } = useT()
+  const {
+    locations: userLocations,
+    unrestricted: locationsUnrestricted,
+    selectedLocationId,
+    setSelectedLocationId,
+  } = useUserLocations()
   const [appointments, setAppointments] = useState<Appointment[]>(() => {
     if (typeof window === 'undefined') return []
     try {
@@ -124,8 +141,19 @@ function NurseFlowboardPage() {
     patientId: number
   } | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const initialLoadDone = useRef(false)
   const supabase = useMemo(() => createClient(), [])
+
+  useEffect(() => {
+    setDisplayMode(readFlowboardDisplayMode())
+  }, [])
+
+  const handleDisplayModeChange = (mode: FlowboardDisplayMode) => {
+    setDisplayMode(mode)
+    writeFlowboardDisplayMode(mode)
+    setPage(1)
+  }
 
   const fetchAvailableDoctors = useCallback(async () => {
     try {
@@ -176,78 +204,24 @@ function NurseFlowboardPage() {
       if (showLoading) setLoading(true)
       else setIsRefreshing(true)
 
-      const { data: appointmentsData, error: appointmentsError } = await supabase
-        .from('appointments')
-        .select('id, patient_id, appointment_date, appointment_time, onsite_type, created_at')
-        .order('appointment_date', { ascending: true })
-        .order('appointment_time', { ascending: true })
-
-      if (appointmentsError) {
-        console.error('Error fetching appointments:', appointmentsError)
-        setLoading(false)
+      const params = new URLSearchParams({ mode: 'nurse' })
+      if (selectedLocationId !== 'all') {
+        params.set('location_id', String(selectedLocationId))
+      }
+      const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
+      const json = await res.json()
+      if (!res.ok) {
+        console.error('Error fetching flowboard:', json)
+        setAppointments([])
         return
       }
 
-      if (appointmentsData && appointmentsData.length > 0) {
-        const patientIds = [...new Set(appointmentsData.map(a => a.patient_id))]
-
-        const { data: patientsData, error: patientsError } = await supabase
-          .from('patients')
-          .select('id, first_name, last_name, email, phone, date_of_birth')
-          .in('id', patientIds)
-
-        if (patientsError) {
-          console.error('Error fetching patients:', patientsError)
-        }
-
-        const appointmentIds = appointmentsData.map(a => a.id)
-        const { data: encountersData, error: encountersError } = await supabase
-          .from('encounters')
-          .select('id, appointment_id, status, doctor_id')
-          .in('appointment_id', appointmentIds)
-
-        if (encountersError) {
-          console.error('Error fetching encounters:', encountersError)
-        }
-
-        // Get doctor IDs from encounters
-        const doctorIds = encountersData?.map(e => e.doctor_id).filter(Boolean) || []
-        let doctorsData: any[] = []
-        if (doctorIds.length > 0) {
-          const { data: docsData } = await supabase
-            .from('doctors')
-            .select('id, full_name, email')
-            .in('id', doctorIds)
-          doctorsData = docsData || []
-        }
-
-        const appointmentsWithDetails = appointmentsData.map(appointment => {
-          const encounter = encountersData?.find(e => e.appointment_id === appointment.id)
-          const assignedDoctor = encounter?.doctor_id 
-            ? doctorsData.find(d => d.id === encounter.doctor_id)
-            : null
-
-          return {
-            ...appointment,
-            patient: patientsData?.find(p => p.id === appointment.patient_id),
-            encounter_status: encounter?.status || null,
-            encounter_id: encounter?.id || undefined,
-            assigned_doctor: assignedDoctor ? {
-              id: assignedDoctor.id,
-              full_name: assignedDoctor.full_name,
-              email: assignedDoctor.email,
-            } : undefined,
-          }
-        })
-
-        setAppointments(appointmentsWithDetails as Appointment[])
-        try {
-          sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
-        } catch {
-          // ignore storage errors
-        }
-      } else {
-        setAppointments([])
+      const appointmentsWithDetails = (json.data ?? []) as Appointment[]
+      setAppointments(appointmentsWithDetails)
+      try {
+        sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+      } catch {
+        // ignore storage errors
       }
     } catch (error) {
       console.error('Error in fetchAllAppointments:', error)
@@ -255,10 +229,10 @@ function NurseFlowboardPage() {
       setLoading(false)
       setIsRefreshing(false)
     }
-  }, [supabase])
+  }, [selectedLocationId])
 
   useEffect(() => {
-    if (user && (role === 'nurse' || role === 'staff') && !initialLoadDone.current) {
+    if (user && role === 'nurse' && !initialLoadDone.current) {
       initialLoadDone.current = true
       const hasCache =
         typeof window !== 'undefined' && !!sessionStorage.getItem(NURSE_FLOWBOARD_CACHE_KEY)
@@ -266,6 +240,12 @@ function NurseFlowboardPage() {
       fetchAvailableDoctors()
     }
   }, [user, role, fetchAllAppointments, fetchAvailableDoctors])
+
+  useEffect(() => {
+    if (user && role === 'nurse' && initialLoadDone.current) {
+      fetchAllAppointments(false)
+    }
+  }, [selectedLocationId, user, role, fetchAllAppointments])
 
   const handleRefresh = () => {
     try {
@@ -301,9 +281,14 @@ function NurseFlowboardPage() {
       )
     }
 
-    // Encounter status filter
+    // Encounter status filter (no encounter yet counts as appointment_initiated)
     if (filterStatus !== 'all') {
-      result = result.filter(a => a.encounter_status === filterStatus)
+      result = result.filter((a) => {
+        if (filterStatus === 'appointment_initiated') {
+          return !a.encounter_status || a.encounter_status === 'appointment_initiated'
+        }
+        return a.encounter_status === filterStatus
+      })
     }
 
     // Sort (copy then sort so we return a new array and React updates the list)
@@ -525,6 +510,20 @@ function NurseFlowboardPage() {
             </button>
 
             <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('location.filter_label')}</span>
+              <LocationFilterSelect
+                locations={userLocations}
+                value={selectedLocationId}
+                onChange={(v) => {
+                  setSelectedLocationId(v)
+                  setPage(1)
+                }}
+                unrestricted={locationsUnrestricted}
+                className="h-11"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
               <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.sort')}</span>
               <select
                 value={sortBy}
@@ -560,6 +559,13 @@ function NurseFlowboardPage() {
                 <option value="completed">Completed</option>
               </select>
             </div>
+
+            <FlowboardViewToggle
+              value={displayMode}
+              onChange={handleDisplayModeChange}
+              listLabel={t('flow.view_list')}
+              kanbanLabel={t('flow.view_kanban')}
+            />
           </div>
 
             {/* Search by DOB — Year, then Month, then Day */}
@@ -587,6 +593,7 @@ function NurseFlowboardPage() {
                 : ''}
             </p>
             <div className="flex items-center gap-4">
+              {displayMode === 'list' && (
               <label className="text-xs text-slate-500 flex items-center gap-2">
                 {t('flow.per_page')}
                 <select
@@ -604,6 +611,7 @@ function NurseFlowboardPage() {
                   ))}
                 </select>
               </label>
+              )}
               {availableDoctors.length > 0 && (
                 <p className="text-xs text-emerald-600 font-medium">
                   {t('flow.providers_available', { count: availableDoctors.length })}
@@ -648,6 +656,91 @@ function NurseFlowboardPage() {
                 : t('flow.empty_message')}
             </p>
           </div>
+        ) : displayMode === 'kanban' ? (
+          <FlowboardKanban
+            appointments={filteredAppointments}
+            filterStatus={filterStatus}
+            formatDate={formatDate}
+            formatTime={formatTime}
+            formatDob={formatDob}
+            unknownPatientLabel={t('flow.unknown_patient')}
+            viewLabel={t('common.view')}
+            readonlyHint={t('flow.kanban_readonly_hint')}
+            notStartedLabel={t('flow.not_started')}
+            pendingEncounterLabel={t('flow.awaiting_encounter')}
+            onCardClick={(appointment) => {
+              if (appointment.encounter_id) {
+                setSelectedEncounter({
+                  encounterId: appointment.encounter_id,
+                  appointmentId: appointment.id,
+                  patientId: appointment.patient_id,
+                  encounterStatus: appointment.encounter_status ?? undefined,
+                })
+              }
+            }}
+            onViewClick={(appointment, e) => {
+              e.stopPropagation()
+              if (appointment.encounter_id) {
+                setSelectedEncounter({
+                  encounterId: appointment.encounter_id,
+                  appointmentId: appointment.id,
+                  patientId: appointment.patient_id,
+                  encounterStatus: appointment.encounter_status ?? undefined,
+                })
+              }
+            }}
+            renderCardFooter={(appointment) => (
+              <>
+                {!appointment.assigned_doctor && availableDoctors.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowAssignModal({
+                        appointmentId: appointment.id,
+                        appointment: appointment as Appointment,
+                      })
+                    }}
+                    disabled={assigningDoctor === appointment.id.toString()}
+                    className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-[10px] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                  >
+                    {t('flow.assign_provider')}
+                  </button>
+                )}
+                {appointment.assigned_doctor &&
+                  appointment.encounter_id &&
+                  (!appointment.encounter_status ||
+                    appointment.encounter_status === 'provider_assigned') && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowVitalsModal(appointment.encounter_id!)
+                    }}
+                    className="px-2 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-semibold hover:bg-purple-700 transition-colors"
+                  >
+                    {t('flow.vitals')}
+                  </button>
+                )}
+                {appointment.encounter_status === 'consultation_concluded' && appointment.encounter_id && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowFinalReview({
+                        encounterId: appointment.encounter_id!,
+                        appointmentId: appointment.id,
+                        patientId: appointment.patient_id,
+                      })
+                    }}
+                    className="px-2 py-1 bg-cyan-600 text-white rounded-lg text-[10px] font-semibold hover:bg-cyan-700 transition-colors"
+                  >
+                    {t('flow.final_review')}
+                  </button>
+                )}
+              </>
+            )}
+          />
         ) : (
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
             <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
@@ -834,7 +927,7 @@ function NurseFlowboardPage() {
         )}
 
         {/* Pagination below table */}
-        {!loading && filteredAppointments.length > 0 && (
+        {!loading && displayMode === 'list' && filteredAppointments.length > 0 && (
           <div className="mt-5 flex items-center justify-center gap-3">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -928,6 +1021,6 @@ function NurseFlowboardPage() {
 }
 
 export default withRoleProtection(NurseFlowboardPage, {
-  allowedRoles: [UserRole.NURSE, UserRole.STAFF],
+  allowedRoles: [UserRole.ADMIN, UserRole.NURSE],
   redirectTo: '/dashboard',
 })

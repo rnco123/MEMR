@@ -3,11 +3,21 @@
 import { useAuth } from '@/lib/auth-context'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Chat } from '@/components/Chat'
 import { BrandLogo } from '@/components/BrandLogo'
 import { LanguageToggle } from '@/components/LanguageToggle'
 import { useT } from '@/lib/i18n'
+import { AuditTracker } from '@/components/AuditTracker'
+import {
+  AppSidebar,
+  SidebarMenuButton,
+  type SidebarNavItem,
+  type SidebarNavSection,
+} from '@/components/AppSidebar'
+import { UserAvatar } from '@/components/UserAvatar'
+import { useUserProfile } from '@/lib/hooks/use-user-profile'
+import { resolveDisplayName } from '@/lib/display-name'
 
 export default function DashboardLayout({
   children,
@@ -17,16 +27,20 @@ export default function DashboardLayout({
   const { user, role, signOut } = useAuth()
   const pathname = usePathname()
   const { t } = useT()
+  const { profile } = useUserProfile()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [showPharmacyApiPanel, setShowPharmacyApiPanel] = useState(false)
-  const [pharmacyApiKey, setPharmacyApiKey] = useState('')
-  const origin = typeof window !== 'undefined' ? window.location.origin : ''
-  const pharmacyApiBaseUrl = `${origin}/api/pharmacy/prescriptions`
-  const pharmacyBrowserUrl = pharmacyApiKey.trim()
-    ? `${pharmacyApiBaseUrl}?api_key=${encodeURIComponent(pharmacyApiKey.trim())}&limit=100`
-    : `${pharmacyApiBaseUrl}?api_key=YOUR_API_KEY&limit=100`
-  const pharmacyCurl = `curl -H "Authorization: Bearer ${pharmacyApiKey.trim() || 'YOUR_API_KEY'}" "${pharmacyApiBaseUrl}?limit=100"`
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [pathname])
+
+  const profileIcon = (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+    </svg>
+  )
 
   const handleSignOut = async () => {
     if (isSigningOut) return
@@ -77,29 +91,11 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: t('nav.eprescribe'),
-      href: '/dashboard/prescriptions',
+      name: t('nav.i693'),
+      href: '/dashboard/i-693',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-        </svg>
-      ),
-    },
-    {
-      name: t('nav.orders'),
-      href: '/dashboard/orders',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-        </svg>
-      ),
-    },
-    {
-      name: t('nav.followups'),
-      href: '/dashboard/follow-ups',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
     },
@@ -112,15 +108,6 @@ export default function DashboardLayout({
         </svg>
       ),
       onClick: () => setIsChatOpen(true),
-    },
-    {
-      name: 'Pharmacies',
-      href: '/dashboard/pharmacies',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-        </svg>
-      ),
     },
   ]
 
@@ -153,20 +140,11 @@ export default function DashboardLayout({
       ),
     },
     {
-      name: t('nav.orders'),
-      href: '/dashboard/orders',
+      name: t('nav.i693'),
+      href: '/dashboard/i-693',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-        </svg>
-      ),
-    },
-    {
-      name: t('nav.followups'),
-      href: '/dashboard/follow-ups',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>
       ),
     },
@@ -180,49 +158,89 @@ export default function DashboardLayout({
       ),
       onClick: () => setIsChatOpen(true),
     },
+  ]
+
+  const adminMenuItems: MenuItem[] = [...doctorMenuItems]
+
+  const menuItems =
+    role === 'admin'
+      ? adminMenuItems
+      : role === 'doctor'
+      ? doctorMenuItems
+      : role === 'nurse'
+      ? nurseMenuItems
+      : []
+
+  const withPatientsActive = (item: MenuItem): SidebarNavItem => ({
+    ...item,
+    isActive: (p) =>
+      item.href === '/dashboard/patients-history'
+        ? p === item.href || p.startsWith('/patient-file/')
+        : p === item.href,
+  })
+
+  const profileNavItem: SidebarNavItem = {
+    name: t('nav.profile'),
+    href: '/dashboard/profile',
+    icon: profileIcon,
+    isActive: (p) => p === '/dashboard/profile',
+  }
+
+  const sidebarSections: SidebarNavSection[] = [
     {
-      name: 'Pharmacies',
-      href: '/dashboard/pharmacies',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-        </svg>
-      ),
+      title: t('nav.section.navigation'),
+      items: [...menuItems.map(withPatientsActive), profileNavItem],
     },
   ]
 
-  const menuItems = role === 'doctor' ? doctorMenuItems : role === 'nurse' || role === 'staff' ? nurseMenuItems : []
+  const displayName =
+    profile?.display_name ??
+    resolveDisplayName({
+      full_name: profile?.full_name,
+      email: profile?.email ?? user?.email,
+      role: role ?? undefined,
+      userMetadata: user?.user_metadata,
+    })
+
+  const showSidebar = role === 'doctor' || role === 'nurse' || role === 'admin'
 
   return (
-    <div className="min-h-screen bg-[#f5f7fb]">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-40">
+    <div className="flex h-screen flex-col overflow-hidden bg-[#f5f7fb]">
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shrink-0">
         <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
-            <Link href="/dashboard" className="flex items-center gap-3 min-w-0 group">
-              <BrandLogo variant="header" />
-              <div className="hidden md:flex flex-col min-w-0">
-                <span className="text-xs text-slate-500 leading-tight">{t('auth.electronic_records')}</span>
-              </div>
-            </Link>
+          <div className="flex justify-between items-center gap-2 h-16 sm:h-20 min-h-[4rem]">
+            <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
+              {showSidebar && user && (
+                <SidebarMenuButton
+                  onClick={() => setMobileNavOpen(true)}
+                  className="lg:hidden"
+                  label={t('nav.sidebar.open')}
+                />
+              )}
+              <Link href="/dashboard" className="flex min-w-0 items-center gap-2 sm:gap-3">
+                <BrandLogo variant="header" className="shadow-md !py-1" />
+                <div className="hidden md:flex flex-col min-w-0">
+                  <span className="text-xs text-slate-500 leading-tight">{t('auth.electronic_records')}</span>
+                </div>
+              </Link>
+            </div>
             {user && (
               <div className="flex items-center gap-3 relative">
                 <LanguageToggle />
                 <div className="text-right hidden sm:block">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {user.user_metadata?.full_name || user.email || 'User'}
-                  </p>
+                  <p className="text-sm font-semibold text-slate-900">{displayName}</p>
                   <p className="text-xs text-slate-500 capitalize">{role || 'User'}</p>
                 </div>
-                <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold shadow-sm">
-                  {(user.user_metadata?.full_name || user.email || 'U').charAt(0).toUpperCase()}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowPharmacyApiPanel((v) => !v)}
-                  className="px-4 py-2 bg-amber-50 border border-amber-200 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors text-sm font-medium"
-                >
-                  {t('nav.pharmacy_api')}
-                </button>
+                <Link href="/dashboard/profile" title={t('nav.profile')}>
+                  <UserAvatar
+                    key={profile?.avatar_id ?? 'avatar-none'}
+                    name={displayName}
+                    avatarId={profile?.avatar_id}
+                    avatarUrl={profile?.avatar_url}
+                    size="md"
+                    ringClassName="ring-2 ring-white shadow-sm"
+                  />
+                </Link>
                 <button
                   onClick={handleSignOut}
                   disabled={isSigningOut}
@@ -230,90 +248,42 @@ export default function DashboardLayout({
                 >
                   {isSigningOut ? t('common.signing_out') : t('common.sign_out')}
                 </button>
-                {showPharmacyApiPanel && (
-                  <div className="absolute right-0 top-16 w-[min(92vw,640px)] border border-amber-200 bg-white rounded-xl p-4 shadow-2xl z-50 space-y-3">
-                    <p className="text-sm text-slate-700">
-                      {t('pharmacy.give_api')}
-                    </p>
-                    <div>
-                      <label className="text-xs text-slate-600 block mb-1">{t('pharmacy.api_key_label')}</label>
-                      <input
-                        type="text"
-                        value={pharmacyApiKey}
-                        onChange={(e) => setPharmacyApiKey(e.target.value)}
-                        placeholder={t('pharmacy.api_key_placeholder')}
-                        className="w-full bg-[#f9fbff] border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-                      />
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">{t('pharmacy.browser_url')}</p>
-                      <code className="block text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 break-all">{pharmacyBrowserUrl}</code>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-600 mb-1">{t('pharmacy.header_request')}</p>
-                      <code className="block text-xs text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 break-all">{pharmacyCurl}</code>
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
         </div>
       </header>
 
-      <div className="flex">
-        {(role === 'doctor' || role === 'nurse' || role === 'staff') && (
-          <aside className="w-64 bg-white border-r border-slate-200 min-h-[calc(100vh-5rem)] sticky top-20">
-            <nav className="p-4 space-y-1">
-              {menuItems.map((item) => {
-                const isActive = pathname === item.href
-                
-                if (item.onClick) {
-                  return (
-                    <button
-                      key={item.href || item.name}
-                      onClick={item.onClick}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
-                        isActive
-                          ? 'bg-[#eef3ff] text-[#2E6EF3]'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                      }`}
-                    >
-                      <span className={isActive ? 'text-[#2E6EF3]' : 'text-slate-400'}>
-                        {item.icon}
-                      </span>
-                      <span className="text-sm font-medium">{item.name}</span>
-                    </button>
-                  )
-                }
-                
-                return (
-                  <Link
-                    key={item.href || item.name}
-                    href={item.href}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-lg transition-colors duration-150 ${
-                      isActive
-                        ? 'bg-[#eef3ff] text-[#2E6EF3]'
-                        : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
-                    }`}
-                  >
-                    <span className={isActive ? 'text-[#2E6EF3]' : 'text-slate-400'}>
-                      {item.icon}
-                    </span>
-                    <span className="text-sm font-medium">{item.name}</span>
-                  </Link>
-                )
-              })}
-            </nav>
-          </aside>
+      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3">
+        {showSidebar && user && (
+          <AppSidebar
+            sections={sidebarSections}
+            pathname={pathname}
+            theme="blue"
+            storageKey="memr-sidebar-dashboard"
+            collapseLabel={t('nav.sidebar.collapse')}
+            expandLabel={t('nav.sidebar.expand')}
+            closeLabel={t('nav.sidebar.close')}
+            mobileOpen={mobileNavOpen}
+            onMobileClose={() => setMobileNavOpen(false)}
+            homeHref="/dashboard"
+            user={{
+              name: displayName,
+              subtitle: role ? String(role) : undefined,
+              avatarId: profile?.avatar_id,
+              avatarUrl: profile?.avatar_url,
+              profileHref: '/dashboard/profile',
+            }}
+          />
         )}
 
-        <main className="flex-1">
+        <main className="min-w-0 flex-1 text-slate-900 [color-scheme:light] overflow-y-auto rounded-xl sm:rounded-2xl">
           {children}
         </main>
       </div>
 
       <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      <AuditTracker />
     </div>
   )
 }

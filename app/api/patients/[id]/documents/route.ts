@@ -1,6 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
+import { fetchUserRole } from '@/lib/fetch-user-role'
+import { getI693BasePath } from '@/lib/i693/paths'
+import { listImmigrationDocumentsForPatient } from '@/lib/patient-documents/immigration-docs'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -57,7 +60,7 @@ export async function GET(
     // Schema has: id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at
     // Frontend expects: id, document_name, document_label, file_url, file_name, file_size, file_type, uploaded_by, uploaded_by_name, created_at
     const transformedDocuments = await Promise.all(
-      (documents || []).map(async (doc: any) => {
+      (documents ?? []).map(async (doc: any) => {
         // Use signed URL (1h) so doc opens in viewer even when bucket is private
         const fileUrl = doc.file_path ? await getDocumentUrl(doc.file_path) : ''
 
@@ -95,7 +98,20 @@ export async function GET(
       })
     )
 
-    return NextResponse.json({ documents: transformedDocuments })
+    let i693BasePath = '/dashboard/i-693'
+    if (user) {
+      const roleInfo = await fetchUserRole(supabase, user.id)
+      i693BasePath = getI693BasePath(roleInfo?.role)
+    }
+    const immigrationDocs = await listImmigrationDocumentsForPatient(supabaseAdmin, patientId, {
+      i693BasePath,
+    })
+
+    const merged = [...transformedDocuments, ...immigrationDocs].sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    )
+
+    return NextResponse.json({ documents: merged })
   } catch (error) {
     console.error('Error in GET /api/patients/[id]/documents:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -189,7 +205,17 @@ export async function POST(
     }
 
     // Validate document category (label)
-    const validCategories = ['image', 'report', 'bill', 'prescription', 'lab_result', 'xray', 'other']
+    const validCategories = [
+      'image',
+      'report',
+      'bill',
+      'prescription',
+      'lab_result',
+      'xray',
+      'immigration',
+      'i693',
+      'other',
+    ]
     if (!validCategories.includes(documentLabel)) {
       return NextResponse.json({ error: 'Invalid document category' }, { status: 400 })
     }

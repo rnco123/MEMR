@@ -1,10 +1,8 @@
 /**
- * Audit logging utility for HIPAA compliance
- * Logs all user actions for compliance and security
+ * Audit logging types and client helper.
+ * This file must stay client-safe (no next/headers, no server-only imports),
+ * because it is imported from client components like the auth context.
  */
-
-import { createClient } from '@/lib/supabase/server'
-import { headers } from 'next/headers'
 
 export type AuditAction =
   | 'patient_viewed'
@@ -24,10 +22,23 @@ export type AuditAction =
   | 'user_logged_in'
   | 'user_logged_out'
   | 'user_created'
+  | 'user_deleted'
   | 'role_changed'
   | 'data_exported'
   | 'data_imported'
   | 'settings_changed'
+  | 'page_view'
+  | 'button_click'
+  | 'form_submitted'
+  | 'pdf_exported'
+  | 'i693_action'
+  | 'i693_viewed'
+  | 'i693_saved'
+  | 'i693_ai_filled'
+  | 'i693_pdf_exported'
+  | 'i693_workflow_updated'
+  | 'user_updated'
+  | 'password_changed'
 
 export type ResourceType =
   | 'patient'
@@ -38,57 +49,10 @@ export type ResourceType =
   | 'user'
   | 'profile'
   | 'system'
+  | 'i693'
 
 interface AuditLogMetadata {
   [key: string]: any
-}
-
-/**
- * Log an audit event
- */
-export async function logAuditEvent(
-  action: AuditAction,
-  resourceType: ResourceType,
-  resourceId?: string | number,
-  metadata?: AuditLogMetadata
-): Promise<void> {
-  try {
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-
-    // Get request headers for IP and user agent
-    const headersList = await headers()
-    const ipAddress =
-      headersList.get('x-forwarded-for') ||
-      headersList.get('x-real-ip') ||
-      headersList.get('cf-connecting-ip') ||
-      'unknown'
-    const userAgent = headersList.get('user-agent') || 'unknown'
-
-    // Insert audit log
-    const { error } = await supabase.from('audit_logs').insert({
-      user_id: user?.id || null,
-      action,
-      resource_type: resourceType,
-      resource_id: resourceId?.toString() || null,
-      ip_address: ipAddress?.split(',')[0]?.trim() || 'unknown', // Take first IP if multiple
-      user_agent: userAgent,
-      metadata: metadata || null,
-    })
-
-    if (error) {
-      // Don't throw - audit logging failures shouldn't break the app
-      // But log to console in development
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to log audit event:', error)
-      }
-    }
-  } catch (error) {
-    // Silently fail - audit logging should never break the application
-    if (process.env.NODE_ENV === 'development') {
-      console.error('Error in audit logging:', error)
-    }
-  }
 }
 
 /**
@@ -103,18 +67,16 @@ export async function logAuditEventClient(
   try {
     await fetch('/api/audit', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         action,
         resource_type: resourceType,
         resource_id: resourceId,
         metadata,
+        page_url: typeof window !== 'undefined' ? window.location.href : undefined,
       }),
     })
   } catch (error) {
-    // Silently fail
     if (process.env.NODE_ENV === 'development') {
       console.error('Error logging audit event from client:', error)
     }

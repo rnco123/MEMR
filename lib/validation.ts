@@ -34,8 +34,8 @@ export const signupSchema = z.object({
       },
       { message: 'Password is too common. Please choose a stronger password.' }
     ),
-  role: z.enum(['doctor', 'nurse', 'staff'], {
-    errorMap: () => ({ message: 'Role must be doctor, nurse, or staff' }),
+  role: z.enum(['doctor', 'nurse', 'admin'], {
+    errorMap: () => ({ message: 'Role must be doctor, nurse, or admin' }),
   }),
   pin: z
     .string()
@@ -79,6 +79,8 @@ export const documentUploadSchema = z.object({
     'prescription',
     'lab_result',
     'xray',
+    'immigration',
+    'i693',
     'other',
   ]),
 })
@@ -210,17 +212,3 @@ export const pharmacyUpdateSchema = z.object({
 })
 
 export type PharmacyUpdateInput = z.infer<typeof pharmacyUpdateSchema>
-
-export const pharmacyApiKeyCreateSchema = z.object({
-  key_name: z.string().min(1).max(200),
-  expires_at: z.string().datetime().optional().nullable(),
-})
-
-export type PharmacyApiKeyCreateInput = z.infer<typeof pharmacyApiKeyCreateSchema>
-
-export const pharmacyApiKeyUpdateSchema = z.object({
-  is_active: z.boolean().optional(),
-  key_name: z.string().min(1).max(200).optional(),
-})
-
-export type PharmacyApiKeyUpdateInput = z.infer<typeof pharmacyApiKeyUpdateSchema>

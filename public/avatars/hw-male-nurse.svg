@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Male nurse avatar">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#d1fae5"/>
+      <stop offset="100%" stop-color="#6ee7b7"/>
+    </radialGradient>
+    <linearGradient id="scrubs" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5d0b5"/>
+      <stop offset="100%" stop-color="#d4a574"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#bg)"/>
+  <ellipse cx="128" cy="202" rx="74" ry="50" fill="url(#scrubs)"/>
+  <path d="M92 198h72v12c-12 8-60 8-72 0z" fill="#047857"/>
+  <ellipse cx="128" cy="110" rx="46" ry="50" fill="url(#skin)"/>
+  <path d="M94 86c6-14 22-22 34-22s28 8 34 22c-8-10-22-14-34-14s-26 4-34 14z" fill="#422006"/>
+  <path d="M100 78c0-8 12-14 28-14s28 6 28 14" fill="#78350f" opacity=".5"/>
+  <ellipse cx="110" cy="110" rx="5" ry="6" fill="#1e293b"/>
+  <ellipse cx="146" cy="110" rx="5" ry="6" fill="#1e293b"/>
+  <path d="M118 126q10 6 20 0" stroke="#92400e" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <rect x="148" y="150" width="28" height="36" rx="4" fill="#ecfdf5" stroke="#047857" stroke-width="2"/>
+  <path d="M154 158h16M154 166h12" stroke="#047857" stroke-width="2" stroke-linecap="round"/>
+</svg>

@@ -107,13 +107,15 @@ const nextConfig = {
   compress: true,
   poweredByHeader: false,
   generateEtags: true,
-  // Enable instrumentation hook for future monitoring
   experimental: {
     instrumentationHook: true,
-    // Avoid flaky webpack vendor chunks like vendor-chunks/@supabase.js missing after incremental dev rebuilds
-    serverComponentsExternalPackages: ['@supabase/ssr', '@supabase/supabase-js'],
+    serverComponentsExternalPackages: [
+      '@supabase/ssr',
+      '@supabase/supabase-js',
+      'mupdf',
+      'pdf-lib',
+    ],
   },
-  // Optimize webpack
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -122,6 +124,8 @@ const nextConfig = {
         net: false,
         tls: false,
       }
+    } else {
+      config.externals = [...(config.externals || []), 'mupdf']
     }
     return config
   },

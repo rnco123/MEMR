@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-error-handler'
 import { pharmacyUpdateSchema } from '@/lib/validation'
-import { requireClinicalUser } from '@/lib/pharmacy-keys'
+import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,7 +16,7 @@ function parseId(raw: string | undefined): number {
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requireClinicalUser()
+    const { supabase } = await requirePharmacyAdminUser()
 
     const { data, error } = await supabase
       .from('pharmacy')
@@ -36,7 +36,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requireClinicalUser()
+    const { supabase } = await requirePharmacyAdminUser()
 
     let body: unknown
     try {
@@ -52,7 +52,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
     if (v.name !== undefined) patch.name = v.name
     if (v.address !== undefined) patch.address = v.address ?? null
-    if (v.phone !== undefined) patch.phone = v.phone ?? null
+    if (v.phone !== undefined) {
+      patch.phone = v.phone ?? null
+      patch.phone_number = v.phone ?? null
+    }
     if (v.email !== undefined) patch.email = v.email ?? null
 
     const { data, error } = await supabase
@@ -74,10 +77,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requireClinicalUser()
+    const { supabase } = await requirePharmacyAdminUser()
 
-    // FKs are ON DELETE SET NULL on encounters.pharmacy_id and prescriptions.pharmacy_id,
-    // and ON DELETE CASCADE on pharmacy_api_keys.pharmacy_id, so this cleans up keys too.
+    // FKs are ON DELETE SET NULL on encounters.pharmacy_id and prescriptions.pharmacy_id.
     const { error } = await supabase.from('pharmacy').delete().eq('id', pharmacyId)
     if (error) throw error
 

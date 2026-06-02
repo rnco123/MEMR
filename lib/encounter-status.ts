@@ -136,3 +136,71 @@ export function canJoinTelemedicine(status: string | null | undefined): boolean 
   if (!status) return false
   return TELEMEDICINE_ELIGIBLE_STATUSES.includes(status as EncounterStatus)
 }
+
+export type StatusVisualStyle = {
+  columnHeader: string
+  columnDot: string
+  badge: string
+  kanbanCardAccent: string
+}
+
+const STATUS_VISUAL: Record<EncounterStatus, StatusVisualStyle> = {
+  appointment_initiated: {
+    columnHeader: 'from-fuchsia-50/90 to-white border-fuchsia-200/70',
+    columnDot: 'bg-fuchsia-500 shadow-fuchsia-500/30',
+    badge: 'bg-fuchsia-50 text-fuchsia-900 border-fuchsia-200',
+    kanbanCardAccent: 'border-l-fuchsia-500',
+  },
+  provider_assigned: {
+    columnHeader: 'from-blue-50/90 to-white border-blue-200/70',
+    columnDot: 'bg-blue-600 shadow-blue-600/30',
+    badge: 'bg-blue-50 text-blue-800 border-blue-200',
+    kanbanCardAccent: 'border-l-blue-600',
+  },
+  vitals_assessed: {
+    columnHeader: 'from-lime-50/90 to-white border-lime-200/70',
+    columnDot: 'bg-lime-500 shadow-lime-500/30',
+    badge: 'bg-lime-50 text-lime-900 border-lime-200',
+    kanbanCardAccent: 'border-l-lime-500',
+  },
+  in_consultation: {
+    columnHeader: 'from-yellow-50/90 to-white border-yellow-200/70',
+    columnDot: 'bg-yellow-400 shadow-yellow-400/30',
+    badge: 'bg-yellow-50 text-yellow-900 border-yellow-200',
+    kanbanCardAccent: 'border-l-yellow-400',
+  },
+  consultation_concluded: {
+    columnHeader: 'from-red-50/90 to-white border-red-200/70',
+    columnDot: 'bg-red-600 shadow-red-600/30',
+    badge: 'bg-red-50 text-red-800 border-red-200',
+    kanbanCardAccent: 'border-l-red-600',
+  },
+  final_review: {
+    columnHeader: 'from-teal-50/90 to-white border-teal-200/70',
+    columnDot: 'bg-teal-400 shadow-teal-400/30',
+    badge: 'bg-teal-50 text-teal-800 border-teal-200',
+    kanbanCardAccent: 'border-l-teal-400',
+  },
+  completed: {
+    columnHeader: 'from-emerald-50/90 to-white border-emerald-200/70',
+    columnDot: 'bg-emerald-500 shadow-emerald-500/30',
+    badge: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    kanbanCardAccent: 'border-l-emerald-500',
+  },
+}
+
+const DEFAULT_STATUS_VISUAL: StatusVisualStyle = {
+  columnHeader: 'from-slate-50/90 to-white border-slate-200/70',
+  columnDot: 'bg-slate-400 shadow-slate-400/30',
+  badge: 'bg-slate-100 text-slate-700 border-slate-200',
+  kanbanCardAccent: 'border-l-slate-300',
+}
+
+export function getStatusVisualStyle(status: string | null | undefined): StatusVisualStyle {
+  if (!status) return DEFAULT_STATUS_VISUAL
+  return STATUS_VISUAL[status as EncounterStatus] ?? DEFAULT_STATUS_VISUAL
+}
+
+export function getStatusBadgeClasses(status: string | null | undefined): string {
+  return getStatusVisualStyle(status).badge
+}

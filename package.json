@@ -15,7 +15,16 @@
         "test:watch": "jest --watch",
         "test:coverage": "jest --coverage",
         "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
-        "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\""
+        "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,css,md}\"",
+        "seed:immigration": "node scripts/seed-immigration-sample.cjs",
+        "seed:immigration:demo": "node scripts/seed-immigration-kanban-demo.cjs",
+        "seed:avatars": "node scripts/seed-staff-avatars.cjs",
+        "test:i693-pdf": "tsx scripts/test-i693-pdf-fill.mjs",
+        "test:i693-export": "tsx scripts/test-i693-export.mjs",
+        "test:i693-acroform": "tsx scripts/test-i693-acroform-fill.mjs",
+        "audit:i693-registry": "tsx scripts/audit-i693-registry.mjs",
+        "generate:i693-pdf-registry": "tsx scripts/generate-i693-pdf-field-registry.mjs",
+        "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs"
     },
     "dependencies": {
         "@daily-co/daily-js": "^0.83.1",
@@ -23,10 +32,14 @@
         "@supabase/ssr": "^0.8.0",
         "jspdf": "^4.2.1",
         "lru-cache": "^10.1.0",
+        "mupdf": "^1.27.0",
         "next": "^14.2.35",
+        "pdf-lib": "^1.17.1",
+        "pdfjs-dist": "^4.10.38",
         "react": "18.2.0",
         "react-dom": "18.2.0",
         "sonner": "^2.0.7",
+        "tsx": "^4.22.3",
         "zod": "^3.22.4"
     },
     "devDependencies": {

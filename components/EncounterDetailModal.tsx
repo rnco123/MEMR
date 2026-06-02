@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { useT } from '@/lib/i18n'
+import { isImmigrationEncounter } from '@/lib/i693/types'
+import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
+import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
@@ -169,7 +174,17 @@ export function EncounterDetailModal({
   canJoinTelemedicine = false,
 }: EncounterDetailModalProps) {
   const { t, language } = useT()
+  const { role } = useAuth()
+  const pathname = usePathname()
   const localeTag = language === 'es' ? 'es-ES' : 'en-US'
+  const i693Href = useMemo(
+    () =>
+      buildI693Href(
+        pathname.startsWith('/admin') ? '/admin/i-693' : getI693BasePath(role),
+        { encounterId, tab: 'form' }
+      ),
+    [pathname, role, encounterId]
+  )
   const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
@@ -583,6 +598,14 @@ export function EncounterDetailModal({
             )}
           </div>
           <div className="flex items-center gap-3">
+            {!loading && encounter && isImmigrationEncounter(encounter.consent_ack) && (
+              <Link
+                href={i693Href}
+                className="px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-colors"
+              >
+                {t('i693.open_form')}
+              </Link>
+            )}
             {onJoinTelemedicine && canJoinTelemedicine && (
               <button
                 type="button"

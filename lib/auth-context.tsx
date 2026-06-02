@@ -1,12 +1,14 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useRef, type RefObject } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState, useRef, type RefObject } from 'react'
 import { createClient } from './supabase/client'
 import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import type { UserRole } from './roles'
 import { isValidRole, mapRoleToEnum } from './roles'
 import { fetchUserRole } from './fetch-user-role'
+import { isAbortError } from './is-abort-error'
+import { logAuditEventClient } from './audit'
 
 interface AuthContextType {
   user: User | null
@@ -28,7 +30,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [role, setRoleState] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   // Use ref to preserve role during refreshes to prevent welcome screen on temporary failures
   const roleRef = useRef<UserRole | null>(null)
   
@@ -67,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const mappedRole = mapRoleToEnum(result.role)
       return mappedRole || null
     } catch (error) {
+      if (isAbortError(error)) return null
       if (retryCount < 1) {
         if (process.env.NODE_ENV === 'development') {
           console.warn('Unexpected error fetching role, retrying...', error)
@@ -123,16 +126,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get initial session with timeout and retry logic
     const initAuth = async () => {
       try {
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise<{ data: { session: null }, error: null }>((resolve) => {
-          setTimeout(() => resolve({ data: { session: null }, error: null }), 10000) // 10 second timeout
-        })
+        const { data: { session }, error } = await supabase.auth.getSession()
 
-        const result = await Promise.race([sessionPromise, timeoutPromise])
-        
         if (!isMounted) return
-
-        const { data: { session }, error } = result
         
         // If there's an error and we haven't retried too many times, retry
         if (error && retryCount < maxRetries && isMounted) {
@@ -166,6 +162,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setLoading(false)
         }
       } catch (error) {
+        if (isAbortError(error)) {
+          if (isMounted) setLoading(false)
+          return
+        }
         if (process.env.NODE_ENV === 'development') {
           console.error('Error in getSession:', error)
         }
@@ -240,6 +240,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } catch (error) {
+          if (isAbortError(error)) return
           if (process.env.NODE_ENV === 'development') {
             console.warn('Periodic session refresh error:', error)
           }
@@ -352,6 +353,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               }
             }
           } catch (err) {
+            if (isAbortError(err)) return
             // Ignore refresh errors - might be temporary, try getSession as fallback
             if (process.env.NODE_ENV === 'development') {
               console.warn('Session refresh attempt failed:', err)
@@ -372,7 +374,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setupPeriodicRefresh()
               }
             } catch (fallbackErr) {
-              // If even getSession fails, session is truly gone
+              if (isAbortError(fallbackErr)) return
               if (process.env.NODE_ENV === 'development') {
                 console.warn('Fallback getSession also failed:', fallbackErr)
               }
@@ -402,11 +404,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
     })
     if (!error && data.user) {
-      // Fetch role from database
-      const userRole = await extractRole(data.user)
+      // Immediately after sign-in, the browser auth cookies/tokens can take a moment
+      // to propagate to subsequent RLS-protected reads. Retry role extraction once
+      // if we didn't get a role the first time.
+      let userRole = await extractRole(data.user)
+      if (!userRole) {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        const { data: latest } = await supabase.auth.getUser()
+        userRole = await extractRole(latest.user)
+      }
+
       updateRole(userRole, true)
-      // Redirect based on role
-      if (userRole) {
+      logAuditEventClient('user_logged_in', 'user', data.user.id, { role: userRole }).catch(() => {})
+      if (userRole === 'admin') {
+        router.push('/admin')
+      } else if (userRole) {
         router.push('/dashboard')
       } else {
         router.push('/')

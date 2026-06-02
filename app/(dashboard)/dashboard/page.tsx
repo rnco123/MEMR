@@ -8,6 +8,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/i18n'
+import { useUserLocations } from '@/lib/hooks/use-user-locations'
+import { AssignedLocationsPanel } from '@/components/AssignedLocationsPanel'
 
 interface UpcomingAppointment {
   id: string
@@ -35,8 +37,15 @@ function DashboardPage() {
   const [loadingAppointments, setLoadingAppointments] = useState(false)
   const [startingEncounterId, setStartingEncounterId] = useState<number | null>(null)
   const supabase = createClient()
+  const {
+    locations: assignedLocations,
+    loading: locationsLoading,
+    selectedLocationId,
+  } = useUserLocations()
 
   const permissions = role ? ROLE_PERMISSIONS[role] : null
+  const isDoctorLike = role === 'doctor' || role === 'admin'
+  const isClinicalStaff = role === 'doctor' || role === 'nurse'
 
   const fetchAvailability = useCallback(async () => {
     try {
@@ -89,40 +98,27 @@ function DashboardPage() {
   }
 
   const fetchStats = useCallback(async () => {
-    if (!user || role !== 'doctor') {
+    if (!user || !isClinicalStaff) {
       setLoadingStats(false)
       return
     }
 
     setLoadingStats(true)
     try {
-      const { data: doctorData } = await supabase
-        .from('doctors')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-      const { count: patientsCount } = await supabase
-        .from('patients')
-        .select('id', { count: 'exact', head: true })
-
-      setTotalPatients(patientsCount || 0)
-
-      if (doctorData) {
-        const { count: consultationsCount } = await supabase
-          .from('encounters')
-          .select('id', { count: 'exact', head: true })
-          .eq('doctor_id', doctorData.id)
-          .in('status', ['consultation_concluded', 'final_review', 'completed'])
-
-        setTotalConsultations(consultationsCount || 0)
+      const params =
+        selectedLocationId !== 'all' ? `?location_id=${selectedLocationId}` : ''
+      const res = await fetch(`/api/clinical/stats${params}`, { credentials: 'include' })
+      const json = await res.json()
+      if (res.ok) {
+        setTotalPatients(json.totalPatients ?? 0)
+        setTotalConsultations(json.totalConsultations ?? 0)
       }
     } catch (error) {
       console.error('Error fetching stats:', error)
     } finally {
       setLoadingStats(false)
     }
-  }, [user, role, supabase])
+  }, [user, isClinicalStaff, selectedLocationId])
 
   const fetchUpcomingAppointments = useCallback(async () => {
     if (!user || role !== 'doctor') {
@@ -234,24 +230,28 @@ function DashboardPage() {
   )
 
   const refreshAllData = useCallback(() => {
-    if (role === 'doctor' && user) {
-      fetchAvailability()
+    if (user && isClinicalStaff) {
       fetchStats()
+    }
+    if (isDoctorLike && user) {
+      fetchAvailability()
       fetchUpcomingAppointments()
     }
-  }, [role, user, fetchAvailability, fetchStats, fetchUpcomingAppointments])
+  }, [isClinicalStaff, isDoctorLike, user, fetchAvailability, fetchStats, fetchUpcomingAppointments])
 
   // Fetch doctor availability status
   useEffect(() => {
-    if (role === 'doctor' && user) {
+    if (isDoctorLike && user) {
       fetchAvailability()
     }
-  }, [role, user, fetchAvailability])
+  }, [isDoctorLike, user, fetchAvailability])
 
-  // Fetch statistics
+  // Fetch statistics (doctors and nurses, scoped by assigned locations)
   useEffect(() => {
-    fetchStats()
-  }, [fetchStats])
+    if (isClinicalStaff) {
+      fetchStats()
+    }
+  }, [fetchStats, isClinicalStaff])
 
   // Fetch upcoming appointments for doctors
   useEffect(() => {
@@ -261,14 +261,14 @@ function DashboardPage() {
   // Refetch when tab becomes visible (user returns without page refresh)
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && user && role === 'doctor') {
+      if (document.visibilityState === 'visible' && user && isDoctorLike) {
         refreshAllData()
       }
     }
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [user, role, refreshAllData])
+  }, [user, isDoctorLike, refreshAllData])
 
   return (
     <div className="p-6 lg:p-10">
@@ -279,23 +279,27 @@ function DashboardPage() {
             {t('dashboard.welcome_back_name', { name: user?.user_metadata?.full_name?.split(' ')[0] || 'User' })}
           </h2>
           <p className="text-slate-500 text-sm">
-            {role === 'doctor'
+            {isDoctorLike
               ? t('dashboard.subtitle_doctor')
               : t('dashboard.subtitle_nurse')}
           </p>
         </div>
 
+        {isClinicalStaff && (
+          <AssignedLocationsPanel locations={assignedLocations} loading={locationsLoading} />
+        )}
+
         {/* Role Badge, Refresh, and Availability Toggle (for doctors) */}
         <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <div className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 rounded-lg shadow-sm">
-            <div className={`w-2.5 h-2.5 rounded-full ${role === 'doctor' ? 'bg-[#2E6EF3]' : 'bg-emerald-500'}`}></div>
+            <div className={`w-2.5 h-2.5 rounded-full ${isDoctorLike ? 'bg-[#2E6EF3]' : 'bg-emerald-500'}`}></div>
             <span className="text-slate-700 text-sm font-semibold">
               {t('dashboard.role_dashboard', { role: role ? (role === 'doctor' ? t('auth.role_doctor') : role === 'nurse' ? t('auth.role_nurse') : getRoleLabel(role)) : '' })}
             </span>
           </div>
           
           <div className="flex items-center gap-2">
-            {role === 'doctor' && (
+            {isDoctorLike && (
               <button
                 onClick={refreshAllData}
                 disabled={loadingStats || loadingAppointments}
@@ -308,7 +312,7 @@ function DashboardPage() {
                 {t('common.refresh')}
               </button>
             )}
-            {role === 'doctor' && (
+            {isDoctorLike && (
               <button
                 onClick={toggleAvailability}
                 disabled={isToggling}
@@ -341,10 +345,10 @@ function DashboardPage() {
               </svg>
             </div>
             <h3 className="text-base font-semibold text-slate-900 mb-1">
-              {role === 'doctor' ? t('dashboard.all_patients') : t('dashboard.assigned_patients')}
+              {isDoctorLike ? t('dashboard.all_patients') : t('dashboard.assigned_patients')}
             </h3>
             <p className="text-slate-500 text-sm">
-              {role === 'doctor'
+              {isDoctorLike
                 ? t('dashboard.access_records')
                 : t('dashboard.view_assigned')}
             </p>
@@ -410,7 +414,7 @@ function DashboardPage() {
           <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-3">
               <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
-                {role === 'doctor' ? t('dashboard.total_patients') : t('dashboard.assigned_patients_stat')}
+                {isDoctorLike ? t('dashboard.total_patients') : t('dashboard.assigned_patients_stat')}
               </p>
               <div className="w-9 h-9 bg-[#2E6EF3]/10 rounded-lg flex items-center justify-center">
                 <svg className="w-4 h-4 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -462,7 +466,7 @@ function DashboardPage() {
         </div>
 
         {/* Upcoming Appointments (Doctor only) */}
-        {role === 'doctor' && (
+        {isDoctorLike && (
           <div className="bg-white border border-slate-200 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -549,6 +553,6 @@ function DashboardPage() {
 
 // Protect the dashboard with HOC - only doctors and nurses can access
 export default withRoleProtection(DashboardPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
   redirectTo: '/',
 })

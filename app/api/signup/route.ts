@@ -4,7 +4,7 @@ import { config } from '@/lib/config'
 import { signupSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { rateLimitCheck, createRateLimiter } from '@/lib/rate-limit'
-import { logAuditEvent } from '@/lib/audit'
+import { logAuditEvent } from '@/lib/audit-server'
 
 // Create admin client with service role key
 const supabaseAdmin = createClient(

@@ -3,7 +3,7 @@
  */
 
 import { createClient } from '@/lib/supabase/server'
-import { logAuditEvent } from '@/lib/audit'
+import { logAuditEvent } from '@/lib/audit-server'
 
 export interface SecurityEvent {
   type: 'suspicious_activity' | 'failed_login' | 'rate_limit' | 'invalid_request' | 'unauthorized_access'

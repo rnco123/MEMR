@@ -1,0 +1,71 @@
+{
+  "generatedAt": "2026-06-01T00:00:00.000Z",
+  "description": "Proposed semantic bindings for Phase 7. Not wired to export until reviewed.",
+  "textBindings": [
+    { "shortName": "Pt8Line1A7_Remarks", "internalKey": "tb_screening.remarks", "format": "text", "priority": "P2" },
+    { "shortName": "Pt8Line1A3_XrayTakenDate", "internalKey": "tb_screening.chest_xray", "format": "date", "priority": "P2", "note": "Consider splitting chest_xray_date field" },
+    { "shortName": "Pt8Line1A3_XrayReadDate", "internalKey": "tb_screening.chest_xray", "format": "date", "priority": "P2", "note": "May need chest_xray_read_date" },
+    { "shortName": "Pt8Line1B1b_DateNontrepoemaltest", "internalKey": "syphilis_sti.syphilis_date", "format": "date", "priority": "P2" },
+    { "shortName": "Pt8Line1B1c_DateNontreponemalTest", "internalKey": "syphilis_sti.syphilis_date", "format": "date", "priority": "P2" },
+    { "shortName": "Pt8Line1B3_Remarks", "internalKey": "syphilis_sti.remarks", "format": "text", "priority": "P2" },
+    { "shortName": "Pt8Line1B3_Drug", "internalKey": "syphilis_sti.treatment_drug", "format": "text", "priority": "P3", "requiresSchema": true },
+    { "shortName": "Pt8Line1B3_Dosage", "internalKey": "syphilis_sti.treatment_dosage", "format": "text", "priority": "P3", "requiresSchema": true },
+    { "shortName": "Pt8Line1B3_startDate", "internalKey": "syphilis_sti.treatment_start", "format": "date", "priority": "P3", "requiresSchema": true },
+    { "shortName": "Pt8Line1B3_endDate", "internalKey": "syphilis_sti.treatment_end", "format": "date", "priority": "P3", "requiresSchema": true },
+    { "shortName": "Pt8Line1C2_Remarks", "internalKey": "syphilis_sti.remarks", "format": "text", "priority": "P3" },
+    { "shortName": "Pt8Line2B_Remarks", "internalKey": "physical_mental.remarks", "format": "text", "priority": "P2" },
+    { "shortName": "Pt8Line3B_Remarks", "internalKey": "drug_abuse.remarks", "format": "text", "priority": "P2" },
+    { "shortName": "Pt8Line4_ListOtherMedConditions", "internalKey": "other_conditions.conditions", "format": "text", "priority": "P2" },
+    { "shortName": "Pt7Line4_StreetNumberName", "internalKey": "civil_surgeon.street", "format": "text", "priority": "P1" },
+    { "shortName": "Pt7Line4_AptSteFlrNumber", "internalKey": "civil_surgeon.apt", "format": "text", "priority": "P1" },
+    { "shortName": "Pt7Line4_CityOrTown", "internalKey": "civil_surgeon.city", "format": "text", "priority": "P1" },
+    { "shortName": "Pt7Line4_ZipCode", "internalKey": "civil_surgeon.zip", "format": "text", "priority": "P1" },
+    { "shortName": "Pt7Line6_MobilePhone", "internalKey": "civil_surgeon.phone", "format": "text", "priority": "P1", "slot": "phone_mobile" },
+    { "shortName": "Pt6Line3_DateofExam1", "internalKey": "civil_surgeon.date_signed", "format": "date", "priority": "P1" },
+    { "shortName": "Pt3Line_NameOfLanguage", "internalKey": "interpreter.language", "format": "text", "priority": "P4", "requiresSchema": true },
+    { "shortName": "Pt5Line1_ApplicantFormOfID", "internalKey": "applicant_contact.id_document_type", "format": "text", "priority": "P4", "requiresSchema": true },
+    { "shortName": "Pt5Line2_IDNumber", "internalKey": "applicant_contact.id_document_number", "format": "text", "priority": "P4", "requiresSchema": true },
+    { "shortName": "P10_Remarks", "internalKey": "civil_surgeon.vaccination_remarks", "format": "text", "priority": "P1" },
+    { "shortName": "P10_USCIS_Remarks", "internalKey": "civil_surgeon.summary_remarks", "format": "text", "priority": "P3" }
+  ],
+  "dropdownBindings": [
+    { "shortName": "Pt7Line4_State", "internalKey": "civil_surgeon.state", "priority": "P1" },
+    { "shortName": "Pt9Line2_State", "internalKey": "tb_screening.referral_state", "priority": "P3", "requiresSchema": true },
+    { "shortName": "Pt8Line5B_State", "internalKey": "tb_screening.referral_state", "priority": "P3", "requiresSchema": true }
+  ],
+  "checkboxBindings": [
+    { "widget": "Pt1Line2_Unit", "index": 0, "internalKey": "applicant.unit_type", "when": "apt", "priority": "P3", "requiresSchema": true },
+    { "widget": "Pt1Line2_Unit", "index": 1, "internalKey": "applicant.unit_type", "when": "ste", "priority": "P3", "requiresSchema": true },
+    { "widget": "Pt1Line2_Unit", "index": 2, "internalKey": "applicant.unit_type", "when": "flr", "priority": "P3", "requiresSchema": true },
+    { "widget": "Pt8Line1A6_TBClassification", "index": 0, "internalKey": "tb_screening.classification", "when": "TBD_VERIFY_EXPORT_VALUE", "priority": "P2" },
+    { "widget": "Pt8Line1A6_TBClassification", "index": 1, "internalKey": "tb_screening.classification", "when": "TBD_VERIFY_EXPORT_VALUE", "priority": "P2" },
+    { "widget": "Pt8Line1B1c_SyphilisScreen", "index": 0, "internalKey": "syphilis_sti.syphilis_result", "when": "reactive", "priority": "P2", "verifyExportValue": true },
+    { "widget": "Pt8Line1B1c_SyphilisScreen", "index": 1, "internalKey": "syphilis_sti.syphilis_result", "when": "non_reactive", "priority": "P2", "verifyExportValue": true },
+    { "widget": "P10_Results", "index": 0, "internalKey": "civil_surgeon.vaccinations_complete", "when": "true", "priority": "P1", "verifyExportValue": true },
+    { "widget": "P10_Results", "index": 1, "internalKey": "civil_surgeon.vaccinations_complete", "when": "false", "priority": "P1", "verifyExportValue": true }
+  ],
+  "readOnlyWidgets": [
+    "Pt2Line6_ApplicantSignature",
+    "Pt3Line7_Signature",
+    "Pt4Line8_Signature",
+    "Pt7Line7_CivilSurgeonSignature",
+    "Pt9Line3_Signature"
+  ],
+  "ignoredWidgets": [
+    "PDF417BarCode2"
+  ],
+  "vaccinationGridBindings": {
+    "priority": "P1",
+    "requiresSchema": "I693VaccinationGridRow[]",
+    "rowKeys": ["dt", "td", "mmr", "hib", "hep_b", "varicella", "pneumo", "influenza", "meningococcal", "rotavirus", "hep_a", "hpv", "covid19"],
+    "fieldPatterns": {
+      "dateReceived": "Pt10Line{N}_*DateReceived*",
+      "dateGiven": "Pt10Line*_DateGiven*",
+      "contra": "*_ContraCheckBox*",
+      "insufficient": "*_InsufficientCheckBox*",
+      "notAge": "*_NotAge*",
+      "completeSeries": "*_CompleteSeries"
+    },
+    "estimatedWidgetInstances": 130
+  }
+}

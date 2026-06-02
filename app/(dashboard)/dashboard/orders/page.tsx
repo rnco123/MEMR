@@ -286,6 +286,6 @@ function OrdersPage() {
 }
 
 export default withRoleProtection(OrdersPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF],
+  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
   redirectTo: '/dashboard',
 })

@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Male paramedic avatar">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#ffedd5"/>
+      <stop offset="100%" stop-color="#fdba74"/>
+    </radialGradient>
+    <linearGradient id="vest" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#c2410c"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f0c9a8"/>
+      <stop offset="100%" stop-color="#c9956a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="120" fill="url(#bg)"/>
+  <ellipse cx="128" cy="200" rx="76" ry="52" fill="url(#vest)"/>
+  <rect x="118" y="168" width="20" height="28" rx="2" fill="#fef3c7"/>
+  <path d="M128 168v28M118 182h20" stroke="#dc2626" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="128" cy="108" rx="44" ry="48" fill="url(#skin)"/>
+  <path d="M98 84c2-16 18-26 30-26s28 10 30 26c-8-12-20-16-30-16s-22 4-30 16z" fill="#292524"/>
+  <ellipse cx="112" cy="108" rx="5" ry="6" fill="#1c1917"/>
+  <ellipse cx="144" cy="108" rx="5" ry="6" fill="#1c1917"/>
+  <path d="M118 124q10 8 20 0" stroke="#9a3412" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M88 120h24l-4 24h-16z" fill="#1e3a8a"/>
+  <path d="M144 120h24l4 24h-16z" fill="#1e3a8a"/>
+</svg>

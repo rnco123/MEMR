@@ -9,6 +9,8 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
 import * as Sentry from '@sentry/nextjs'
 import { useT } from '@/lib/i18n'
+import { useUserLocations } from '@/lib/hooks/use-user-locations'
+import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 
 interface Patient {
   id: number // bigint
@@ -21,6 +23,8 @@ interface Patient {
   created_at: string
   encounter_count?: number
   last_visit?: string
+  location_id?: number | null
+  location_title?: string | null
 }
 
 const PAGE_SIZE = 10
@@ -28,6 +32,12 @@ const PAGE_SIZE = 10
 function PatientsHistoryPage() {
   const { user, role } = useAuth()
   const { t } = useT()
+  const {
+    locations: userLocations,
+    unrestricted: locationsUnrestricted,
+    selectedLocationId,
+    setSelectedLocationId,
+  } = useUserLocations()
   const [patients, setPatients] = useState<Patient[]>([])
   const [totalPatientCount, setTotalPatientCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -51,189 +61,22 @@ function PatientsHistoryPage() {
     const pageToUse = pageOverride ?? page
     try {
       setLoading(true)
-      const from = (pageToUse - 1) * PAGE_SIZE
-      const to = from + PAGE_SIZE - 1
-
-      const trimmed = debouncedSearch.trim()
-
-      // Build base query; filters must be applied before .order()/.range() so .or() is available
-      let query = supabase
-        .from('patients')
-        .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
-
-      if (trimmed) {
-        const term = `%${trimmed}%`
-        const numTerm = parseInt(trimmed, 10)
-        if (!isNaN(numTerm)) {
-          query = query.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
-          )
-        } else {
-          query = query.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
-          )
-        }
+      const params = new URLSearchParams({
+        page: String(pageToUse),
+        search: debouncedSearch.trim(),
+        gender: filterGender,
+        sort: sortBy,
+      })
+      if (selectedLocationId !== 'all') {
+        params.set('location_id', String(selectedLocationId))
       }
-      if (filterGender !== 'all') {
-        query = query.eq('gender', filterGender)
+      const res = await fetch(`/api/clinical/patients-history?${params}`, { credentials: 'include' })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json?.error ?? 'Failed to load patients')
       }
-
-      const { data: patientsData, error: patientsError } = await query
-        .order('last_name', { ascending: true })
-        .order('first_name', { ascending: true })
-        .range(from, to)
-
-      if (patientsError) {
-        console.error('Error fetching patients:', patientsError)
-        Sentry.captureException(patientsError, {
-          tags: { component: 'PatientsHistoryPage', action: 'fetchPatients' },
-        })
-        setPatients([])
-        return
-      }
-
-      // Fetch total count with same filters (search on all)
-      let countQuery = supabase.from('patients').select('id', { count: 'exact', head: true })
-      if (trimmed) {
-        const term = `%${trimmed}%`
-        const numTerm = parseInt(trimmed, 10)
-        if (!isNaN(numTerm)) {
-          countQuery = countQuery.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term},id.eq.${numTerm}`
-          )
-        } else {
-          countQuery = countQuery.or(
-            `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
-          )
-        }
-      }
-      if (filterGender !== 'all') {
-        countQuery = countQuery.eq('gender', filterGender)
-      }
-      const { count, error: countError } = await countQuery
-      setTotalPatientCount(countError ? null : (count ?? 0))
-
-      if (!patientsData || patientsData.length === 0) {
-        setPatients([])
-        return
-      }
-
-      const patientIds = patientsData.map(p => p.id)
-      const encounterCounts: Record<number, number> = {}
-      const encounterLastVisits: Record<number, string> = {}
-      const appointmentLastVisits: Record<number, string> = {}
-      const appointmentToPatient: Record<number, number> = {}
-      const countedEncounterIds = new Set<number>()
-
-      // Build appointment -> patient map first, so encounters linked only by appointment_id
-      // are still counted in visit totals.
-      try {
-        const { data: appointmentsForEncounters } = await supabase
-          .from('appointments')
-          .select('id, patient_id')
-          .in('patient_id', patientIds)
-
-        if (appointmentsForEncounters) {
-          appointmentsForEncounters.forEach((appointment) => {
-            if (appointment?.id && appointment?.patient_id) {
-              appointmentToPatient[appointment.id] = appointment.patient_id
-            }
-          })
-        }
-      } catch {
-        // Continue without appointment map fallback
-      }
-
-      try {
-        const { data: encountersData } = await supabase
-          .from('encounters')
-          .select('id, patient_id, appointment_id, created_at')
-          .or(
-            `patient_id.in.(${patientIds.join(',')}),appointment_id.in.(${Object.keys(appointmentToPatient).join(',') || '-1'})`
-          )
-
-        if (encountersData) {
-          encountersData.forEach(encounter => {
-            const resolvedPatientId =
-              encounter.patient_id ?? (encounter.appointment_id ? appointmentToPatient[encounter.appointment_id] : undefined)
-
-            if (!resolvedPatientId || !patientIds.includes(resolvedPatientId)) return
-            if (countedEncounterIds.has(encounter.id)) return
-
-            countedEncounterIds.add(encounter.id)
-            encounterCounts[resolvedPatientId] = (encounterCounts[resolvedPatientId] || 0) + 1
-            if (!encounterLastVisits[resolvedPatientId] || encounter.created_at > encounterLastVisits[resolvedPatientId]) {
-              encounterLastVisits[resolvedPatientId] = encounter.created_at
-            }
-          })
-        }
-      } catch {
-        // Continue without encounter counts
-      }
-
-      try {
-        const { data: appointmentsData } = await supabase
-          .from('appointments')
-          .select('patient_id, appointment_date, appointment_time')
-          .in('patient_id', patientIds)
-
-        if (appointmentsData) {
-          appointmentsData.forEach(appointment => {
-            if (!appointment.patient_id || !appointment.appointment_date) return
-            const dateTimeString = appointment.appointment_time
-              ? `${appointment.appointment_date}T${appointment.appointment_time}`
-              : appointment.appointment_date
-
-            const existing = appointmentLastVisits[appointment.patient_id]
-            if (!existing || new Date(dateTimeString).getTime() > new Date(existing).getTime()) {
-              appointmentLastVisits[appointment.patient_id] = dateTimeString
-            }
-          })
-        }
-      } catch {
-        // Continue without appointment-based last visits
-      }
-
-      const mappedPatients = patientsData.map(patient => {
-        const encounterDate = encounterLastVisits[patient.id] || null
-        const appointmentDate = appointmentLastVisits[patient.id] || null
-
-        let lastVisit: string | null = null
-        if (encounterDate && appointmentDate) {
-          lastVisit =
-            new Date(encounterDate).getTime() >= new Date(appointmentDate).getTime()
-              ? encounterDate
-              : appointmentDate
-        } else {
-          lastVisit = encounterDate || appointmentDate || null
-        }
-
-        return {
-          ...patient,
-          encounter_count: encounterCounts[patient.id] || 0,
-          last_visit: lastVisit,
-        }
-      }) as Patient[]
-
-      // Client-side sort for current page (encounter_count, last_visit need post-fetch)
-      const sorted = [...mappedPatients]
-      switch (sortBy) {
-        case 'name':
-          sorted.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
-          break
-        case 'recent':
-          sorted.sort((a, b) => {
-            if (!a.last_visit && !b.last_visit) return 0
-            if (!a.last_visit) return 1
-            if (!b.last_visit) return -1
-            return new Date(b.last_visit).getTime() - new Date(a.last_visit).getTime()
-          })
-          break
-        case 'visits':
-          sorted.sort((a, b) => (b.encounter_count || 0) - (a.encounter_count || 0))
-          break
-      }
-      setPatients(sorted)
+      setPatients((json.rows ?? []) as Patient[])
+      setTotalPatientCount(json.total ?? 0)
     } catch (error) {
       console.error('Error in fetchPatients:', error)
       Sentry.captureException(error instanceof Error ? error : new Error(String(error)), {
@@ -243,11 +86,11 @@ function PatientsHistoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [supabase, debouncedSearch, filterGender, page, sortBy])
+  }, [debouncedSearch, filterGender, page, sortBy, selectedLocationId])
 
   // Fetch when page, search, filters, or sort change
   useEffect(() => {
-    if (!user || (role !== 'doctor' && role !== 'nurse' && role !== 'staff')) return
+    if (!user || (role !== 'doctor' && role !== 'nurse')) return
     const searchOrFilterChanged = debouncedSearch !== prevSearchRef.current || filterGender !== prevFilterRef.current
     if (searchOrFilterChanged) {
       prevSearchRef.current = debouncedSearch
@@ -257,7 +100,7 @@ function PatientsHistoryPage() {
     } else {
       fetchPatients()
     }
-  }, [user, role, debouncedSearch, filterGender, page, sortBy, fetchPatients])
+  }, [user, role, debouncedSearch, filterGender, page, sortBy, selectedLocationId, fetchPatients])
 
   const handleRefresh = () => {
     setPage(1)
@@ -348,6 +191,20 @@ function PatientsHistoryPage() {
                 <option value="recent">{t('patients.sort_recent')}</option>
                 <option value="visits">{t('patients.sort_visits')}</option>
               </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('location.filter_label')}</span>
+              <LocationFilterSelect
+                locations={userLocations}
+                value={selectedLocationId}
+                onChange={(v) => {
+                  setSelectedLocationId(v)
+                  setPage(1)
+                }}
+                unrestricted={locationsUnrestricted}
+                className="h-11"
+              />
             </div>
 
             <div className="flex items-center gap-2">
@@ -442,6 +299,9 @@ function PatientsHistoryPage() {
                       {patient.gender ? (patient.gender === 'Male' ? t('common.male') : patient.gender === 'Female' ? t('common.female') : patient.gender) : 'N/A'}, {calculateAge(patient.date_of_birth)} {t('patients.years_short')}
                     </p>
                     <p className="text-slate-500 text-xs">{t('common.dob')}: {formatDate(patient.date_of_birth)}</p>
+                    {patient.location_title ? (
+                      <p className="text-slate-500 text-xs mt-0.5">{t('location.column')}: {patient.location_title}</p>
+                    ) : null}
                   </div>
 
                   <div className="lg:col-span-2 flex items-center">
@@ -525,6 +385,6 @@ function PatientsHistoryPage() {
 }
 
 export default withRoleProtection(PatientsHistoryPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF],
+  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
   redirectTo: '/dashboard',
 })

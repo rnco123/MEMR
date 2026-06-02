@@ -4,12 +4,20 @@
  */
 
 import * as Sentry from '@sentry/nextjs'
+import { isAbortError } from '@/lib/is-abort-error'
 
 // Only initialize Sentry if DSN is provided
 if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',
+
+    ignoreErrors: [
+      'AbortError',
+      'signal is aborted without reason',
+      /^AbortError:/,
+      /signal is aborted/i,
+    ],
     
     // Enable logs to be sent to Sentry
     enableLogs: true,
@@ -47,10 +55,10 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     
     // Filter out sensitive data
     beforeSend(event, hint) {
-      // Allow errors in development for testing (remove this check if you want to test)
-      // Uncomment the line below to disable Sentry in development:
-      // if (process.env.NODE_ENV === 'development') { return null }
-      
+      if (isAbortError(hint.originalException) || isAbortError(event.exception?.values?.[0]?.value)) {
+        return null
+      }
+
       // Remove sensitive information
       if (event.request?.url) {
         try {

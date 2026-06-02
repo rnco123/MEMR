@@ -2,7 +2,7 @@
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { UserRole } from '@/lib/roles'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
@@ -25,10 +25,14 @@ type Row = {
 }
 
 function PrescriptionsPage() {
+  const PAGE_SIZE = 20
   const { t } = useT()
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [page, setPage] = useState(1)
   const [form, setForm] = useState({
     patient_id: '',
     encounter_id: '',
@@ -107,6 +111,28 @@ function PrescriptionsPage() {
       setSubmitting(false)
     }
   }
+
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return rows.filter((r) => {
+      if (statusFilter !== 'all' && r.status !== statusFilter) return false
+      if (!q) return true
+      const patientName = r.patients ? `${r.patients.first_name} ${r.patients.last_name}` : ''
+      return `${r.id} ${r.patient_id} ${patientName} ${r.medication_name} ${r.dosage ?? ''} ${r.external_rx_id ?? ''}`
+        .toLowerCase()
+        .includes(q)
+    })
+  }, [rows, search, statusFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, statusFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE))
+  const paginatedRows = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filteredRows.slice(start, start + PAGE_SIZE)
+  }, [filteredRows, page])
 
   return (
     <div className="p-6 lg:p-8 max-w-6xl mx-auto">
@@ -205,13 +231,33 @@ function PrescriptionsPage() {
 
       <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-200">
-          <h2 className="text-base font-semibold text-slate-900">{t('rx.your_rx')}</h2>
+          <h2 className="text-base font-semibold text-slate-900 mb-3">{t('rx.your_rx')}</h2>
+          <div className="flex flex-wrap gap-3">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search patient, medication, id..."
+              className="h-9 min-w-[220px] flex-1 border border-slate-200 rounded-lg px-3 text-sm"
+            />
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-9 border border-slate-200 rounded-lg px-2.5 text-sm"
+            >
+              <option value="all">All statuses</option>
+              {Array.from(new Set(rows.map((r) => r.status))).map((status) => (
+                <option key={status} value={status}>
+                  {status}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         {loading ? (
           <div className="p-12 flex justify-center">
             <LoadingSpinner message={t('rx.loading')} />
           </div>
-        ) : rows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <p className="p-8 text-slate-500 text-sm">{t('rx.empty')}</p>
         ) : (
           <div className="overflow-x-auto">
@@ -227,7 +273,7 @@ function PrescriptionsPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {paginatedRows.map((r) => (
                   <tr key={r.id} className="border-t border-slate-100 text-slate-700 hover:bg-slate-50 transition-colors">
                     <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{new Date(r.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3">
@@ -254,11 +300,35 @@ function PrescriptionsPage() {
           </div>
         )}
       </div>
+      {!loading && filteredRows.length > 0 && (
+        <div className="flex items-center justify-between mt-4 text-sm">
+          <p className="text-slate-500">
+            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredRows.length)} of {filteredRows.length}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+            >
+              Prev
+            </button>
+            <span className="px-3 py-1.5 text-slate-600">Page {page} / {totalPages}</span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 export default withRoleProtection(PrescriptionsPage, {
-  allowedRoles: [UserRole.DOCTOR],
+  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR],
   redirectTo: '/dashboard',
 })

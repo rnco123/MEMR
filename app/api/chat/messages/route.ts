@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
       .insert({
         conversation_id,
         sender_id: user.id,
-        content: content.trim(),
+        content: content.trim() || (files.length > 0 ? '📎 Attachment' : ' '),
       })
       .select()
       .single()

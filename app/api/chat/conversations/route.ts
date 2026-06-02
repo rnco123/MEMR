@@ -1,68 +1,49 @@
-import { createClient } from '@/lib/supabase/server'
-import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
+import { getChatSupabaseClient, resolveChatUser, sortParticipantIds } from '@/lib/chat/auth'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-// Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
 
-// Helper to extract user from custom cookie format
-async function getUserFromCustomCookie(request: NextRequest) {
-  const authCookie = request.cookies.get('supabase.auth.token')
-  if (!authCookie?.value) return null
+async function enrichConversation(
+  supabase: Awaited<ReturnType<typeof getChatSupabaseClient>>,
+  conv: {
+    id: string
+    participant1_id: string
+    participant2_id: string
+    last_message_at?: string | null
+    created_at?: string | null
+    updated_at?: string | null
+  },
+  currentUserId: string
+) {
+  const otherParticipantId =
+    conv.participant1_id === currentUserId ? conv.participant2_id : conv.participant1_id
 
-  try {
-    const base64Part = authCookie.value.replace('base64-', '')
-    const decoded = Buffer.from(base64Part, 'base64').toString('utf-8')
-    const sessionData = JSON.parse(decoded)
-    
-    if (sessionData?.access_token) {
-      const supabase = createSupabaseClient(
-        getSupabaseUrl(),
-        getSupabasePublishableKey(),
-        {
-          global: {
-            headers: {
-              Authorization: `Bearer ${sessionData.access_token}`,
-            },
-          },
-        }
-      )
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (!error && user) return user
-    }
-  } catch (error) {
-    console.error('Error parsing custom cookie:', error)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('uid, full_name, role, email')
+    .eq('uid', otherParticipantId)
+    .maybeSingle()
+
+  return {
+    ...conv,
+    other_participant: {
+      id: otherParticipantId,
+      full_name: profile?.full_name || 'Unknown',
+      role: profile?.role || 'unknown',
+      email: profile?.email || null,
+    },
   }
-  return null
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
-    // Try to get session first (works better with cookies)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    let user = session?.user
-    
+    const user = await resolveChatUser(request)
     if (!user) {
-      // Fallback to getUser if getSession fails
-      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
-      
-      if (getUserResult) {
-        user = getUserResult
-      } else {
-        // If getUser also failed, try parsing custom cookie format as last resort
-        user = (await getUserFromCustomCookie(request)) ?? undefined
-      }
-      
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all conversations for the current user
+    const supabase = await getChatSupabaseClient(request)
+
     const { data: conversations, error } = await supabase
       .from('conversations')
       .select(`
@@ -126,68 +107,65 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = await createClient()
-    
-    // Try to get session first (works better with cookies)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    let user = session?.user
-    
+    const user = await resolveChatUser(request)
     if (!user) {
-      // Fallback to getUser if getSession fails
-      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
-      
-      if (getUserResult) {
-        user = getUserResult
-      } else {
-        // If getUser also failed, try parsing custom cookie format as last resort
-        user = (await getUserFromCustomCookie(request)) ?? undefined
-      }
-      
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const supabase = await getChatSupabaseClient(request)
     const body = await request.json()
-    const { participant2_id } = body
+    const otherUserId = String(body?.participant2_id || '').trim()
 
-    if (!participant2_id) {
+    if (!otherUserId) {
       return NextResponse.json({ error: 'participant2_id is required' }, { status: 400 })
     }
 
-    // Ensure participant1_id < participant2_id
-    const participant1_id = user.id < participant2_id ? user.id : participant2_id
-    const participant2_id_sorted = user.id < participant2_id ? participant2_id : user.id
-
-    // Check if conversation already exists
-    const { data: existingConv } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('participant1_id', participant1_id)
-      .eq('participant2_id', participant2_id_sorted)
-      .single()
-
-    if (existingConv) {
-      return NextResponse.json({ conversation: existingConv })
+    if (otherUserId === user.id) {
+      return NextResponse.json({ error: 'Cannot start a chat with yourself' }, { status: 400 })
     }
 
-    // Create new conversation
+    const [participant1_id, participant2_id_sorted] = sortParticipantIds(user.id, otherUserId)
+
+    const { data: existingConv } = await supabase
+      .from('conversations')
+      .select('id, participant1_id, participant2_id, last_message_at, created_at, updated_at')
+      .eq('participant1_id', participant1_id)
+      .eq('participant2_id', participant2_id_sorted)
+      .maybeSingle()
+
+    if (existingConv) {
+      const enriched = await enrichConversation(supabase, existingConv, user.id)
+      return NextResponse.json({ conversation: enriched })
+    }
+
     const { data: conversation, error } = await supabase
       .from('conversations')
       .insert({
         participant1_id,
         participant2_id: participant2_id_sorted,
       })
-      .select()
+      .select('id, participant1_id, participant2_id, last_message_at, created_at, updated_at')
       .single()
 
     if (error) {
       console.error('Error creating conversation:', error)
+      if (error.code === '23505') {
+        const { data: retry } = await supabase
+          .from('conversations')
+          .select('id, participant1_id, participant2_id, last_message_at, created_at, updated_at')
+          .eq('participant1_id', participant1_id)
+          .eq('participant2_id', participant2_id_sorted)
+          .maybeSingle()
+        if (retry) {
+          const enriched = await enrichConversation(supabase, retry, user.id)
+          return NextResponse.json({ conversation: enriched })
+        }
+      }
       return NextResponse.json({ error: 'Failed to create conversation' }, { status: 500 })
     }
 
-    return NextResponse.json({ conversation })
+    const enriched = await enrichConversation(supabase, conversation, user.id)
+    return NextResponse.json({ conversation: enriched })
   } catch (error) {
     console.error('Error in POST /api/chat/conversations:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

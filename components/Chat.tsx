@@ -27,6 +27,15 @@ interface Conversation {
   }
 }
 
+interface ChatAttachment {
+  id: string
+  message_id: string
+  file_name: string
+  file_type: string
+  file_size: number
+  file_url: string | null
+}
+
 interface Message {
   id: string
   conversation_id: string
@@ -39,6 +48,86 @@ interface Message {
     full_name: string
     role: string
   }
+  attachments?: ChatAttachment[]
+}
+
+const CHAT_FILE_ACCEPT = '.png,.jpg,.jpeg,.pdf,.doc,.docx,image/png,image/jpeg,application/pdf'
+const CHAT_MAX_FILE_BYTES = 10 * 1024 * 1024
+const ATTACHMENT_PLACEHOLDER = '📎 Attachment'
+
+function formatChatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isAttachmentOnlyContent(content: string | undefined, hasAttachments: boolean): boolean {
+  if (!hasAttachments) return false
+  const t = (content || '').trim()
+  return !t || t === ATTACHMENT_PLACEHOLDER
+}
+
+function ChatMessageAttachments({
+  attachments,
+  downloadLabel,
+}: {
+  attachments: ChatAttachment[]
+  downloadLabel: string
+}) {
+  if (!attachments.length) return null
+
+  return (
+    <div className="space-y-2 mt-1">
+      {attachments.map((att) => {
+        const isImage = att.file_type?.startsWith('image/')
+        return (
+          <div key={att.id} className="rounded-lg overflow-hidden border border-slate-200/80 bg-white/90">
+            {isImage && att.file_url ? (
+              <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="block">
+                <img
+                  src={att.file_url}
+                  alt={att.file_name}
+                  className="max-w-full max-h-48 object-contain bg-slate-50"
+                />
+              </a>
+            ) : null}
+            <div
+              className={`px-2.5 py-2 flex items-center gap-2 bg-white ${isImage ? 'border-t border-slate-100' : ''}`}
+            >
+              <svg
+                className="w-4 h-4 shrink-0 text-slate-400"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                />
+              </svg>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-medium truncate text-slate-800">{att.file_name}</p>
+                <p className="text-[10px] text-slate-500">{formatChatFileSize(att.file_size)}</p>
+              </div>
+              {att.file_url && (
+                <a
+                  href={att.file_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[11px] font-semibold shrink-0 px-2 py-1 rounded bg-[#2E6EF3]/10 text-[#2E6EF3] hover:bg-[#2E6EF3]/20"
+                >
+                  {downloadLabel}
+                </a>
+              )}
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 interface ChatProps {
@@ -56,10 +145,12 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [messageText, setMessageText] = useState('')
+  const [pendingFiles, setPendingFiles] = useState<File[]>([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Fetch conversations
   const fetchConversations = useCallback(async () => {
@@ -118,46 +209,79 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     }
   }, [user])
 
-  // Send message
+  const addPendingFiles = useCallback((fileList: FileList | null) => {
+    if (!fileList?.length) return
+    const next: File[] = []
+    for (const file of Array.from(fileList)) {
+      if (file.size > CHAT_MAX_FILE_BYTES) {
+        alert(`${file.name}: max ${CHAT_MAX_FILE_BYTES / 1024 / 1024}MB`)
+        continue
+      }
+      next.push(file)
+    }
+    if (next.length) setPendingFiles((prev) => [...prev, ...next])
+  }, [])
+
+  // Send message (text and/or attachments)
   const sendMessage = useCallback(async () => {
-    if (!messageText.trim() || !selectedConversation || sending) return
+    if (!selectedConversation || sending) return
+    if (!messageText.trim() && pendingFiles.length === 0) return
 
     setSending(true)
     try {
-      const response = await fetch('/api/chat/messages', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          conversation_id: selectedConversation.id,
-          content: messageText,
-        }),
-      })
+      let response: Response
+      if (pendingFiles.length > 0) {
+        const form = new FormData()
+        form.append('conversation_id', selectedConversation.id)
+        form.append('content', messageText.trim())
+        pendingFiles.forEach((file) => form.append('files', file))
+        response = await fetch('/api/chat/messages', {
+          method: 'POST',
+          credentials: 'include',
+          body: form,
+        })
+      } else {
+        response = await fetch('/api/chat/messages', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversation_id: selectedConversation.id,
+            content: messageText,
+          }),
+        })
+      }
 
       if (response.ok) {
         const data = await response.json()
-        setMessages(prev => [...prev, data.message])
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === data.message?.id)) return prev
+          return [...prev, data.message]
+        })
         setMessageText('')
-        // Refresh conversations to update last_message_at
+        setPendingFiles([])
+        if (fileInputRef.current) fileInputRef.current.value = ''
         fetchConversations()
+      } else {
+        const err = await response.json().catch(() => ({}))
+        alert(err.error || 'Failed to send message')
+        console.error('Error sending message:', err.error || response.statusText)
       }
     } catch (error) {
       console.error('Error sending message:', error)
+      alert('Failed to send message')
     } finally {
       setSending(false)
     }
-  }, [messageText, selectedConversation, sending, fetchConversations])
+  }, [messageText, pendingFiles, selectedConversation, sending, fetchConversations])
 
-  // Start new conversation
+  // Start new 1:1 conversation
   const startConversation = useCallback(async (userId: string) => {
     if (!user) return
+    if (userId === user.id) return
 
     try {
-      // Check if conversation already exists
-      const existingConv = conversations.find(
-        conv => conv.other_participant.id === userId
-      )
-
+      const existingConv = conversations.find((conv) => conv.other_participant.id === userId)
       if (existingConv) {
         setSelectedConversation(existingConv)
         setActiveView('conversations')
@@ -165,7 +289,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
         return
       }
 
-      // Create new conversation
       const response = await fetch('/api/chat/conversations', {
         method: 'POST',
         credentials: 'include',
@@ -173,29 +296,28 @@ export function Chat({ isOpen, onClose }: ChatProps) {
         body: JSON.stringify({ participant2_id: userId }),
       })
 
-      if (response.ok) {
-        const data = await response.json()
-        // Fetch updated conversations list
-        const updatedResponse = await fetch('/api/chat/conversations', {
-          credentials: 'include',
-        })
-        if (updatedResponse.ok) {
-          const updatedData = await updatedResponse.json()
-          const newConv = updatedData.conversations?.find(
-            (conv: Conversation) => conv.id === data.conversation.id
-          )
-          if (newConv) {
-            setConversations(updatedData.conversations || [])
-            setSelectedConversation(newConv)
-            setActiveView('conversations')
-            fetchMessages(newConv.id)
-          }
-        }
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        console.error('Error starting conversation:', data.error || response.statusText)
+        return
       }
+
+      const conv = data.conversation as Conversation | undefined
+      if (!conv?.id) return
+
+      setConversations((prev) => {
+        const without = prev.filter((c) => c.id !== conv.id)
+        return [conv, ...without]
+      })
+      setSelectedConversation(conv)
+      setActiveView('conversations')
+      setMessages([])
+      fetchMessages(conv.id)
+      void fetchConversations()
     } catch (error) {
       console.error('Error starting conversation:', error)
     }
-  }, [user, conversations, fetchMessages])
+  }, [user, conversations, fetchMessages, fetchConversations])
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -234,9 +356,24 @@ export function Chat({ isOpen, onClose }: ChatProps) {
           filter: `conversation_id=eq.${selectedConversation.id}`,
         },
         (payload) => {
-          // Fetch updated messages when new message arrives
-          fetchMessages(selectedConversation.id)
-          fetchConversations()
+          const row = payload.new as Message | undefined
+          if (row?.id && row.sender_id !== user.id) {
+            setMessages((prev) => {
+              if (prev.some((m) => m.id === row.id)) return prev
+              return [
+                ...prev,
+                {
+                  ...row,
+                  sender: {
+                    id: row.sender_id,
+                    full_name: selectedConversation.other_participant.full_name,
+                    role: selectedConversation.other_participant.role,
+                  },
+                },
+              ]
+            })
+          }
+          void fetchConversations()
         }
       )
       .subscribe()
@@ -321,7 +458,10 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </button>
-            <h2 className="text-lg font-bold text-slate-900">{t('chat.title')}</h2>
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">{t('chat.title')}</h2>
+              <p className="text-xs text-slate-500">{t('chat.one_on_one_hint')}</p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -443,7 +583,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                         </button>
                       </div>
                     ) : (
-                      users.map((userItem) => (
+                      users
+                        .filter((userItem) => userItem.uid !== user?.id)
+                        .map((userItem) => (
                         <button
                           key={userItem.uid}
                           onClick={() => startConversation(userItem.uid)}
@@ -498,12 +640,14 @@ export function Chat({ isOpen, onClose }: ChatProps) {
               >
                 {messages.map((message) => {
                   const isOwn = message.sender_id === user?.id
+                  const attachments = message.attachments ?? []
+                  const showText = !isAttachmentOnlyContent(message.content, attachments.length > 0)
                   return (
                     <div
                       key={message.id}
                       className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 shadow-sm ${
+                      <div className={`max-w-[min(75%,320px)] rounded-2xl px-4 py-2.5 shadow-sm ${
                         isOwn
                           ? 'bg-[#2E6EF3] text-white rounded-tr-sm'
                           : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
@@ -513,9 +657,18 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                             {message.sender.full_name}
                           </p>
                         )}
-                        {message.content?.trim() && (
+                        {showText && message.content?.trim() && (
                           <p className="text-sm leading-relaxed">{message.content}</p>
                         )}
+                        {!showText && attachments.length > 0 && (
+                          <p className={`text-sm ${isOwn ? 'text-white/90' : 'text-slate-600'}`}>
+                            {t('chat.attachment_only')}
+                          </p>
+                        )}
+                        <ChatMessageAttachments
+                          attachments={attachments}
+                          downloadLabel={t('chat.download_attachment')}
+                        />
                         <div className={`flex items-center gap-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
                           <span className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-slate-400'}`} title={new Date(message.created_at).toLocaleString()}>
                             {formatTime(message.created_at)}
@@ -533,12 +686,61 @@ export function Chat({ isOpen, onClose }: ChatProps) {
 
               {/* Message Input */}
               <div className="p-3 border-t border-slate-200 bg-white">
-                <div className="flex gap-2">
+                {pendingFiles.length > 0 && (
+                  <div className="mb-2 flex flex-wrap gap-2">
+                    {pendingFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="inline-flex items-center gap-2 max-w-full px-2.5 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-700"
+                      >
+                        <span className="truncate max-w-[180px]">{file.name}</span>
+                        <span className="text-slate-400 shrink-0">({formatChatFileSize(file.size)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                          className="text-slate-500 hover:text-red-600 shrink-0"
+                          aria-label={t('chat.remove_attachment')}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <p className="text-[10px] text-slate-400 mb-2">{t('chat.attachments_hint')}</p>
+                <div className="flex gap-2 items-end">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={CHAT_FILE_ACCEPT}
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      addPendingFiles(e.target.files)
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending}
+                    title={t('chat.attach_file')}
+                    className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-[#2E6EF3] transition-colors disabled:opacity-50"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                      />
+                    </svg>
+                  </button>
                   <input
                     type="text"
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
-                    onKeyPress={(e) => {
+                    onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
                         sendMessage()
@@ -549,8 +751,9 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                     disabled={sending}
                   />
                   <button
+                    type="button"
                     onClick={sendMessage}
-                    disabled={!messageText.trim() || sending}
+                    disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
                     className="h-11 px-5 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {sending ? t('common.sending') : t('common.send')}

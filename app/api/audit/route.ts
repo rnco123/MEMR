@@ -23,13 +23,12 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json()
-    const { action, resource_type, resource_id, metadata } = body
+    const { action, resource_type, resource_id, metadata, page_url } = body
 
     if (!action || !resource_type) {
       return handleApiError(new Error('Missing required fields: action, resource_type'))
     }
 
-    // Get request headers for IP and user agent
     const ipAddress =
       request.headers.get('x-forwarded-for') ||
       request.headers.get('x-real-ip') ||
@@ -37,15 +36,25 @@ export async function POST(request: NextRequest) {
       'unknown'
     const userAgent = request.headers.get('user-agent') || 'unknown'
 
-    // Insert audit log
+    // Fetch user profile snapshot for richer audit trail
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('full_name, email, role')
+      .eq('uid', user.id)
+      .maybeSingle()
+
     const { error } = await supabase.from('audit_logs').insert({
       user_id: user.id,
+      user_name: profile?.full_name ?? null,
+      user_email: profile?.email ?? user.email ?? null,
+      user_role: profile?.role ?? null,
       action: action as AuditAction,
       resource_type: resource_type as ResourceType,
       resource_id: resource_id?.toString() || null,
       ip_address: ipAddress?.split(',')[0]?.trim() || 'unknown',
       user_agent: userAgent,
       metadata: metadata || null,
+      page_url: page_url || null,
     })
 
     if (error) {

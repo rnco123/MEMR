@@ -97,7 +97,8 @@ export function checkXss(url: string): { valid: boolean; error?: string } {
     /<script[^>]*>.*?<\/script>/gi,
     /<iframe[^>]*>.*?<\/iframe>/gi,
     /javascript:/gi,
-    /on\w+\s*=/gi,
+    // HTML event handlers only — avoid false positives on query keys like contactFilter=
+    /(?<![a-zA-Z])on[a-zA-Z]+\s*=/gi,
     /<img[^>]+src[^>]*=.*javascript:/gi,
   ]
 

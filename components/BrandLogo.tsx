@@ -18,7 +18,7 @@ export function BrandLogo({ variant = 'header', className = '' }: BrandLogoProps
 
   return (
     <div
-      className={`inline-flex shrink-0 bg-white shadow-lg ${paddingClass} ${roundedClass} ${className}`}
+      className={`inline-flex shrink-0 bg-white shadow-md ${paddingClass} ${roundedClass} ${className}`}
     >
       <Image
         src="/myclinic-md-logo.png"

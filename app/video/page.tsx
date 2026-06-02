@@ -497,7 +497,7 @@ function VideoPage() {
             `Doctor has concluded the consultation. Returning to virtual waiting room...`
           )
           setTimeout(() => {
-            const dest = role === 'nurse' || role === 'staff'
+            const dest = role === 'nurse'
               ? `/dashboard/nurse-flowboard?encounter=${encounterIdNum}`
               : `/dashboard/flowboard?encounter=${encounterIdNum}`
             router.push(dest)
@@ -845,7 +845,7 @@ function VideoPage() {
     const items = [...transcriptBufferRef.current]
     const ids = await flushTranscript(encounterIdNum)
     const dest =
-      role === 'nurse' || role === 'staff'
+      role === 'nurse'
         ? `/dashboard/nurse-flowboard?encounter=${encounterId}`
         : `/dashboard/flowboard?encounter=${encounterId}`
     const go = () => router.push(dest)
@@ -1072,7 +1072,7 @@ function VideoPage() {
         onConnect={handleConnect}
         onCancel={() => {
           const dest =
-            role === 'nurse' || role === 'staff'
+            role === 'nurse'
               ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
               : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
           router.push(dest)
@@ -1372,7 +1372,7 @@ function VideoPage() {
         <button
           onClick={() => {
             const dest =
-              role === 'nurse' || role === 'staff'
+              role === 'nurse'
                 ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
                 : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
             router.push(dest)
@@ -1729,7 +1729,7 @@ function VideoPage() {
           <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
             <button
               onClick={() => {
-                const dest = (role === 'nurse' || role === 'staff')
+                const dest = role === 'nurse'
                   ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
                   : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
                 router.push(dest)
@@ -1757,6 +1757,6 @@ function VideoPage() {
 }
 
 export default withRoleProtection(VideoPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE, UserRole.STAFF],
+  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE],
   redirectTo: '/dashboard',
 })
