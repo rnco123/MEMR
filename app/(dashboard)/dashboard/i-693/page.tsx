@@ -121,16 +121,6 @@ function I693PageInner() {
             </button>
             <button
               type="button"
-              onClick={() => selectedId && setTabAndUrl('form')}
-              disabled={!selectedId}
-              className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 ${
-                tab === 'form' ? 'bg-[#2E6EF3] text-white' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {t('i693.tab_form')}
-            </button>
-            <button
-              type="button"
               onClick={() => selectedId && setTabAndUrl('pdf')}
               disabled={!selectedId}
               className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 ${

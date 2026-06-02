@@ -1,29 +1,121 @@
 'use client'
 
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { Rnd } from 'react-rnd'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import type { I693FormData } from '@/lib/i693/types'
+import { EMPTY_I693_FORM } from '@/lib/i693/types'
+import { extractFormDataFromApi, parseFormDataFromApi } from '@/lib/i693/form-api'
+import {
+  applyI693FormToPdfDocument,
+  extractI693FormFromPdfDocument,
+} from '@/lib/i693/pdfjs-form-bridge'
+import {
+  type I693Annotation,
+  type I693CrossAnnotation,
+  type I693ImageAnnotation,
+  type I693TextAnnotation,
+  parseI693Annotations,
+} from '@/lib/i693/annotations'
 import { useT } from '@/lib/i18n'
 
+const PDF_URL = '/forms/i-693-template.pdf'
 const DEFAULT_SCALE = 1.2
 const MIN_SCALE = 0.75
 const MAX_SCALE = 2
+const ANNOTATION_TEXT_SIZE = 12
 
 type Props = {
   encounterId: number
   patientName?: string
 }
 
+type ViewMode = 'editor' | 'preview'
+type AnnotationTool = 'none' | 'text' | 'cross' | 'image'
+
+type PageAnnotationHost = {
+  page: number
+  width: number
+  height: number
+  hostEl: HTMLDivElement
+}
+
+/** Minimal link service for pdf.js annotation layers. */
+class PdfLinkService {
+  pagesCount: number
+  page = 1
+  rotation = 0
+  externalLinkEnabled = true
+  constructor(pagesCount: number) {
+    this.pagesCount = pagesCount
+  }
+  getDestinationHash() {
+    return ''
+  }
+  getAnchorUrl() {
+    return ''
+  }
+  setHash() {}
+  executeNamedAction() {}
+  executeSetOCGState() {}
+  onPageShow() {}
+  cachePageRef() {}
+  isPageVisible() {
+    return true
+  }
+  isPageCached() {
+    return true
+  }
+  isInPresentationMode = false
+  goToDestination() {}
+  goToPage(page: number) {
+    this.page = page
+  }
+  addLinkAttributes() {}
+}
+
+function uid(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function toPercent(valuePx: number, totalPx: number): number {
+  if (!totalPx) return 0
+  return Math.max(0, Math.min(1, valuePx / totalPx))
+}
+
+function toPx(percent: number, totalPx: number): number {
+  return Math.max(0, percent) * totalPx
+}
+
 export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const { t } = useT()
   const [loading, setLoading] = useState(true)
-  const [formReady, setFormReady] = useState(false)
+  const [mode, setMode] = useState<ViewMode>('editor')
   const [pdfReady, setPdfReady] = useState(false)
-  const [pdfLoading, setPdfLoading] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [downloadLoading, setDownloadLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [scale, setScale] = useState(DEFAULT_SCALE)
-  const hostRef = useRef<HTMLDivElement>(null)
+  const [dirty, setDirty] = useState(false)
+  const [editorTick, setEditorTick] = useState(0)
+  const [previewTick, setPreviewTick] = useState(0)
+  const [tool, setTool] = useState<AnnotationTool>('none')
+  const [form, setForm] = useState<I693FormData>(EMPTY_I693_FORM)
+  const [annotations, setAnnotations] = useState<I693Annotation[]>([])
+  const [pageHosts, setPageHosts] = useState<PageAnnotationHost[]>([])
+  const editorHostRef = useRef<HTMLDivElement>(null)
+  const previewHostRef = useRef<HTMLDivElement>(null)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const pendingImageUrlRef = useRef<string | null>(null)
+  const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
+  const formRef = useRef(form)
+  const annotationsRef = useRef(annotations)
   const bytesRef = useRef<Uint8Array | null>(null)
+  formRef.current = form
+  annotationsRef.current = annotations
 
   const fetchFilledPdfBytes = useCallback(async (): Promise<Uint8Array> => {
     const res = await fetch(`/api/encounters/${encounterId}/i693/pdf`, {
@@ -37,87 +129,316 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     return new Uint8Array(await res.arrayBuffer())
   }, [encounterId])
 
-  const renderPdf = useCallback(async (bytes: Uint8Array, nextScale: number) => {
-    const host = hostRef.current
-    if (!host) {
-      throw new Error('PDF preview container not mounted')
-    }
+  const loadFormAndAnnotations = useCallback(async () => {
+    const res = await fetch(`/api/encounters/${encounterId}/i693`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error || 'Failed to load I-693')
+    const raw =
+      extractFormDataFromApi(json) ??
+      (json.submission ? extractFormDataFromApi(json.submission) : null) ??
+      json.form_data
+    const parsed = parseFormDataFromApi(raw)
+    setForm(parsed)
+    formRef.current = parsed
+    setAnnotations(parseI693Annotations(json.annotations ?? json.submission?.annotations))
+    setDirty(false)
+  }, [encounterId])
 
-    setPdfReady(false)
-    const pdfjs = await import('pdfjs-dist')
-    pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+  const syncFormFromPdf = useCallback(async () => {
+    const pdf = pdfRef.current
+    if (!pdf) return
+    const next = await extractI693FormFromPdfDocument(pdf, formRef.current)
+    setForm(next)
+    formRef.current = next
+    setDirty(true)
+  }, [])
 
-    const pdf = await pdfjs.getDocument({ data: bytes }).promise
-    host.innerHTML = ''
+  const saveCurrent = useCallback(
+    async (showToast: boolean): Promise<boolean> => {
+      if (pdfRef.current) {
+        const next = await extractI693FormFromPdfDocument(pdfRef.current, formRef.current)
+        setForm(next)
+        formRef.current = next
+      }
 
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum)
-      const viewport = page.getViewport({ scale: nextScale })
+      setSaving(true)
+      try {
+        const res = await fetch(`/api/encounters/${encounterId}/i693`, {
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            form_data: formRef.current,
+            annotations: annotationsRef.current,
+            status: 'draft',
+          }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Save failed')
+        setDirty(false)
+        if (showToast) toast.success(t('i693.saved'))
+        return true
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Save failed')
+        return false
+      } finally {
+        setSaving(false)
+      }
+    },
+    [encounterId, t]
+  )
 
-      const wrap = document.createElement('div')
-      wrap.className = 'flex flex-col items-center gap-2 w-full mb-8'
-      const label = document.createElement('p')
-      label.className = 'text-xs font-medium text-slate-500 self-start'
-      label.textContent = `${t('i693.pdf_page')} ${pageNum} / ${pdf.numPages}`
-      wrap.appendChild(label)
+  const renderEditorPdf = useCallback(
+    async (data: I693FormData) => {
+      const host = editorHostRef.current
+      if (!host) return
+      setPdfReady(false)
 
-      const pageBox = document.createElement('div')
-      pageBox.className = 'relative shadow-lg bg-white ring-1 ring-slate-200/80'
-      pageBox.style.width = `${viewport.width}px`
-      pageBox.style.height = `${viewport.height}px`
+      const pdfjs = await import('pdfjs-dist')
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
-      const canvas = document.createElement('canvas')
-      canvas.width = viewport.width
-      canvas.height = viewport.height
-      canvas.className = 'block'
-      const ctx = canvas.getContext('2d')
-      if (!ctx) continue
+      const pdf = await pdfjs.getDocument(PDF_URL).promise
+      pdfRef.current = pdf
+      await applyI693FormToPdfDocument(pdf, data)
 
-      const annotationLayerDiv = document.createElement('div')
-      annotationLayerDiv.className = 'annotationLayer absolute inset-0'
+      host.innerHTML = ''
+      const linkService = new PdfLinkService(pdf.numPages)
+      const nextPageHosts: PageAnnotationHost[] = []
 
-      pageBox.appendChild(canvas)
-      pageBox.appendChild(annotationLayerDiv)
-      wrap.appendChild(pageBox)
-      host.appendChild(wrap)
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum)
+        const viewport = page.getViewport({ scale: DEFAULT_SCALE })
 
-      await page.render({
-        canvasContext: ctx,
-        viewport,
-        annotationMode: pdfjs.AnnotationMode.DISABLE,
-      }).promise
-    }
+        const wrap = document.createElement('div')
+        wrap.className = 'flex flex-col items-center gap-2 w-full mb-8'
+        const label = document.createElement('p')
+        label.className = 'text-xs font-medium text-slate-500 self-start'
+        label.textContent = `${t('i693.pdf_page')} ${pageNum} / ${pdf.numPages}`
+        wrap.appendChild(label)
 
-    setPdfReady(true)
-  }, [t])
+        const pageBox = document.createElement('div')
+        pageBox.className = 'relative shadow-lg bg-white ring-1 ring-slate-200/80'
+        pageBox.style.width = `${viewport.width}px`
+        pageBox.style.height = `${viewport.height}px`
+
+        const canvas = document.createElement('canvas')
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        canvas.className = 'block'
+        const ctx = canvas.getContext('2d')
+        if (!ctx) continue
+
+        const formLayerDiv = document.createElement('div')
+        formLayerDiv.className = 'annotationLayer absolute inset-0'
+
+        const annHostDiv = document.createElement('div')
+        annHostDiv.className = 'absolute inset-0 z-20'
+        annHostDiv.style.pointerEvents = 'none'
+
+        pageBox.appendChild(canvas)
+        pageBox.appendChild(formLayerDiv)
+        pageBox.appendChild(annHostDiv)
+        wrap.appendChild(pageBox)
+        host.appendChild(wrap)
+
+        await page.render({
+          canvasContext: ctx,
+          viewport,
+          annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS,
+        }).promise
+
+        const annotationsList = await page.getAnnotations()
+        const layer = new pdfjs.AnnotationLayer({
+          div: formLayerDiv,
+          page,
+          viewport,
+          accessibilityManager: null,
+          annotationCanvasMap: null,
+          annotationEditorUIManager: null,
+          structTreeLayer: null,
+        })
+        await layer.render({
+          viewport,
+          div: formLayerDiv,
+          page,
+          annotations: annotationsList,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          linkService: linkService as any,
+          renderForms: true,
+          annotationStorage: pdf.annotationStorage,
+        })
+        formLayerDiv.addEventListener('change', () => void syncFormFromPdf())
+        formLayerDiv.addEventListener('input', () => void syncFormFromPdf())
+
+        nextPageHosts.push({
+          page: pageNum,
+          width: viewport.width,
+          height: viewport.height,
+          hostEl: annHostDiv,
+        })
+      }
+
+      setPageHosts(nextPageHosts)
+      setPdfReady(true)
+    },
+    [syncFormFromPdf, t]
+  )
+
+  const renderPreviewPdf = useCallback(
+    async (bytes: Uint8Array, nextScale: number) => {
+      const host = previewHostRef.current
+      if (!host) return
+
+      setPdfReady(false)
+      const pdfjs = await import('pdfjs-dist')
+      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+      const pdfData = new Uint8Array(bytes)
+      const pdf = await pdfjs.getDocument({ data: pdfData }).promise
+      host.innerHTML = ''
+      const linkService = new PdfLinkService(pdf.numPages)
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum)
+        const viewport = page.getViewport({ scale: nextScale })
+
+        const wrap = document.createElement('div')
+        wrap.className = 'flex flex-col items-center gap-2 w-full mb-8'
+        const label = document.createElement('p')
+        label.className = 'text-xs font-medium text-slate-500 self-start'
+        label.textContent = `${t('i693.pdf_page')} ${pageNum} / ${pdf.numPages}`
+        wrap.appendChild(label)
+
+        const pageBox = document.createElement('div')
+        pageBox.className = 'relative shadow-lg bg-white ring-1 ring-slate-200/80'
+        pageBox.style.width = `${viewport.width}px`
+        pageBox.style.height = `${viewport.height}px`
+
+        const canvas = document.createElement('canvas')
+        canvas.width = viewport.width
+        canvas.height = viewport.height
+        canvas.className = 'block'
+        const ctx = canvas.getContext('2d')
+        if (!ctx) continue
+
+        const annotationLayerDiv = document.createElement('div')
+        annotationLayerDiv.className = 'annotationLayer absolute inset-0 pointer-events-none'
+        annotationLayerDiv.style.pointerEvents = 'none'
+
+        pageBox.appendChild(canvas)
+        pageBox.appendChild(annotationLayerDiv)
+        wrap.appendChild(pageBox)
+        host.appendChild(wrap)
+
+        await page.render({
+          canvasContext: ctx,
+          viewport,
+          annotationMode: pdfjs.AnnotationMode.ENABLE_FORMS,
+        }).promise
+
+        const annotationsList = await page.getAnnotations()
+        const layer = new pdfjs.AnnotationLayer({
+          div: annotationLayerDiv,
+          page,
+          viewport,
+          accessibilityManager: null,
+          annotationCanvasMap: null,
+          annotationEditorUIManager: null,
+          structTreeLayer: null,
+        })
+        await layer.render({
+          viewport,
+          div: annotationLayerDiv,
+          page,
+          annotations: annotationsList,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          linkService: linkService as any,
+          renderForms: true,
+          annotationStorage: pdf.annotationStorage,
+        })
+
+        const controls = annotationLayerDiv.querySelectorAll('input, select, textarea')
+        controls.forEach((el) => {
+          if (
+            el instanceof HTMLInputElement ||
+            el instanceof HTMLTextAreaElement ||
+            el instanceof HTMLSelectElement
+          ) {
+            el.disabled = true
+          }
+          el.setAttribute('tabindex', '-1')
+          ;(el as HTMLElement).style.pointerEvents = 'none'
+        })
+      }
+
+      setPdfReady(true)
+    },
+    [t]
+  )
 
   const refreshPreview = useCallback(async () => {
-    setPdfLoading(true)
+    if (mode !== 'preview') return
+    setPreviewLoading(true)
     try {
+      const ok = await saveCurrent(true)
+      if (!ok) return
       const bytes = await fetchFilledPdfBytes()
       bytesRef.current = bytes
-      setFormReady(true)
-      await renderPdf(bytes, scale)
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'PDF preview failed to load')
+      setPreviewTick((n) => n + 1)
     } finally {
-      setLoading(false)
-      setPdfLoading(false)
+      setPreviewLoading(false)
     }
-  }, [fetchFilledPdfBytes, renderPdf, scale])
+  }, [fetchFilledPdfBytes, mode, saveCurrent])
 
   useEffect(() => {
-    void refreshPreview()
-  }, [refreshPreview])
+    let cancelled = false
+    void (async () => {
+      setLoading(true)
+      try {
+        await loadFormAndAnnotations()
+        if (!cancelled) setEditorTick((n) => n + 1)
+      } catch (e) {
+        if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load I-693')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [loadFormAndAnnotations])
 
   useEffect(() => {
-    if (!formReady || !bytesRef.current) return
-    const host = hostRef.current
+    if (mode !== 'editor' || editorTick === 0) return
+    const host = editorHostRef.current
     if (!host) return
 
     void (async () => {
       try {
-        await renderPdf(bytesRef.current!, scale)
+        await renderEditorPdf(formRef.current)
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'PDF editor failed to load')
+      }
+    })()
+
+    return () => {
+      host.innerHTML = ''
+      pdfRef.current = null
+      setPageHosts([])
+      setPdfReady(false)
+    }
+  }, [editorTick, mode, renderEditorPdf])
+
+  useEffect(() => {
+    if (mode !== 'preview' || previewTick === 0 || !bytesRef.current) return
+    const host = previewHostRef.current
+    if (!host) return
+
+    void (async () => {
+      try {
+        await renderPreviewPdf(bytesRef.current!, scale)
       } catch (e) {
         toast.error(e instanceof Error ? e.message : 'PDF preview failed to load')
       }
@@ -127,10 +448,33 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       host.innerHTML = ''
       setPdfReady(false)
     }
-  }, [formReady, renderPdf, scale])
+  }, [mode, previewTick, renderPreviewPdf, scale])
 
-  const downloadPdf = async () => {
-    setPdfLoading(true)
+  const switchToPreview = useCallback(async () => {
+    if (mode === 'preview') return
+    setPreviewLoading(true)
+    try {
+      const ok = await saveCurrent(true)
+      if (!ok) return
+      const bytes = await fetchFilledPdfBytes()
+      bytesRef.current = bytes
+      setMode('preview')
+      setPreviewTick((n) => n + 1)
+      setTool('none')
+    } finally {
+      setPreviewLoading(false)
+    }
+  }, [fetchFilledPdfBytes, mode, saveCurrent])
+
+  const switchToEditor = useCallback(() => {
+    if (mode === 'editor') return
+    setMode('editor')
+    setEditorTick((n) => n + 1)
+  }, [mode])
+
+  const downloadPdf = useCallback(async () => {
+    if (mode !== 'preview') return
+    setDownloadLoading(true)
     try {
       const bytes = await fetchFilledPdfBytes()
       const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
@@ -144,11 +488,288 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'PDF failed')
     } finally {
-      setPdfLoading(false)
+      setDownloadLoading(false)
     }
-  }
+  }, [encounterId, fetchFilledPdfBytes, mode, t])
 
-  if (loading && !formReady) {
+  const onPickImage = useCallback(() => {
+    imageInputRef.current?.click()
+  }, [])
+
+  const onImageSelected = useCallback((file: File | null) => {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        pendingImageUrlRef.current = reader.result
+        setTool('image')
+        toast.success('Image selected. Click on page to place it.')
+      }
+    }
+    reader.readAsDataURL(file)
+  }, [])
+
+  const addAnnotationAt = useCallback(
+    (page: number, pageWidth: number, pageHeight: number, xPx: number, yPx: number) => {
+      if (tool === 'none') return
+      const xPercent = toPercent(xPx, pageWidth)
+      const yPercent = toPercent(yPx, pageHeight)
+
+      let ann: I693Annotation | null = null
+      if (tool === 'text') {
+        ann = {
+          id: uid(),
+          page,
+          type: 'text',
+          xPercent,
+          yPercent,
+          widthPercent: 0.2,
+          heightPercent: 0.028,
+          value: 'Text',
+        }
+      } else if (tool === 'cross') {
+        ann = {
+          id: uid(),
+          page,
+          type: 'cross',
+          xPercent,
+          yPercent,
+          sizePercent: 0.03,
+        }
+      } else if (tool === 'image' && pendingImageUrlRef.current) {
+        ann = {
+          id: uid(),
+          page,
+          type: 'image',
+          xPercent,
+          yPercent,
+          widthPercent: 0.18,
+          heightPercent: 0.08,
+          imageUrl: pendingImageUrlRef.current,
+        }
+        pendingImageUrlRef.current = null
+      }
+
+      if (!ann) return
+      setAnnotations((prev) => [...prev, ann])
+      setDirty(true)
+      if (tool !== 'text') setTool('none')
+    },
+    [tool]
+  )
+
+  const updateAnnotation = useCallback((id: string, updater: (a: I693Annotation) => I693Annotation) => {
+    setAnnotations((prev) => prev.map((a) => (a.id === id ? updater(a) : a)))
+    setDirty(true)
+  }, [])
+
+  const removeAnnotation = useCallback((id: string) => {
+    setAnnotations((prev) => prev.filter((a) => a.id !== id))
+    setDirty(true)
+  }, [])
+
+  const editorAnnotationPortals = useMemo(() => {
+    if (mode !== 'editor') return null
+    return pageHosts.map((pageHost) => {
+      const pageAnnotations = annotations.filter((a) => a.page === pageHost.page)
+      const layer = (
+        <div className="absolute inset-0 z-30" style={{ pointerEvents: 'none' }}>
+          {tool !== 'none' && (
+            <div
+              className="absolute inset-0"
+              style={{ pointerEvents: 'auto' }}
+              onMouseDown={(e) => {
+                if (e.target !== e.currentTarget) return
+                const rect = (e.currentTarget as HTMLDivElement).getBoundingClientRect()
+                addAnnotationAt(
+                  pageHost.page,
+                  pageHost.width,
+                  pageHost.height,
+                  e.clientX - rect.left,
+                  e.clientY - rect.top
+                )
+              }}
+            />
+          )}
+          {pageAnnotations.map((a) => {
+            if (a.type === 'text') {
+              const x = toPx(a.xPercent, pageHost.width)
+              const y = toPx(a.yPercent, pageHost.height)
+              const w = Math.max(60, toPx(a.widthPercent, pageHost.width))
+              const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+              return (
+                <Rnd
+                  key={a.id}
+                  position={{ x, y }}
+                  size={{ width: w, height: h }}
+                  bounds="parent"
+                  dragHandleClassName="ann-move-handle"
+                  style={{ pointerEvents: 'auto', zIndex: 40 }}
+                  onDragStop={(_e, d) =>
+                    updateAnnotation(a.id, (prev) => ({
+                      ...(prev as I693TextAnnotation),
+                      xPercent: toPercent(d.x, pageHost.width),
+                      yPercent: toPercent(d.y, pageHost.height),
+                    }))
+                  }
+                  onResizeStop={(_e, _dir, ref, _delta, position) =>
+                    updateAnnotation(a.id, (prev) => ({
+                      ...(prev as I693TextAnnotation),
+                      xPercent: toPercent(position.x, pageHost.width),
+                      yPercent: toPercent(position.y, pageHost.height),
+                      widthPercent: toPercent(ref.offsetWidth, pageHost.width),
+                      heightPercent: toPercent(ref.offsetHeight, pageHost.height),
+                    }))
+                  }
+                >
+                  <div className="h-full w-full bg-white/80 border border-sky-500 rounded-sm shadow-sm p-1">
+                    <div className="absolute -top-8 left-0 flex items-center gap-1 bg-white/95 border border-slate-200 rounded px-2 py-1 text-sm">
+                      <button type="button" className="ann-move-handle cursor-move px-2 leading-none" title="Move">
+                        <span aria-hidden>↕</span>
+                      </button>
+                      <span className="px-2 text-slate-600 leading-none" title="Resize from box corner">↘</span>
+                      <button
+                        type="button"
+                        className="px-2 text-rose-600 leading-none"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeAnnotation(a.id)
+                        }}
+                        title="Delete"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <textarea
+                      value={a.value}
+                      onChange={(e) =>
+                        updateAnnotation(a.id, (prev) => ({
+                          ...(prev as I693TextAnnotation),
+                          value: e.target.value,
+                        }))
+                      }
+                      className="h-full w-full resize-none bg-transparent outline-none text-black whitespace-nowrap overflow-hidden"
+                      style={{ fontSize: `${ANNOTATION_TEXT_SIZE}px`, lineHeight: 1.2 }}
+                    />
+                  </div>
+                </Rnd>
+              )
+            }
+
+            if (a.type === 'cross') {
+              const x = toPx(a.xPercent, pageHost.width)
+              const y = toPx(a.yPercent, pageHost.height)
+              const size = Math.max(16, toPx(a.sizePercent, pageHost.width))
+              return (
+                <Rnd
+                  key={a.id}
+                  position={{ x, y }}
+                  size={{ width: size, height: size }}
+                  bounds="parent"
+                  lockAspectRatio
+                  dragHandleClassName="ann-move-handle"
+                  style={{ pointerEvents: 'auto', zIndex: 40 }}
+                  onDragStop={(_e, d) =>
+                    updateAnnotation(a.id, (prev) => ({
+                      ...(prev as I693CrossAnnotation),
+                      xPercent: toPercent(d.x, pageHost.width),
+                      yPercent: toPercent(d.y, pageHost.height),
+                    }))
+                  }
+                  onResizeStop={(_e, _dir, ref, _delta, position) =>
+                    updateAnnotation(a.id, (prev) => ({
+                      ...(prev as I693CrossAnnotation),
+                      xPercent: toPercent(position.x, pageHost.width),
+                      yPercent: toPercent(position.y, pageHost.height),
+                      sizePercent: toPercent(ref.offsetWidth, pageHost.width),
+                    }))
+                  }
+                >
+                  <div className="relative h-full w-full">
+                    <div className="absolute -top-8 left-0 flex items-center gap-1 bg-white/95 border border-slate-200 rounded px-2 py-1 text-sm">
+                      <button type="button" className="ann-move-handle cursor-move px-2 leading-none" title="Move">
+                        <span aria-hidden>↕</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="px-2 text-rose-600 leading-none"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeAnnotation(a.id)
+                        }}
+                        title="Delete"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <svg viewBox="0 0 100 100" className="h-full w-full pointer-events-none">
+                      <line x1="8" y1="8" x2="92" y2="92" stroke="black" strokeWidth="10" />
+                      <line x1="92" y1="8" x2="8" y2="92" stroke="black" strokeWidth="10" />
+                    </svg>
+                  </div>
+                </Rnd>
+              )
+            }
+
+            const x = toPx(a.xPercent, pageHost.width)
+            const y = toPx(a.yPercent, pageHost.height)
+            const w = Math.max(48, toPx(a.widthPercent, pageHost.width))
+            const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+            return (
+              <Rnd
+                key={a.id}
+                position={{ x, y }}
+                size={{ width: w, height: h }}
+                bounds="parent"
+                dragHandleClassName="ann-move-handle"
+                style={{ pointerEvents: 'auto', zIndex: 40 }}
+                onDragStop={(_e, d) =>
+                  updateAnnotation(a.id, (prev) => ({
+                    ...(prev as I693ImageAnnotation),
+                    xPercent: toPercent(d.x, pageHost.width),
+                    yPercent: toPercent(d.y, pageHost.height),
+                  }))
+                }
+                onResizeStop={(_e, _dir, ref, _delta, position) =>
+                  updateAnnotation(a.id, (prev) => ({
+                    ...(prev as I693ImageAnnotation),
+                    xPercent: toPercent(position.x, pageHost.width),
+                    yPercent: toPercent(position.y, pageHost.height),
+                    widthPercent: toPercent(ref.offsetWidth, pageHost.width),
+                    heightPercent: toPercent(ref.offsetHeight, pageHost.height),
+                  }))
+                }
+              >
+                <div className="relative h-full w-full">
+                  <div className="absolute -top-8 left-0 flex items-center gap-1 bg-white/95 border border-slate-200 rounded px-2 py-1 text-sm">
+                    <button type="button" className="ann-move-handle cursor-move px-2 leading-none" title="Move">
+                      <span aria-hidden>↕</span>
+                    </button>
+                    <span className="px-2 text-slate-600 leading-none" title="Resize from box corner">↘</span>
+                    <button
+                      type="button"
+                      className="px-2 text-rose-600 leading-none"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        removeAnnotation(a.id)
+                      }}
+                      title="Delete"
+                    >
+                      ×
+                    </button>
+                  </div>
+                  <img src={a.imageUrl} alt="annotation" className="h-full w-full object-contain border border-sky-500 bg-white/70" />
+                </div>
+              </Rnd>
+            )
+          })}
+        </div>
+      )
+      return createPortal(layer, pageHost.hostEl, `ann-page-${pageHost.page}`)
+    })
+  }, [addAnnotationAt, annotations, mode, pageHosts, tool, updateAnnotation, removeAnnotation])
+
+  if (loading) {
     return (
       <div className="flex justify-center py-20">
         <LoadingSpinner message={t('i693.pdf_editor_loading')} variant="light" />
@@ -168,58 +789,168 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           <p className="text-xs text-slate-500 mt-2 max-w-2xl">{t('i693.pdf_editor_hint')}</p>
           {pdfReady && (
             <p className="text-xs text-emerald-700 mt-1 font-medium">
-              Read-only custom preview. Edit values in Digital form, then refresh here.
+              {mode === 'editor'
+                ? 'Editor mode with PDF fields + lightweight annotations (text, cross, image).'
+                : 'Preview mode — auto-saved view with custom controls.'}
             </p>
           )}
         </div>
+
         <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void refreshPreview()}
-            disabled={pdfLoading}
-            className="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium disabled:opacity-50"
-          >
-            {pdfLoading ? t('i693.pdf_running') : 'Refresh preview'}
-          </button>
-          <button
-            type="button"
-            onClick={() => setScale((s) => Math.max(MIN_SCALE, Number((s - 0.1).toFixed(2))))}
-            disabled={pdfLoading}
-            className="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium disabled:opacity-50"
-          >
-            Zoom -
-          </button>
-          <div className="px-3 py-2 text-sm text-slate-600">{Math.round(scale * 100)}%</div>
-          <button
-            type="button"
-            onClick={() => setScale((s) => Math.min(MAX_SCALE, Number((s + 0.1).toFixed(2))))}
-            disabled={pdfLoading}
-            className="px-4 py-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-sm font-medium disabled:opacity-50"
-          >
-            Zoom +
-          </button>
-          <button
-            type="button"
-            onClick={() => void downloadPdf()}
-            disabled={pdfLoading}
-            className="px-4 py-2 rounded-lg bg-[#2E6EF3] hover:bg-[#1f5ad2] text-white text-sm font-medium disabled:opacity-50"
-          >
-            {t('i693.download_pdf')}
-          </button>
+          <div className="flex rounded-lg border border-slate-200 bg-white p-0.5">
+            <button
+              type="button"
+              onClick={() => void switchToEditor()}
+              disabled={previewLoading || saving}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium ${
+                mode === 'editor' ? 'bg-slate-900 text-white' : 'text-slate-600'
+              }`}
+            >
+              Editor mode
+            </button>
+            <button
+              type="button"
+              onClick={() => void switchToPreview()}
+              disabled={previewLoading || saving}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium ${
+                mode === 'preview' ? 'bg-slate-900 text-white' : 'text-slate-600'
+              }`}
+            >
+              Preview mode
+            </button>
+          </div>
+
+          {(previewLoading || saving) && (
+            <div className="flex items-center gap-2 px-3 py-1 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
+              {mode === 'editor' ? 'Saving editor changes...' : 'Preparing preview...'}
+            </div>
+          )}
+
+          {mode === 'editor' && (
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+              <button
+                type="button"
+                title="Select / normal edit mode"
+                onClick={() => setTool('none')}
+                className={`h-8 w-8 rounded-md border text-base leading-none ${
+                  tool === 'none' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                ↖
+              </button>
+              <button
+                type="button"
+                title="Add text"
+                onClick={() => setTool('text')}
+                className={`h-8 w-8 rounded-md border text-base font-semibold leading-none ${
+                  tool === 'text' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                T
+              </button>
+              <button
+                type="button"
+                title="Add cross"
+                onClick={() => setTool('cross')}
+                className={`h-8 w-8 rounded-md border text-base font-semibold leading-none ${
+                  tool === 'cross' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                ✕
+              </button>
+              <button
+                type="button"
+                title="Add image"
+                onClick={onPickImage}
+                className={`h-8 w-8 rounded-md border text-base leading-none ${
+                  tool === 'image' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                ⌷
+              </button>
+            </div>
+          )}
+
+          {mode === 'preview' && (
+            <>
+              <button
+                type="button"
+                title="Refresh preview"
+                onClick={() => void refreshPreview()}
+                disabled={previewLoading || downloadLoading}
+                className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                title="Zoom out"
+                onClick={() => setScale((s) => Math.max(MIN_SCALE, Number((s - 0.1).toFixed(2))))}
+                disabled={previewLoading || downloadLoading}
+                className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"
+              >
+                −
+              </button>
+              <div className="px-3 py-2 text-sm text-slate-600">{Math.round(scale * 100)}%</div>
+              <button
+                type="button"
+                title="Zoom in"
+                onClick={() => setScale((s) => Math.min(MAX_SCALE, Number((s + 0.1).toFixed(2))))}
+                disabled={previewLoading || downloadLoading}
+                className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                title={t('i693.download_pdf')}
+                onClick={() => void downloadPdf()}
+                disabled={previewLoading || downloadLoading}
+                className="h-8 w-8 rounded-lg bg-[#2E6EF3] hover:bg-[#1f5ad2] text-white text-base font-medium disabled:opacity-50"
+              >
+                ⭳
+              </button>
+            </>
+          )}
         </div>
       </div>
+
+      <input
+        ref={imageInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/jpg"
+        className="hidden"
+        onChange={(e) => onImageSelected(e.target.files?.[0] ?? null)}
+      />
 
       <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-14rem)]">
         {!pdfReady && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
-            <LoadingSpinner message={t('i693.pdf_editor_loading')} variant="light" />
+            <LoadingSpinner
+              message={mode === 'preview' && previewLoading ? 'Saving and preparing preview...' : t('i693.pdf_editor_loading')}
+              variant="light"
+            />
           </div>
         )}
-        <div
-          ref={hostRef}
-          className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)]"
-        />
+        {mode === 'editor' ? (
+          <div
+            ref={editorHostRef}
+            className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
+          />
+        ) : (
+          <div
+            ref={previewHostRef}
+            className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)]"
+          />
+        )}
+        {editorAnnotationPortals}
       </div>
+      {dirty && (
+        <p className="text-xs text-amber-700">
+          Unsaved PDF changes. Switching to Preview mode will auto-save form + annotations.
+        </p>
+      )}
     </div>
   )
 }

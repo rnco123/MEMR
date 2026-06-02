@@ -4,6 +4,7 @@ import { formatDateForPdfDisplay, parseDateFromPdfDisplay } from '@/lib/i693/pdf
 import type { I693FormData } from '@/lib/i693/types'
 import { PDF_FIELD_REGISTRY } from '@/lib/i693/pdf-field-registry'
 import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
+import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 import {
   applyVaccinationWidgetToGrid,
   isVaccinationTableWidget,
@@ -24,8 +25,10 @@ function valueForBinding(data: I693FormData, b: (typeof PDF_FIELD_REGISTRY)[numb
   }
   const raw = getNestedValue(root, b.key)
   if (raw == null || raw === '') return ''
-  if (b.format === 'date') return formatDateForPdfDisplay(String(raw))
-  return String(raw).trim()
+  const normalized = formatI693WidgetValue(b.key, String(raw))
+  if (!normalized) return ''
+  if (b.format === 'date') return formatDateForPdfDisplay(normalized)
+  return normalized
 }
 
 async function applyVaccinationFields(
@@ -148,8 +151,10 @@ export async function extractI693FormFromPdfDocument(
       continue
     }
 
-    const parsed =
-      binding.format === 'date' ? parseDateFromPdfDisplay(val) : val
+    const parsedRaw = binding.format === 'date' ? parseDateFromPdfDisplay(val) : val
+    const parsed = binding.format === 'date'
+      ? parsedRaw
+      : formatI693WidgetValue(binding.key, parsedRaw)
     if (binding.slot) {
       writeSlottedValue(root, { key: binding.key, slot: binding.slot }, parsed)
     } else {

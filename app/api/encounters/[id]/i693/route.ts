@@ -10,8 +10,18 @@ import { buildI693ClinicalContext } from '@/lib/i693/build-context'
 import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
+import { parseI693Annotations } from '@/lib/i693/annotations'
 
 export const dynamic = 'force-dynamic'
+
+function missingAnnotationsColumn(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const e = error as { code?: string; message?: string }
+  return (
+    e.code === '42703' ||
+    Boolean(e.message?.toLowerCase().includes('annotations'))
+  )
+}
 
 async function requireStaff(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
@@ -68,6 +78,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       is_immigration: isImmigrationEncounter(enc.consent_ack),
       submission: existing ?? null,
       form_data: formData,
+      annotations: parseI693Annotations(existing?.annotations),
     })
   } catch (e) {
     return handleApiError(e)
@@ -87,7 +98,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (authError || !user) throw new AuthenticationError()
     const role = await requireStaff(supabase, user.id)
 
-    let body: { form_data?: Partial<I693FormData>; status?: string }
+    let body: { form_data?: Partial<I693FormData>; status?: string; annotations?: unknown[] }
     try {
       body = await request.json()
     } catch {
@@ -95,6 +106,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     const formData = mergeI693Form(body.form_data)
+    const annotations = parseI693Annotations(body.annotations)
     const status = body.status ?? 'draft'
 
     const admin = createAdminClient()
@@ -111,21 +123,46 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       .eq('encounter_id', encounterId)
       .maybeSingle()
 
-    const row = {
+    const rowBase = {
       encounter_id: encounterId,
       patient_id: enc.patient_id,
       form_data: formData,
       status,
       updated_at: new Date().toISOString(),
     }
+    const rowWithAnnotations = { ...rowBase, annotations }
 
     if (existing?.id) {
       const { data, error } = await admin
         .from('i693_submissions')
-        .update(row)
+        .update(rowWithAnnotations)
         .eq('id', existing.id)
         .select()
         .single()
+      if (error && missingAnnotationsColumn(error)) {
+        const retry = await admin
+          .from('i693_submissions')
+          .update(rowBase)
+          .eq('id', existing.id)
+          .select()
+          .single()
+        if (retry.error) throw retry.error
+        const { data } = retry
+        const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
+        if (isImmigrationEncounter(encMeta?.consent_ack)) {
+          await syncImmigrationCase(admin, encounterId)
+        }
+        await logI693Audit('saved', encounterId, {
+          patient_id: enc.patient_id,
+          status,
+          role,
+          source: role === 'admin' ? 'admin' : 'clinical',
+        })
+        return NextResponse.json({
+          success: true,
+          data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
+        })
+      }
       if (error) throw error
       const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
       if (isImmigrationEncounter(encMeta?.consent_ack)) {
@@ -143,7 +180,14 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       })
     }
 
-    const { data, error } = await admin.from('i693_submissions').insert(row).select().single()
+    const inserted = await admin.from('i693_submissions').insert(rowWithAnnotations).select().single()
+    let data = inserted.data
+    let error = inserted.error
+    if (error && missingAnnotationsColumn(error)) {
+      const retry = await admin.from('i693_submissions').insert(rowBase).select().single()
+      data = retry.data
+      error = retry.error
+    }
     if (error) throw error
     const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
     if (isImmigrationEncounter(encMeta?.consent_ack)) {

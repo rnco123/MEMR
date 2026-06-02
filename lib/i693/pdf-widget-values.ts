@@ -4,7 +4,13 @@
  */
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { I693FormData } from '@/lib/i693/types'
-import { widgetFieldIndex } from '@/lib/i693/pdf-widget-map'
+import {
+  WIDGET_CHECKBOX_BINDINGS,
+  WIDGET_TEXT_TO_KEY,
+  widgetFieldIndex,
+  widgetShortName,
+} from '@/lib/i693/pdf-widget-map'
+import { isVaccinationTableWidget } from '@/lib/i693/vaccination-grid-map'
 
 type FieldEntry = {
   id?: string
@@ -23,6 +29,14 @@ function isCheckedValue(val: string): boolean {
   return val === 'On' || val === 'Yes' || val === 'true'
 }
 
+function isRawPassthroughEligible(fieldName: string, index: number): boolean {
+  const short = widgetShortName(fieldName)
+  if (isVaccinationTableWidget(short)) return false
+  if (WIDGET_TEXT_TO_KEY[short]) return false
+  if (WIDGET_CHECKBOX_BINDINGS.some((b) => b.widget === short && b.index === index)) return false
+  return true
+}
+
 /** Read all non-empty widget values from pdf.js annotation storage. */
 export async function extractPdfWidgetValues(
   pdf: PDFDocumentProxy
@@ -34,6 +48,7 @@ export async function extractPdfWidgetValues(
   for (const [fieldName, entries] of Object.entries(fieldObjects)) {
     const list = (entries ?? []) as FieldEntry[]
     for (let index = 0; index < list.length; index++) {
+      if (!isRawPassthroughEligible(fieldName, index)) continue
       const entry = list[index]
       if (!entry?.id) continue
       const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
@@ -60,6 +75,7 @@ export async function applyPdfWidgetValues(
   for (const [fieldName, entries] of Object.entries(fieldObjects)) {
     const list = (entries ?? []) as FieldEntry[]
     for (let index = 0; index < list.length; index++) {
+      if (!isRawPassthroughEligible(fieldName, index)) continue
       const key = pdfWidgetStorageKey(fieldName, index, list.length)
       const val = values[key]
       if (val == null || val === '') continue
@@ -104,6 +120,7 @@ export function fillMupdfWidgetFromRaw(
   values: Record<string, string> | undefined,
   filled: string[]
 ): boolean {
+  if (!isRawPassthroughEligible(fullName, widgetFieldIndex(fullName))) return false
   const val = rawValueForWidget(values, fullName)
   if (val == null || val === '') return false
 

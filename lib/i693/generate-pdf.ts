@@ -7,6 +7,7 @@ import { fillAcroformI693PdfMupdf } from '@/lib/i693/fill-acroform-mupdf'
 import { fillFlatI693Pdf, isFlatI693Template } from '@/lib/i693/fill-flat-pdf'
 import { templateUsesNativeWidgets } from '@/lib/i693/extract-pdf-widgets'
 import { validateI693PdfExport } from '@/lib/i693/export-validation'
+import { drawI693AnnotationsOnPdf, type I693Annotation } from '@/lib/i693/annotations'
 
 const TEMPLATE_CANDIDATES = [
   'public/forms/i-693-template.pdf',
@@ -49,7 +50,10 @@ function fieldsForSection(data: I693FormData, section: (typeof I693_UI_SECTIONS)
 }
 
 /** Fill USCIS AcroForm template when present; otherwise build a summary PDF with jsPDF */
-export async function generateI693PdfBytes(data: I693FormData): Promise<{
+export async function generateI693PdfBytes(
+  data: I693FormData,
+  annotations: I693Annotation[] = []
+): Promise<{
   bytes: Uint8Array
   mode: 'acroform' | 'overlay' | 'generated'
   filledFields?: string[]
@@ -67,7 +71,7 @@ export async function generateI693PdfBytes(data: I693FormData): Promise<{
         console.info('[i693/pdf] export validation', validation)
       }
       return {
-        bytes,
+        bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
         mode: 'acroform',
         filledFields: filled,
         missingFields: [],
@@ -78,7 +82,7 @@ export async function generateI693PdfBytes(data: I693FormData): Promise<{
     if (flat) {
       const { bytes, filled } = await fillFlatI693Pdf(templatePath, data)
       return {
-        bytes,
+        bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
         mode: 'overlay',
         filledFields: filled,
         missingFields: [],
@@ -125,7 +129,7 @@ export async function generateI693PdfBytes(data: I693FormData): Promise<{
 
     const bytes = await doc.save()
     return {
-      bytes,
+      bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
       mode: 'acroform',
       filledFields: result.filled,
       missingFields: result.missing,
@@ -185,5 +189,5 @@ export async function generateI693PdfBytes(data: I693FormData): Promise<{
   }
 
   const ab = doc.output('arraybuffer')
-  return { bytes: new Uint8Array(ab), mode: 'generated' }
+  return { bytes: await drawI693AnnotationsOnPdf(new Uint8Array(ab), annotations), mode: 'generated' }
 }

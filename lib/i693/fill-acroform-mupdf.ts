@@ -3,6 +3,7 @@ import { flatFormValues } from '@/lib/i693/pdf-acroform-map'
 import { formatDateForPdfDisplay } from '@/lib/i693/pdf-editor-layout'
 import { getNestedValue } from '@/lib/i693/field-sections'
 import { readSlottedValue } from '@/lib/i693/pdf-field-slots'
+import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 import {
   isVaccinationTableWidget,
   vaccinationWidgetValue,
@@ -119,8 +120,10 @@ function displayForWidget(
     })
   }
   const raw = valueForKey(data, mapping.key)
+  const normalized = formatI693WidgetValue(mapping.key, raw)
+  if (!normalized) return ''
   if (mapping.format === 'date' && raw) return formatDateForPdfDisplay(raw)
-  return raw
+  return mapping.format === 'date' ? formatDateForPdfDisplay(normalized) : normalized
 }
 
 /** Fill official USCIS AcroForm widgets in-place (pixel-perfect export). */
