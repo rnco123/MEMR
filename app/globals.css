@@ -47,20 +47,20 @@ body {
   animation-delay: 4s;
 }
 
-/* Custom Select Dropdown Styling */
+/* Native select lists match the light EMR UI (dashboard/admin). Use [color-scheme:dark] on specific controls in dark panels. */
 select {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 select option {
-  background-color: #1e293b;
-  color: white;
+  background-color: #ffffff;
+  color: #0f172a;
   padding: 8px;
 }
 
 select option:hover,
 select option:focus,
 select option:checked {
-  background-color: #334155;
-  color: white;
+  background-color: #eef3ff;
+  color: #0f172a;
 }

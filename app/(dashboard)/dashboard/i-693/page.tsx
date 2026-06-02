@@ -5,7 +5,6 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { UserRole } from '@/lib/roles'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { I693FormEditor } from '@/components/I693FormEditor'
 import { I693PdfFormEditor } from '@/components/I693PdfFormEditor'
 import { I693WorkflowBoard } from '@/components/I693WorkflowBoard'
 import { buildI693Href } from '@/lib/i693/paths'
@@ -24,8 +23,8 @@ function I693PageInner() {
 
   const [selectedId, setSelectedId] = useState<number | null>(initialEncounter)
   const [selectedPatientName, setSelectedPatientName] = useState<string | null>(null)
-  const [tab, setTab] = useState<'workflow' | 'form' | 'pdf'>(
-    tabFromUrl === 'form' ? 'form' : tabFromUrl === 'pdf' ? 'pdf' : 'workflow'
+  const [tab, setTab] = useState<'workflow' | 'pdf'>(
+    tabFromUrl === 'pdf' || tabFromUrl === 'form' ? 'pdf' : 'workflow'
   )
   useEffect(() => {
     if (initialEncounter) setSelectedId(initialEncounter)
@@ -53,11 +52,22 @@ function I693PageInner() {
   }, [selectedId, selectedPatientName])
 
   useEffect(() => {
-    setTab(tabFromUrl === 'form' ? 'form' : tabFromUrl === 'pdf' ? 'pdf' : 'workflow')
+    setTab(tabFromUrl === 'pdf' || tabFromUrl === 'form' ? 'pdf' : 'workflow')
   }, [tabFromUrl])
 
+  useEffect(() => {
+    if (tabFromUrl !== 'form') return
+    router.replace(
+      buildI693Href(basePath, {
+        encounterId: selectedId ?? initialEncounter ?? undefined,
+        tab: 'pdf',
+      }),
+      { scroll: false }
+    )
+  }, [tabFromUrl, selectedId, initialEncounter, router, basePath])
+
   const setTabAndUrl = useCallback(
-    (next: 'workflow' | 'form' | 'pdf', encounterId?: number | null) => {
+    (next: 'workflow' | 'pdf', encounterId?: number | null) => {
       setTab(next)
       const id = encounterId ?? selectedId
       router.replace(buildI693Href(basePath, { encounterId: id ?? undefined, tab: next }), {
@@ -77,12 +87,6 @@ function I693PageInner() {
     setSelectedId(null)
     setSelectedPatientName(null)
     router.replace(buildI693Href(basePath, { tab }), { scroll: false })
-  }
-
-  const openForm = (id: number, patientName?: string) => {
-    setSelectedId(id)
-    if (patientName) setSelectedPatientName(patientName)
-    setTabAndUrl('form', id)
   }
 
   const openPdfEditor = (id: number, patientName?: string) => {
@@ -137,7 +141,6 @@ function I693PageInner() {
             selectedEncounterId={selectedId}
             onSelectEncounter={selectEncounter}
             onClearSelection={clearSelection}
-            onOpenForm={openForm}
             onOpenPdfEditor={openPdfEditor}
           />
         ) : tab === 'pdf' && selectedId ? (
@@ -145,13 +148,6 @@ function I693PageInner() {
             key={`pdf-${selectedId}`}
             encounterId={selectedId}
             patientName={selectedPatientName ?? undefined}
-          />
-        ) : selectedId ? (
-          <I693FormEditor
-            key={selectedId}
-            encounterId={selectedId}
-            patientName={selectedPatientName ?? undefined}
-            isImmigration
           />
         ) : (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">

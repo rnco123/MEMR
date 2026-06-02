@@ -47,15 +47,13 @@ type Props = {
   selectedEncounterId: number | null
   onSelectEncounter: (id: number, patientName: string) => void
   onClearSelection?: () => void
-  onOpenForm: (id: number, patientName?: string) => void
-  onOpenPdfEditor?: (id: number, patientName: string) => void
+  onOpenPdfEditor: (id: number, patientName?: string) => void
 }
 
 export function I693WorkflowBoard({
   selectedEncounterId,
   onSelectEncounter,
   onClearSelection,
-  onOpenForm,
   onOpenPdfEditor,
 }: Props) {
   const { t } = useT()
@@ -158,24 +156,12 @@ export function I693WorkflowBoard({
             type="button"
             onClick={(e) => {
               e.stopPropagation()
-              onOpenForm(row.encounter_id, row.patient_name)
+              onOpenPdfEditor(row.encounter_id, row.patient_name)
             }}
             className="text-xs font-medium px-2.5 py-1 rounded-md bg-[#2E6EF3] text-white hover:bg-[#1f5ad2]"
           >
-            {t('i693.fill_digital_form')}
+            {t('i693.edit_on_pdf')}
           </button>
-          {onOpenPdfEditor && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onOpenPdfEditor(row.encounter_id, row.patient_name)
-              }}
-              className="text-xs font-medium px-2.5 py-1 rounded-md border border-[#2E6EF3] text-[#2E6EF3] bg-white hover:bg-[#eef3ff]"
-            >
-              {t('i693.edit_on_pdf')}
-            </button>
-          )}
         </div>
       </div>
     )
@@ -272,20 +258,11 @@ export function I693WorkflowBoard({
           </p>
           <button
             type="button"
-            onClick={() => onOpenForm(selectedRow.encounter_id, selectedRow.patient_name)}
+            onClick={() => onOpenPdfEditor(selectedRow.encounter_id, selectedRow.patient_name)}
             className="px-4 py-2 rounded-lg bg-[#2E6EF3] hover:bg-[#1f5ad2] text-white text-sm font-medium"
           >
-            {t('i693.fill_digital_form')}
+            {t('i693.edit_on_pdf')}
           </button>
-          {onOpenPdfEditor && (
-            <button
-              type="button"
-              onClick={() => onOpenPdfEditor(selectedRow.encounter_id, selectedRow.patient_name)}
-              className="px-4 py-2 rounded-lg border border-[#2E6EF3] text-[#2E6EF3] bg-white hover:bg-[#eef3ff] text-sm font-medium"
-            >
-              {t('i693.edit_on_pdf')}
-            </button>
-          )}
           {onClearSelection && (
             <button
               type="button"
@@ -336,24 +313,12 @@ export function I693WorkflowBoard({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation()
-                        onOpenForm(row.encounter_id, row.patient_name)
+                        onOpenPdfEditor(row.encounter_id, row.patient_name)
                       }}
                       className="text-xs font-medium text-[#2E6EF3] hover:underline"
                     >
-                      {t('i693.fill_digital_form')}
+                      {t('i693.edit_on_pdf')}
                     </button>
-                    {onOpenPdfEditor && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onOpenPdfEditor(row.encounter_id, row.patient_name)
-                        }}
-                        className="text-xs font-medium text-slate-600 hover:underline"
-                      >
-                        {t('i693.edit_on_pdf')}
-                      </button>
-                    )}
                   </div>
                 </div>
               </li>
