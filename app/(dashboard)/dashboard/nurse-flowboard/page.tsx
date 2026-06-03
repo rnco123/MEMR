@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
-import { FinalReviewModal } from '@/components/FinalReviewModal'
+import { UnderDevelopmentModal } from '@/components/UnderDevelopmentModal'
 import {
   canJoinTelemedicine,
   getStatusInfo,
@@ -19,6 +19,12 @@ import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
+import {
+  FlowboardFilterField,
+  FlowboardFilterToolbar,
+  FlowboardViewToggleSlot,
+  FLOWBOARD_SELECT_CLASS,
+} from '@/components/FlowboardFilterToolbar'
 import {
   FlowboardViewToggle,
   readFlowboardDisplayMode,
@@ -135,11 +141,7 @@ function NurseFlowboardPage() {
   } | null>(null)
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
-  const [showFinalReview, setShowFinalReview] = useState<{
-    encounterId: number
-    appointmentId: number
-    patientId: number
-  } | null>(null)
+  const [showFinalReviewDevNotice, setShowFinalReviewDevNotice] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const initialLoadDone = useRef(false)
@@ -480,9 +482,9 @@ function NurseFlowboardPage() {
         )}
 
         {/* Search and Filters */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 relative">
+        <FlowboardFilterToolbar
+          search={
+            <div className="relative">
               <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -497,143 +499,154 @@ function NurseFlowboardPage() {
                 className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
-
+          }
+          searchActions={
             <button
+              type="button"
               onClick={handleRefresh}
               disabled={loading || isRefreshing}
-              className="h-11 w-11 inline-flex items-center justify-center bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              className="h-11 w-11 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
               title={t('common.refresh')}
             >
               <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('location.filter_label')}</span>
-              <LocationFilterSelect
-                locations={userLocations}
-                value={selectedLocationId}
-                onChange={(v) => {
-                  setSelectedLocationId(v)
-                  setPage(1)
-                }}
-                unrestricted={locationsUnrestricted}
-                className="h-11"
-              />
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.sort')}</span>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value as typeof sortBy)
-                  setPage(1)
-                }}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="time">{t('flow.sort_time')}</option>
-                <option value="name">{t('flow.sort_name')}</option>
-                <option value="treatment">{t('flow.sort_treatment')}</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.status')}</span>
-              <select
-                value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value)
-                  setPage(1)
-                }}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="all">{t('common.all')}</option>
-                <option value="appointment_initiated">Appointment Initiated</option>
-                <option value="provider_assigned">Provider Assigned</option>
-                <option value="vitals_assessed">Vitals Assessed</option>
-                <option value="in_consultation">In Consultation</option>
-                <option value="consultation_concluded">Consultation Concluded</option>
-                <option value="final_review">Final Review</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-
-            <FlowboardViewToggle
-              value={displayMode}
-              onChange={handleDisplayModeChange}
-              listLabel={t('flow.view_list')}
-              kanbanLabel={t('flow.view_kanban')}
-            />
-          </div>
-
-            {/* Search by DOB — Year, then Month, then Day */}
-            <div className="mt-3 pt-3 border-t border-slate-200">
+          }
+          filters={
+            <>
+              <FlowboardFilterField label={t('location.filter_label')} wide>
+                <LocationFilterSelect
+                  locations={userLocations}
+                  value={selectedLocationId}
+                  onChange={(v) => {
+                    setSelectedLocationId(v)
+                    setPage(1)
+                  }}
+                  unrestricted={locationsUnrestricted}
+                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[16rem]`}
+                />
+              </FlowboardFilterField>
+              <FlowboardFilterField label={t('flow.sort')}>
+                <select
+                  value={sortBy}
+                  onChange={(e) => {
+                    setSortBy(e.target.value as typeof sortBy)
+                    setPage(1)
+                  }}
+                  className={FLOWBOARD_SELECT_CLASS}
+                >
+                  <option value="time">{t('flow.sort_time')}</option>
+                  <option value="name">{t('flow.sort_name')}</option>
+                  <option value="treatment">{t('flow.sort_treatment')}</option>
+                </select>
+              </FlowboardFilterField>
+              <FlowboardFilterField label={t('flow.status')}>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => {
+                    setFilterStatus(e.target.value)
+                    setPage(1)
+                  }}
+                  className={FLOWBOARD_SELECT_CLASS}
+                >
+                  <option value="all">{t('common.all')}</option>
+                  <option value="appointment_initiated">Appointment Initiated</option>
+                  <option value="provider_assigned">Provider Assigned</option>
+                  <option value="vitals_assessed">Vitals Assessed</option>
+                  <option value="in_consultation">In Consultation</option>
+                  <option value="consultation_concluded">Consultation Concluded</option>
+                  <option value="final_review">Final Review</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </FlowboardFilterField>
+              <FlowboardViewToggleSlot>
+                <FlowboardViewToggle
+                  value={displayMode}
+                  onChange={handleDisplayModeChange}
+                  listLabel={t('flow.view_list')}
+                  kanbanLabel={t('flow.view_kanban')}
+                />
+              </FlowboardViewToggleSlot>
+            </>
+          }
+          afterFilters={
+            <div className="mt-3 border-t border-slate-200 pt-3">
               <SearchByDobDropdowns
                 year={dobYear}
                 month={dobMonth}
                 day={dobDay}
-                onYearChange={(v) => { setDobYear(v); setPage(1) }}
-                onMonthChange={(v) => { setDobMonth(v); setPage(1) }}
-                onDayChange={(v) => { setDobDay(v); setPage(1) }}
+                onYearChange={(v) => {
+                  setDobYear(v)
+                  setPage(1)
+                }}
+                onMonthChange={(v) => {
+                  setDobMonth(v)
+                  setPage(1)
+                }}
+                onDayChange={(v) => {
+                  setDobDay(v)
+                  setPage(1)
+                }}
               />
             </div>
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
-              {t('flow.showing_x_of_y', {
-                start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
-                end: Math.min(page * pageSize, filteredAppointments.length),
-                total: filteredAppointments.length,
-              })}
-              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
-                ? ` ${t('flow.filtered_from', { total: appointments.length })}`
-                : ''}
-            </p>
-            <div className="flex items-center gap-4">
-              {displayMode === 'list' && (
-              <label className="text-xs text-slate-500 flex items-center gap-2">
-                {t('flow.per_page')}
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value))
-                    setPage(1)
-                  }}
-                  className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-                >
-                  {PAGE_SIZE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              )}
-              {availableDoctors.length > 0 && (
-                <p className="text-xs text-emerald-600 font-medium">
-                  {t('flow.providers_available', { count: availableDoctors.length })}
-                </p>
-              )}
-              {(searchQuery || dobYear || dobMonth || dobDay) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('')
-                    setDobYear('')
-                    setDobMonth('')
-                    setDobDay('')
-                    setPage(1)
-                  }}
-                  className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors"
-                >
-                  {t('common.clear_filters')}
-                </button>
-              )}
-            </div>
-          </div>
+          }
+          footer={
+            <>
+              <p className="text-xs text-slate-500 min-w-0">
+                {t('flow.showing_x_of_y', {
+                  start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
+                  end: Math.min(page * pageSize, filteredAppointments.length),
+                  total: filteredAppointments.length,
+                })}
+                {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
+                  ? ` ${t('flow.filtered_from', { total: appointments.length })}`
+                  : ''}
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                {displayMode === 'list' && (
+                  <label className="text-xs text-slate-500 flex items-center gap-2 shrink-0">
+                    {t('flow.per_page')}
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {availableDoctors.length > 0 && (
+                  <p className="text-xs text-emerald-600 font-medium shrink-0">
+                    {t('flow.providers_available', { count: availableDoctors.length })}
+                  </p>
+                )}
+                {(searchQuery || dobYear || dobMonth || dobDay) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setDobYear('')
+                      setDobMonth('')
+                      setDobDay('')
+                      setPage(1)
+                    }}
+                    className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors shrink-0"
+                  >
+                    {t('common.clear_filters')}
+                  </button>
+                )}
+              </div>
+            </>
+          }
+        />
 
         {/* Appointments Table */}
         {loading ? (
@@ -727,11 +740,7 @@ function NurseFlowboardPage() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation()
-                      setShowFinalReview({
-                        encounterId: appointment.encounter_id!,
-                        appointmentId: appointment.id,
-                        patientId: appointment.patient_id,
-                      })
+                      setShowFinalReviewDevNotice(true)
                     }}
                     className="px-2 py-1 bg-cyan-600 text-white rounded-lg text-[10px] font-semibold hover:bg-cyan-700 transition-colors"
                   >
@@ -904,11 +913,7 @@ function NurseFlowboardPage() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          setShowFinalReview({
-                            encounterId: appointment.encounter_id!,
-                            appointmentId: appointment.id,
-                            patientId: appointment.patient_id,
-                          })
+                          setShowFinalReviewDevNotice(true)
                         }}
                         className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-semibold hover:bg-cyan-700 transition-colors"
                       >
@@ -1003,19 +1008,10 @@ function NurseFlowboardPage() {
         />
         )}
 
-        {/* Final Review Modal */}
-        {showFinalReview && (
-        <FinalReviewModal
-          encounterId={showFinalReview.encounterId}
-          appointmentId={showFinalReview.appointmentId}
-          patientId={showFinalReview.patientId}
-          isOpen={!!showFinalReview}
-          onClose={() => setShowFinalReview(null)}
-          onComplete={() => {
-            fetchAllAppointments()
-          }}
+        <UnderDevelopmentModal
+          isOpen={showFinalReviewDevNotice}
+          onClose={() => setShowFinalReviewDevNotice(false)}
         />
-        )}
     </div>
   )
 }

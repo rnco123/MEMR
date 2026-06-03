@@ -7,7 +7,29 @@ import { fillAcroformI693PdfMupdf } from '@/lib/i693/fill-acroform-mupdf'
 import { fillFlatI693Pdf, isFlatI693Template } from '@/lib/i693/fill-flat-pdf'
 import { templateUsesNativeWidgets } from '@/lib/i693/extract-pdf-widgets'
 import { validateI693PdfExport } from '@/lib/i693/export-validation'
-import { drawI693AnnotationsOnPdf, type I693Annotation } from '@/lib/i693/annotations'
+import type { I693Annotation } from '@/lib/i693/annotations'
+import { bakeI693AnnotationsOnPdf } from '@/lib/i693/annotations-mupdf'
+import { ensureViewablePdfBytes } from '@/lib/i693/pdf-bytes'
+
+export type GenerateI693PdfOptions = {
+  /**
+   * When false (preview), keep the MuPDF-filled form intact and show overlays in the client.
+   * Baking overlays with pdf-lib can corrupt the USCIS template in pdf.js.
+   */
+  bakeAnnotations?: boolean
+}
+
+async function finalizeI693PdfBytes(
+  bytes: Uint8Array,
+  annotations: I693Annotation[],
+  bakeAnnotations: boolean
+): Promise<Uint8Array> {
+  if (!bakeAnnotations || !annotations.length) {
+    return ensureViewablePdfBytes(bytes)
+  }
+  const baked = await bakeI693AnnotationsOnPdf(bytes, annotations)
+  return ensureViewablePdfBytes(baked)
+}
 
 const TEMPLATE_CANDIDATES = [
   'public/forms/i-693-template.pdf',
@@ -52,13 +74,18 @@ function fieldsForSection(data: I693FormData, section: (typeof I693_UI_SECTIONS)
 /** Fill USCIS AcroForm template when present; otherwise build a summary PDF with jsPDF */
 export async function generateI693PdfBytes(
   data: I693FormData,
-  annotations: I693Annotation[] = []
+  annotations: I693Annotation[] = [],
+  options: GenerateI693PdfOptions = {}
 ): Promise<{
   bytes: Uint8Array
   mode: 'acroform' | 'overlay' | 'generated'
   filledFields?: string[]
   missingFields?: string[]
 }> {
+  const bakeAnnotations = options.bakeAnnotations !== false
+  const finish = (raw: Uint8Array) =>
+    finalizeI693PdfBytes(raw, annotations, bakeAnnotations)
+
   const templatePath = await resolveI693TemplatePath()
   if (templatePath) {
     if (await templateUsesNativeWidgets(templatePath)) {
@@ -71,7 +98,7 @@ export async function generateI693PdfBytes(
         console.info('[i693/pdf] export validation', validation)
       }
       return {
-        bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
+        bytes: await finish(bytes),
         mode: 'acroform',
         filledFields: filled,
         missingFields: [],
@@ -82,7 +109,7 @@ export async function generateI693PdfBytes(
     if (flat) {
       const { bytes, filled } = await fillFlatI693Pdf(templatePath, data)
       return {
-        bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
+        bytes: await finish(bytes),
         mode: 'overlay',
         filledFields: filled,
         missingFields: [],
@@ -96,7 +123,7 @@ export async function generateI693PdfBytes(
     if (!form) {
       const { bytes, filled } = await fillFlatI693Pdf(templatePath, data)
       return {
-        bytes,
+        bytes: await finish(bytes),
         mode: 'overlay',
         filledFields: filled,
         missingFields: [],
@@ -129,7 +156,7 @@ export async function generateI693PdfBytes(
 
     const bytes = await doc.save()
     return {
-      bytes: await drawI693AnnotationsOnPdf(bytes, annotations),
+      bytes: await finish(bytes),
       mode: 'acroform',
       filledFields: result.filled,
       missingFields: result.missing,
@@ -189,5 +216,8 @@ export async function generateI693PdfBytes(
   }
 
   const ab = doc.output('arraybuffer')
-  return { bytes: await drawI693AnnotationsOnPdf(new Uint8Array(ab), annotations), mode: 'generated' }
+  return {
+    bytes: await finish(new Uint8Array(ab)),
+    mode: 'generated',
+  }
 }

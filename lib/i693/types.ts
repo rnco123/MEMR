@@ -1,5 +1,7 @@
 /** Digital Form I-693 payload stored in i693_submissions.form_data */
 
+import { parseI693Annotations, type I693Annotation } from '@/lib/i693/annotations'
+
 export type I693VaccinationRow = {
   vaccine_name: string
   date_given: string
@@ -28,6 +30,8 @@ export type I693FormData = {
    * Preserves unmapped AcroForm fields (TB tables, signatures, etc.) across save/export.
    */
   pdf_widget_values?: Record<string, string>
+  /** PDF editor overlays (text/cross/image); mirrored in i693_submissions.annotations when available */
+  annotation_overlays?: I693Annotation[]
   /** Part 1 — Information about you */
   applicant: {
     family_name: string
@@ -465,7 +469,13 @@ export function mergeI693Form(partial: Partial<I693FormData> | null | undefined)
     vaccination_grid: mergeVaccinationGrid(migrated.vaccination_grid),
     civil_surgeon: mergeSection(EMPTY_I693_FORM.civil_surgeon, migrated.civil_surgeon),
     pdf_widget_values: mergePdfWidgetValues(migrated.pdf_widget_values),
+    annotation_overlays: mergeAnnotationOverlays(migrated.annotation_overlays),
   }
+}
+
+function mergeAnnotationOverlays(partial: unknown): I693Annotation[] | undefined {
+  const parsed = parseI693Annotations(partial)
+  return parsed.length > 0 ? parsed : undefined
 }
 
 function mergePdfWidgetValues(

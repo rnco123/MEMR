@@ -7,6 +7,7 @@ import {
   widgetFieldIndex,
   widgetShortName,
 } from '@/lib/i693/pdf-widget-map'
+import { isI693CombFieldKey } from '@/lib/i693/pdf-comb-fields'
 import { openI693Pdf } from '@/lib/i693/mupdf-template'
 
 export type PdfWidgetEditorField =
@@ -110,7 +111,12 @@ export async function extractPdfWidgetEditorFields(
       if (!mapping) continue
 
       const maxLen = widget.getMaxLen()
-      if (widget.isText() && widget.isComb() && maxLen > 0) {
+      if (
+        widget.isText() &&
+        widget.isComb() &&
+        maxLen > 0 &&
+        isI693CombFieldKey(mapping.key)
+      ) {
         out.push({
           kind: 'char_cells',
           key: mapping.key,

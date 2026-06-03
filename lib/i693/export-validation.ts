@@ -42,7 +42,18 @@ export async function validateI693PdfExport(
   assertPdfBytes(bytes)
 
   const mupdf = await loadMupdf()
-  const doc = mupdf.Document.openDocument(bytes, 'application/pdf')
+  const doc = mupdf.Document.openDocument(bytes, 'application/pdf') as {
+    countPages: () => number
+    loadPage: (i: number) => MupdfWidgetPage
+    needsPassword?: () => boolean
+    authenticatePassword?: (p: string) => number
+  }
+  if (doc.needsPassword?.()) {
+    const auth = doc.authenticatePassword?.('') ?? 0
+    if (auth === 0) {
+      throw new Error('Generated PDF is password-protected and could not be opened for validation.')
+    }
+  }
   const pageCount = doc.countPages()
 
   if (options.templatePath) {

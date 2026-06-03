@@ -23,11 +23,22 @@ type CharCellPlacement = {
 type Props = {
   placement: CharCellPlacement
   value: string
+  /** When true, x/y/cellWidth/height are already in CSS px (pdf.js layout). */
+  pixelCoords?: boolean
   editScale: number
   onChange: (value: string) => void
+  /** Preview/export display only — no focus or edits. */
+  readOnly?: boolean
 }
 
-export function I693PdfCharCellField({ placement, value, editScale, onChange }: Props) {
+export function I693PdfCharCellField({
+  placement,
+  value,
+  pixelCoords = false,
+  editScale,
+  onChange,
+  readOnly = false,
+}: Props) {
   const refs = useRef<(HTMLInputElement | null)[]>([])
   const mode = placement.mode ?? 'alnum'
   const isANumber = placement.key === 'applicant.a_number'
@@ -67,16 +78,41 @@ export function I693PdfCharCellField({ placement, value, editScale, onChange }: 
   }
 
   const boxHeightPt = placement.height ?? PDF_FIELD_BOX_HEIGHT
-  const h = boxHeightPt * editScale
-  const w = placement.cellWidth * editScale
-  const fontSize = 9 * editScale
+  const h = pixelCoords ? boxHeightPt : boxHeightPt * editScale
+  const w = pixelCoords ? placement.cellWidth : placement.cellWidth * editScale
+  const fontSize = pixelCoords ? 9 : 9 * editScale
+  const left = pixelCoords ? placement.x : placement.x * editScale
+  const top = pixelCoords
+    ? placement.y
+    : pdfPointToCssTop(placement.y, boxHeightPt) * editScale
+
+  if (readOnly) {
+    return (
+      <div
+        className="absolute z-[40] flex pointer-events-none select-none"
+        style={{ left, top, height: h }}
+        title={placement.label}
+        aria-hidden
+      >
+        {cells.map((c, i) => (
+          <span
+            key={i}
+            className="flex items-center justify-center text-slate-900 font-[Times_New_Roman,Times,serif] uppercase tracking-wide"
+            style={{ width: w, height: h, fontSize, lineHeight: `${h}px` }}
+          >
+            {c}
+          </span>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div
-      className="absolute z-20 flex pointer-events-auto"
+      className="absolute z-[35] flex pointer-events-auto"
       style={{
-        left: placement.x * editScale,
-        top: pdfPointToCssTop(placement.y, boxHeightPt) * editScale,
+        left,
+        top,
         height: h,
       }}
       title={placement.label}

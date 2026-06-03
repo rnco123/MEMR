@@ -135,18 +135,40 @@ export default function AdminOverviewPage() {
     return translated === key ? action.replace(/_/g, ' ') : translated
   }
 
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   useEffect(() => {
+    let cancelled = false
     fetch('/api/admin/stats', { credentials: 'include' })
       .then(async (r) => {
         const d = await r.json()
-        if (!r.ok) throw new Error(d?.error ?? 'Failed to load stats')
-        setStats(d as Stats)
+        if (!r.ok) {
+          if (r.status === 429) {
+            throw new Error(
+              'Too many API requests. Wait about a minute, then refresh this page.'
+            )
+          }
+          throw new Error(d?.error ?? 'Failed to load stats')
+        }
+        if (!cancelled) {
+          setStats(d as Stats)
+          setLoadError(null)
+        }
       })
       .catch((err) => {
+        const message = err instanceof Error ? err.message : 'Failed to load stats'
         console.error('Admin stats:', err)
-        setStats(null)
+        if (!cancelled) {
+          setStats(null)
+          setLoadError(message)
+        }
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const statCards = [
@@ -233,6 +255,15 @@ export default function AdminOverviewPage() {
         <h1 className="text-3xl font-bold text-slate-900">{t('admin.overview_title')}</h1>
         <p className="text-sm text-slate-500 mt-1 max-w-3xl">{t('admin.overview_subtitle')}</p>
       </div>
+
+      {loadError && (
+        <div
+          className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="alert"
+        >
+          {loadError}
+        </div>
+      )}
 
       {/* Stats row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-8">

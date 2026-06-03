@@ -105,6 +105,16 @@ export function parseI693Annotations(input: unknown): I693Annotation[] {
   return input.map(parseAnnotation).filter((a): a is I693Annotation => a != null)
 }
 
+/** Read overlays from `i693_submissions.annotations` or legacy `form_data.annotation_overlays`. */
+export function resolveStoredI693Annotations(
+  columnValue: unknown,
+  formData?: { annotation_overlays?: unknown } | null
+): I693Annotation[] {
+  const fromColumn = parseI693Annotations(columnValue)
+  if (fromColumn.length > 0) return fromColumn
+  return parseI693Annotations(formData?.annotation_overlays)
+}
+
 async function embedImageFromDataUrl(pdfDoc: PDFDocument, dataUrl: string) {
   const m = /^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/.exec(dataUrl)
   if (!m) return null
@@ -123,7 +133,11 @@ export async function drawI693AnnotationsOnPdf(
   annotations: I693Annotation[]
 ): Promise<Uint8Array> {
   if (!annotations.length) return inputBytes
-  const pdfDoc = await PDFDocument.load(inputBytes, { ignoreEncryption: true })
+
+  const pdfDoc = await PDFDocument.load(inputBytes, {
+    ignoreEncryption: true,
+    updateMetadata: false,
+  })
   const pages = pdfDoc.getPages()
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica)
 
@@ -180,5 +194,11 @@ export async function drawI693AnnotationsOnPdf(
     page.drawImage(image, { x, y, width: w, height: h })
   }
 
-  return new Uint8Array(await pdfDoc.save())
+  return new Uint8Array(
+    await pdfDoc.save({
+      useObjectStreams: false,
+      addDefaultPage: false,
+      updateFieldAppearances: false,
+    })
+  )
 }

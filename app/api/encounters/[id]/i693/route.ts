@@ -4,13 +4,16 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { mergeI693Form, isImmigrationEncounter } from '@/lib/i693/types'
+import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { prefillFromPatient } from '@/lib/i693/ai-fill'
 import type { I693FormData } from '@/lib/i693/types'
 import { buildI693ClinicalContext } from '@/lib/i693/build-context'
 import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
-import { parseI693Annotations } from '@/lib/i693/annotations'
+import { parseI693Annotations, resolveStoredI693Annotations } from '@/lib/i693/annotations'
+import type { I693Annotation } from '@/lib/i693/annotations'
+import { syncI693PdfToPatientFileAfterSave } from '@/lib/i693/save-patient-document'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +33,19 @@ async function requireStaff(supabase: Awaited<ReturnType<typeof createClient>>, 
   return role!.trim().toLowerCase()
 }
 
+function queueI693PatientFileSync(
+  admin: ReturnType<typeof createAdminClient>,
+  encounterId: number,
+  patientId: number,
+  formData: ReturnType<typeof mergeI693Form>,
+  annotations: I693Annotation[],
+  userId: string
+) {
+  void syncI693PdfToPatientFileAfterSave(admin, encounterId, patientId, formData, annotations, userId).catch(
+    (err) => console.error('[i693] patient file sync on save:', err)
+  )
+}
+
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = Number(params.id)
@@ -46,7 +62,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin
       .from('encounters')
-      .select('id, patient_id, consent_ack')
+      .select(
+        `
+        id,
+        patient_id,
+        consent_ack,
+        program_type,
+        appointments:appointment_id (
+          services:service_id ( title_en, title_es )
+        )
+      `
+      )
       .eq('id', encounterId)
       .maybeSingle()
 
@@ -60,6 +86,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       .maybeSingle()
 
     let formData = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
+    const storedAnnotations = resolveStoredI693Annotations(existing?.annotations, formData)
 
     if (!existing) {
       const bundle = await buildI693ClinicalContext(admin, encounterId, Number(enc.patient_id))
@@ -75,10 +102,10 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     return NextResponse.json({
       encounter_id: encounterId,
       patient_id: enc.patient_id,
-      is_immigration: isImmigrationEncounter(enc.consent_ack),
+      is_immigration: isImmigrationEncounterForI693(enc),
       submission: existing ?? null,
       form_data: formData,
-      annotations: parseI693Annotations(existing?.annotations),
+      annotations: storedAnnotations,
     })
   } catch (e) {
     return handleApiError(e)
@@ -105,8 +132,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       throw new ValidationError('Invalid JSON body')
     }
 
-    const formData = mergeI693Form(body.form_data)
     const annotations = parseI693Annotations(body.annotations)
+    const formData = mergeI693Form({
+      ...(body.form_data ?? {}),
+      annotation_overlays: annotations.length > 0 ? annotations : undefined,
+    })
     const status = body.status ?? 'draft'
 
     const admin = createAdminClient()
@@ -158,8 +188,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           role,
           source: role === 'admin' ? 'admin' : 'clinical',
         })
+        queueI693PatientFileSync(admin, encounterId, Number(enc.patient_id), formData, annotations, user.id)
         return NextResponse.json({
           success: true,
+          annotations_persisted: false,
           data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
         })
       }
@@ -174,8 +206,10 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         role,
         source: role === 'admin' ? 'admin' : 'clinical',
       })
+      queueI693PatientFileSync(admin, encounterId, Number(enc.patient_id), formData, annotations, user.id)
       return NextResponse.json({
         success: true,
+        annotations_persisted: true,
         data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
       })
     }
@@ -183,10 +217,12 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     const inserted = await admin.from('i693_submissions').insert(rowWithAnnotations).select().single()
     let data = inserted.data
     let error = inserted.error
+    let annotationsPersisted = true
     if (error && missingAnnotationsColumn(error)) {
       const retry = await admin.from('i693_submissions').insert(rowBase).select().single()
       data = retry.data
       error = retry.error
+      annotationsPersisted = false
     }
     if (error) throw error
     const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
@@ -199,7 +235,12 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       role,
       source: role === 'admin' ? 'admin' : 'clinical',
     })
-    return NextResponse.json({ success: true, data })
+    queueI693PatientFileSync(admin, encounterId, Number(enc.patient_id), formData, annotations, user.id)
+    return NextResponse.json({
+      success: true,
+      annotations_persisted: annotationsPersisted,
+      data,
+    })
   } catch (e) {
     return handleApiError(e)
   }

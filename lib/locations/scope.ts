@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchUserRole } from '@/lib/fetch-user-role'
+import { fetchAllLocations } from '@/lib/locations/fetch-all'
 import { mapRoleToEnum, UserRole } from '@/lib/roles'
 
 export type LocationRow = {
@@ -78,8 +79,7 @@ export async function getAssignedLocations(
   const scope = await getLocationScopeForUser(admin, userId, String(role))
 
   if (scope.unrestricted) {
-    const { data } = await admin.from('locations').select('id, title, address, location_code').order('title')
-    return (data ?? []) as LocationRow[]
+    return fetchAllLocations(admin)
   }
 
   if (scope.locationIds.length === 0) return []

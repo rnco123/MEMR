@@ -7,9 +7,10 @@ import { mergeI693Form } from '@/lib/i693/types'
 import type { I693FormData } from '@/lib/i693/types'
 import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
+import { loadEncounterImmigrationContext } from '@/lib/i693/immigration-eligibility'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
-import { parseI693Annotations } from '@/lib/i693/annotations'
+import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -20,7 +21,7 @@ function missingAnnotationsColumn(error: unknown): boolean {
   return e.code === '42703' || Boolean(e.message?.toLowerCase().includes('annotations'))
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = Number(params.id)
     if (!Number.isFinite(encounterId)) throw new ValidationError('Invalid encounter id')
@@ -57,14 +58,21 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (!sub) throw new ValidationError('Save the I-693 form before exporting PDF')
 
     const formData = mergeI693Form(sub.form_data as Partial<I693FormData>)
-    const annotations = parseI693Annotations(sub.annotations)
-    const { bytes, mode, filledFields, missingFields } = await generateI693PdfBytes(formData, annotations)
+    const annotations = resolveStoredI693Annotations(sub.annotations, formData)
+    const isPreviewOnly = new URL(request.url).searchParams.get('preview') === '1'
+    const { bytes, mode, filledFields, missingFields } = await generateI693PdfBytes(
+      formData,
+      annotations,
+      { bakeAnnotations: !isPreviewOnly }
+    )
 
     const patientId = sub.patient_id as number
-    if (Number.isFinite(patientId)) {
-      await persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, user.id).catch(
-        (err) => console.error('[i693/pdf] persist to patient file:', err)
-      )
+    if (!isPreviewOnly && Number.isFinite(patientId)) {
+      void (async () => {
+        const ctx = await loadEncounterImmigrationContext(admin, encounterId)
+        if (!ctx?.isImmigration) return
+        await persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, user.id)
+      })().catch((err) => console.error('[i693/pdf] persist to patient file:', err))
     }
 
     await logI693Audit('pdf_exported', encounterId, {

@@ -11,6 +11,7 @@ import {
   parseVaccinationWidget,
   vaccinationWidgetValue,
 } from '@/lib/i693/vaccination-grid-map'
+import { isI693CombFieldKey } from '@/lib/i693/pdf-comb-fields'
 import { widgetFieldIndex, widgetShortName } from '@/lib/i693/pdf-widget-map'
 import {
   applyPdfWidgetValues,
@@ -150,6 +151,8 @@ export async function extractI693FormFromPdfDocument(
       }
       continue
     }
+
+    if (isI693CombFieldKey(binding.key)) continue
 
     const parsedRaw = binding.format === 'date' ? parseDateFromPdfDisplay(val) : val
     const parsed = binding.format === 'date'

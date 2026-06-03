@@ -1,4 +1,13 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { I693Annotation } from '@/lib/i693/annotations'
+import type { I693FormData } from '@/lib/i693/types'
+import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
+import { loadEncounterImmigrationContext } from '@/lib/i693/immigration-eligibility'
+
+export type PersistI693PdfOptions = {
+  /** Keep submission status (e.g. draft) when syncing on every form save. */
+  preserveSubmissionStatus?: boolean
+}
 
 /** Store generated I-693 PDF in patient-documents bucket and link on submission row. */
 export async function persistI693PdfToPatientFile(
@@ -6,7 +15,8 @@ export async function persistI693PdfToPatientFile(
   patientId: number,
   encounterId: number,
   pdfBytes: Uint8Array,
-  uploadedByUid?: string | null
+  uploadedByUid?: string | null,
+  options?: PersistI693PdfOptions
 ): Promise<string> {
   const filePath = `patient-${patientId}/immigration/I-693-encounter-${encounterId}.pdf`
   const fileName = `Form I-693 (Encounter ${encounterId})`
@@ -21,14 +31,15 @@ export async function persistI693PdfToPatientFile(
     throw uploadErr
   }
 
-  await admin
-    .from('i693_submissions')
-    .update({
-      pdf_storage_path: filePath,
-      status: 'exported',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('encounter_id', encounterId)
+  const submissionPatch: Record<string, unknown> = {
+    pdf_storage_path: filePath,
+    updated_at: new Date().toISOString(),
+  }
+  if (!options?.preserveSubmissionStatus) {
+    submissionPatch.status = 'exported'
+  }
+
+  await admin.from('i693_submissions').update(submissionPatch).eq('encounter_id', encounterId)
 
   const { data: existing } = await admin
     .from('patient_documents')
@@ -49,9 +60,27 @@ export async function persistI693PdfToPatientFile(
 
   if (existing?.id) {
     await admin.from('patient_documents').update(row).eq('id', existing.id)
-  } else if (uploadedByUid) {
+  } else {
     await admin.from('patient_documents').insert(row)
   }
 
   return filePath
+}
+
+/** Regenerate PDF from saved form data and store in patient file (immigration encounters only). */
+export async function syncI693PdfToPatientFileAfterSave(
+  admin: SupabaseClient,
+  encounterId: number,
+  patientId: number,
+  formData: I693FormData,
+  annotations: I693Annotation[],
+  uploadedByUid?: string | null
+): Promise<string | null> {
+  const ctx = await loadEncounterImmigrationContext(admin, encounterId)
+  if (!ctx?.isImmigration) return null
+
+  const { bytes } = await generateI693PdfBytes(formData, annotations, { bakeAnnotations: true })
+  return persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, uploadedByUid, {
+    preserveSubmissionStatus: true,
+  })
 }

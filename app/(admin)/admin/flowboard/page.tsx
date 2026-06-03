@@ -4,6 +4,12 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { FlowboardKanban, type FlowboardKanbanAppointment } from '@/components/FlowboardKanban'
 import {
+  FlowboardFilterField,
+  FlowboardFilterToolbar,
+  FlowboardViewToggleSlot,
+  FLOWBOARD_SELECT_CLASS,
+} from '@/components/FlowboardFilterToolbar'
+import {
   FlowboardViewToggle,
   readFlowboardDisplayMode,
   writeFlowboardDisplayMode,
@@ -216,9 +222,9 @@ export default function AdminFlowboardPage() {
           </button>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 relative">
+        <FlowboardFilterToolbar
+          search={
+            <div className="relative">
               <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
@@ -233,104 +239,106 @@ export default function AdminFlowboardPage() {
                 className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('admin.flow.sort')}</span>
-              <select
-                value={sortBy}
-                onChange={(e) => {
-                  setSortBy(e.target.value as 'time' | 'name' | 'treatment')
-                  setPage(1)
-                }}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="time">{t('admin.flow.sort_time')}</option>
-                <option value="name">{t('admin.flow.sort_name')}</option>
-                <option value="treatment">{t('admin.flow.sort_treatment')}</option>
-              </select>
-            </div>
-
-            {locationOptions.length > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('admin.flow.location')}</span>
+          }
+          filters={
+            <>
+              <FlowboardFilterField label={t('admin.flow.sort')}>
                 <select
-                  value={filterLocationId}
+                  value={sortBy}
                   onChange={(e) => {
-                    setFilterLocationId(e.target.value)
+                    setSortBy(e.target.value as 'time' | 'name' | 'treatment')
                     setPage(1)
                   }}
-                  className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
+                  className={FLOWBOARD_SELECT_CLASS}
                 >
-                  <option value="all">{t('admin.flow.all_locations')}</option>
-                  {locationOptions.map(([id, title]) => (
-                    <option key={id} value={String(id)}>
-                      {title}
+                  <option value="time">{t('admin.flow.sort_time')}</option>
+                  <option value="name">{t('admin.flow.sort_name')}</option>
+                  <option value="treatment">{t('admin.flow.sort_treatment')}</option>
+                </select>
+              </FlowboardFilterField>
+              {locationOptions.length > 0 && (
+                <FlowboardFilterField label={t('admin.flow.location')} wide>
+                  <select
+                    value={filterLocationId}
+                    onChange={(e) => {
+                      setFilterLocationId(e.target.value)
+                      setPage(1)
+                    }}
+                    className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[16rem]`}
+                  >
+                    <option value="all">{t('admin.flow.all_locations')}</option>
+                    {locationOptions.map(([id, title]) => (
+                      <option key={id} value={String(id)}>
+                        {title}
+                      </option>
+                    ))}
+                  </select>
+                </FlowboardFilterField>
+              )}
+              <FlowboardFilterField label={t('flow.status')}>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => {
+                    setFilterStatus(e.target.value)
+                    setPage(1)
+                  }}
+                  className={FLOWBOARD_SELECT_CLASS}
+                >
+                  <option value="all">{t('common.all')}</option>
+                  {ENCOUNTER_STATUSES.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
                     </option>
                   ))}
                 </select>
+              </FlowboardFilterField>
+              <FlowboardViewToggleSlot>
+                <FlowboardViewToggle
+                  value={displayMode}
+                  onChange={handleDisplayModeChange}
+                  accentTheme="purple"
+                  listLabel={t('flow.view_list')}
+                  kanbanLabel={t('flow.view_kanban')}
+                />
+              </FlowboardViewToggleSlot>
+            </>
+          }
+          footer={
+            <>
+              <p className="text-xs text-slate-500 min-w-0">
+                {t('flow.showing_x_of_y', {
+                  start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
+                  end: Math.min(page * pageSize, filteredAppointments.length),
+                  total: filteredAppointments.length,
+                })}
+                {searchQuery || filterStatus !== 'all'
+                  ? ` ${t('admin.flow.filtered_from', { total: appointments.length })}`
+                  : ''}
+              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                {displayMode === 'list' && (
+                  <label className="text-xs text-slate-500 flex items-center gap-2 shrink-0">
+                    {t('flow.per_page')}
+                    <select
+                      value={pageSize}
+                      onChange={(e) => {
+                        setPageSize(Number(e.target.value))
+                        setPage(1)
+                      }}
+                      className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
+                    >
+                      {PAGE_SIZE_OPTIONS.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
               </div>
-            )}
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('flow.status')}</span>
-              <select
-                value={filterStatus}
-                onChange={(e) => {
-                  setFilterStatus(e.target.value)
-                  setPage(1)
-                }}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="all">{t('common.all')}</option>
-                {ENCOUNTER_STATUSES.map((status) => (
-                  <option key={status.value} value={status.value}>
-                    {status.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <FlowboardViewToggle
-              value={displayMode}
-              onChange={handleDisplayModeChange}
-              accentTheme="purple"
-              listLabel={t('flow.view_list')}
-              kanbanLabel={t('flow.view_kanban')}
-            />
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-xs text-slate-500">
-              {t('flow.showing_x_of_y', {
-                start: filteredAppointments.length === 0 ? 0 : (page - 1) * pageSize + 1,
-                end: Math.min(page * pageSize, filteredAppointments.length),
-                total: filteredAppointments.length,
-              })}
-              {searchQuery || filterStatus !== 'all'
-                ? ` ${t('admin.flow.filtered_from', { total: appointments.length })}`
-                : ''}
-            </p>
-            <div className="flex items-center gap-4">
-              {displayMode === 'list' && (
-              <label className="text-xs text-slate-500 flex items-center gap-2">
-                {t('flow.per_page')}
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value))
-                    setPage(1)
-                  }}
-                  className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs"
-                >
-                  {PAGE_SIZE_OPTIONS.map((n) => (
-                    <option key={n} value={n}>{n}</option>
-                  ))}
-                </select>
-              </label>
-              )}
-            </div>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {loading ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-16 flex items-center justify-center">

@@ -11,7 +11,7 @@ import {
 const memoryCache = new Map<string, PdfWidgetEditorField[]>()
 
 function cacheKey(templatePath: string): string {
-  return createHash('sha256').update(`${templatePath}:editor-fields-v2`).digest('hex').slice(0, 16)
+  return createHash('sha256').update(`${templatePath}:editor-fields-v3`).digest('hex').slice(0, 16)
 }
 
 async function cacheDir(): Promise<string> {

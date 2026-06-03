@@ -4,11 +4,14 @@ import { useEffect, useState, useCallback, useMemo, useRef, type FormEvent } fro
 import { toast } from 'sonner'
 import { UserAvatar } from '@/components/UserAvatar'
 import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
+import { LocationAssignmentChecklist } from '@/components/LocationAssignmentChecklist'
 import { useT } from '@/lib/i18n'
 
 interface Location {
   id: number
   title: string
+  address?: string | null
+  location_code?: string | null
 }
 
 interface StaffUser {
@@ -224,12 +227,6 @@ export default function AdminUsersPage() {
   useEffect(() => {
     setPage(1)
   }, [search, roleFilter, showInactive])
-
-  const toggleLocation = (id: number) =>
-    setSelectedLocations((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-
-  const toggleEditLocation = (id: number) =>
-    setEditLocationIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
 
   const patchUser = async (body: Record<string, unknown>) => {
     const res = await fetch('/api/admin/users', {
@@ -531,24 +528,15 @@ export default function AdminUsersPage() {
                 </div>
               </div>
 
-              {locations.length > 0 && (
-                <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.locations')}</label>
-                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                    {locations.map((loc) => (
-                      <label key={loc.id} className="flex items-center gap-2 cursor-pointer group">
-                        <input
-                          type="checkbox"
-                          checked={selectedLocations.includes(loc.id)}
-                          onChange={() => toggleLocation(loc.id)}
-                          className="w-4 h-4 accent-purple-600"
-                        />
-                        <span className="text-sm text-slate-700 group-hover:text-slate-900">{loc.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.locations')}</label>
+                <LocationAssignmentChecklist
+                  locations={locations}
+                  selectedIds={selectedLocations}
+                  onChange={setSelectedLocations}
+                  listClassName="max-h-56"
+                />
+              </div>
 
               {formError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -784,7 +772,7 @@ export default function AdminUsersPage() {
 
       {locationsUser && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900">{t('admin.users.change_locations_modal')}</h2>
               <button type="button" onClick={() => setLocationsUser(null)} className="text-slate-400 hover:text-slate-600">
@@ -796,19 +784,12 @@ export default function AdminUsersPage() {
                 {t('admin.users.assign_clinics_for', { name: userLabel(locationsUser) })}{' '}
                 {t('admin.users.multiple_hint')}
               </p>
-              <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                {locations.map((loc) => (
-                  <label key={loc.id} className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={editLocationIds.includes(loc.id)}
-                      onChange={() => toggleEditLocation(loc.id)}
-                      className="w-4 h-4 accent-purple-600"
-                    />
-                    <span className="text-sm text-slate-700">{loc.title}</span>
-                  </label>
-                ))}
-              </div>
+              <LocationAssignmentChecklist
+                locations={locations}
+                selectedIds={editLocationIds}
+                onChange={setEditLocationIds}
+                listClassName="max-h-72"
+              />
               {modalError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>
               )}

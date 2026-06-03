@@ -10,7 +10,7 @@ import { LanguageToggle } from "@/components/LanguageToggle";
 import { useT } from "@/lib/i18n";
 
 export default function Home() {
-  const { user, role, loading, signOut, signIn, testSignIn } = useAuth();
+  const { user, role, loading, signOut, signIn } = useAuth();
   const router = useRouter();
   const { t } = useT();
   const [email, setEmail] = useState('')
@@ -40,21 +40,6 @@ export default function Home() {
     if (value) validateEmail(value)
   }
 
-  const fillCredentials = (target: 'doctor' | 'nurse' | 'admin') => {
-    setError(null)
-    setEmailError(null)
-    if (target === 'admin') {
-      setEmail('admin@myclinicmd.com')
-      setPassword('Admin@12345')
-    } else if (target === 'doctor') {
-      setEmail('doctor@test.com')
-      setPassword('Test@12345')
-    } else {
-      setEmail('nancy@test.com')
-      setPassword('Test@12345')
-    }
-  }
-
   useEffect(() => {
     if (!loading && user && role) {
       router.push(role === 'admin' ? '/admin' : '/dashboard')
@@ -71,18 +56,9 @@ export default function Home() {
     setIsSigningIn(true)
 
     try {
-      const isTestUser = email === 'doctor@myclinicmd.com' || email === 'nurse@myclinicmd.com'
-
-      if (isTestUser) {
-        const { error } = await testSignIn(email, password)
-        if (error) {
-          setError(error.message)
-        }
-      } else {
-        const { error } = await signIn(email, password)
-        if (error) {
-          setError(error.message)
-        }
+      const { error } = await signIn(email, password)
+      if (error) {
+        setError(error.message)
       }
     } catch (err) {
       setError(t('auth.unexpected_error'))
@@ -162,59 +138,6 @@ export default function Home() {
                   </p>
                 </div>
                 <LanguageToggle />
-              </div>
-
-              <div className="mb-6">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400 font-semibold mb-2">
-                  {t('auth.quick_sign_in')}
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('doctor')}
-                    className="group flex items-center gap-2 rounded-xl border border-[#dbe5ff] bg-[#f9fbff] px-3 py-3 text-left transition-all hover:border-[#2E6EF3] hover:bg-[#eef3ff]"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#2E6EF3]/10 text-[#2E6EF3]">
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-800">{t('auth.role_doctor')}</p>
-                      <p className="truncate text-[10px] text-slate-500">doctor@test.com</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('nurse')}
-                    className="group flex items-center gap-2 rounded-xl border border-[#dbe5ff] bg-[#f9fbff] px-3 py-3 text-left transition-all hover:border-[#2E6EF3] hover:bg-[#eef3ff]"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#2E6EF3]/10 text-[#2E6EF3]">
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.5 20.25a7.5 7.5 0 0115 0v.75H4.5v-.75z" />
-                      </svg>
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-800">{t('auth.role_nurse')}</p>
-                      <p className="truncate text-[10px] text-slate-500">nancy@test.com</p>
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => fillCredentials('admin')}
-                    className="group flex items-center gap-2 rounded-xl border border-purple-200 bg-purple-50 px-3 py-3 text-left transition-all hover:border-purple-400 hover:bg-purple-100"
-                  >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-100 text-purple-600">
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                      </svg>
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-purple-800">Admin</p>
-                      <p className="truncate text-[10px] text-purple-500">admin@myclinicmd.com</p>
-                    </div>
-                  </button>
-                </div>
               </div>
 
               <form onSubmit={handleSignIn} className="space-y-4">

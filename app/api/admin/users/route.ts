@@ -5,6 +5,7 @@ import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { logAuditEvent } from '@/lib/audit-server'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
+import { fetchAllLocations } from '@/lib/locations/fetch-all'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -111,13 +112,13 @@ export async function GET(_req: NextRequest) {
     await requireAdminUser()
     const admin = createAdminClient()
 
-    const [{ data: profiles, error }, { data: locations }, { data: userLocations }] = await Promise.all([
+    const [{ data: profiles, error }, locations, { data: userLocations }] = await Promise.all([
       admin
         .from('profiles')
         .select('uid, role, full_name, email, active, created_at, avatar_id')
         .neq('role', 'admin')
         .order('created_at', { ascending: false }),
-      admin.from('locations').select('id, title').order('title'),
+      fetchAllLocations(admin),
       admin.from('user_locations').select('user_uid, location_id'),
     ])
 

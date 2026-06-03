@@ -1,7 +1,7 @@
 'use client'
 
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Rnd } from 'react-rnd'
 import { toast } from 'sonner'
@@ -9,16 +9,26 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
 import { extractFormDataFromApi, parseFormDataFromApi } from '@/lib/i693/form-api'
+import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
 import {
   applyI693FormToPdfDocument,
   extractI693FormFromPdfDocument,
 } from '@/lib/i693/pdfjs-form-bridge'
+import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
+import {
+  discoverCombPlacementsFromLayer,
+  setCombFieldOnPdfDocument,
+  type I693DomCombPlacement,
+} from '@/lib/i693/pdf-comb-fields'
+import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
+import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
 import {
   type I693Annotation,
   type I693CrossAnnotation,
   type I693ImageAnnotation,
   type I693TextAnnotation,
   parseI693Annotations,
+  resolveStoredI693Annotations,
 } from '@/lib/i693/annotations'
 import { useT } from '@/lib/i18n'
 
@@ -41,6 +51,7 @@ type PageAnnotationHost = {
   width: number
   height: number
   hostEl: HTMLDivElement
+  pageBoxEl: HTMLDivElement
 }
 
 /** Minimal link service for pdf.js annotation layers. */
@@ -90,6 +101,30 @@ function toPx(percent: number, totalPx: number): number {
   return Math.max(0, percent) * totalPx
 }
 
+/** Prevent pdf.js AcroForm widgets from accepting edits in preview. */
+function lockPreviewFormLayer(root: HTMLElement): void {
+  root.style.pointerEvents = 'none'
+  root.querySelectorAll('input, textarea, select, button').forEach((node) => {
+    const el = node as HTMLInputElement
+    if (el.type === 'checkbox' || el.type === 'radio') {
+      el.disabled = true
+    } else {
+      el.readOnly = true
+    }
+    el.tabIndex = -1
+    el.style.pointerEvents = 'none'
+    el.style.cursor = 'default'
+  })
+}
+
+function addPreviewInteractionShield(formWrap: HTMLDivElement): void {
+  const shield = document.createElement('div')
+  shield.className = 'absolute inset-0 z-[20] cursor-default'
+  shield.setAttribute('aria-hidden', 'true')
+  shield.style.pointerEvents = 'auto'
+  formWrap.appendChild(shield)
+}
+
 export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const { t } = useT()
   const [loading, setLoading] = useState(true)
@@ -106,6 +141,10 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [form, setForm] = useState<I693FormData>(EMPTY_I693_FORM)
   const [annotations, setAnnotations] = useState<I693Annotation[]>([])
   const [pageHosts, setPageHosts] = useState<PageAnnotationHost[]>([])
+  const [previewPageHosts, setPreviewPageHosts] = useState<PageAnnotationHost[]>([])
+  const [previewCombPlacements, setPreviewCombPlacements] = useState<I693DomCombPlacement[]>([])
+  const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
+  const [previewError, setPreviewError] = useState<string | null>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const previewHostRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -117,8 +156,20 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   formRef.current = form
   annotationsRef.current = annotations
 
-  const fetchFilledPdfBytes = useCallback(async (): Promise<Uint8Array> => {
-    const res = await fetch(`/api/encounters/${encounterId}/i693/pdf`, {
+  const commitAnnotations = useCallback(
+    (next: I693Annotation[] | ((prev: I693Annotation[]) => I693Annotation[])) => {
+      setAnnotations((prev) => {
+        const resolved = typeof next === 'function' ? next(prev) : next
+        annotationsRef.current = resolved
+        return resolved
+      })
+    },
+    []
+  )
+
+  const fetchFilledPdfBytes = useCallback(async (forPreview = true): Promise<Uint8Array> => {
+    const qs = forPreview ? '?preview=1' : ''
+    const res = await fetch(`/api/encounters/${encounterId}/i693/pdf${qs}`, {
       credentials: 'include',
       cache: 'no-store',
     })
@@ -126,7 +177,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       const json = await res.json().catch(() => ({}))
       throw new Error(json.error || json.message || `PDF export failed (${res.status})`)
     }
-    return new Uint8Array(await res.arrayBuffer())
+    return clonePdfBytes(new Uint8Array(await res.arrayBuffer()))
   }, [encounterId])
 
   const loadFormAndAnnotations = useCallback(async () => {
@@ -143,9 +194,25 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     const parsed = parseFormDataFromApi(raw)
     setForm(parsed)
     formRef.current = parsed
-    setAnnotations(parseI693Annotations(json.annotations ?? json.submission?.annotations))
+    const loadedAnnotations = resolveStoredI693Annotations(
+      json.annotations ?? json.submission?.annotations,
+      parsed
+    )
+    commitAnnotations(loadedAnnotations)
     setDirty(false)
-  }, [encounterId])
+  }, [commitAnnotations, encounterId])
+
+  const updateCombField = useCallback(async (key: string, value: string) => {
+    const formatted = formatI693WidgetValue(key, value)
+    const next = structuredClone(formRef.current) as I693FormData
+    setNestedValue(next as unknown as Record<string, unknown>, key, formatted)
+    setForm(next)
+    formRef.current = next
+    setDirty(true)
+    if (pdfRef.current) {
+      await setCombFieldOnPdfDocument(pdfRef.current, key, formatted)
+    }
+  }, [])
 
   const syncFormFromPdf = useCallback(async () => {
     const pdf = pdfRef.current
@@ -178,6 +245,14 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         })
         const json = await res.json()
         if (!res.ok) throw new Error(json.error || 'Save failed')
+        if (
+          annotationsRef.current.length > 0 &&
+          json.annotations_persisted === false
+        ) {
+          toast.warning(
+            'Overlays saved in form data only. Apply migration 060_i693_annotations.sql for dedicated annotation storage.'
+          )
+        }
         setDirty(false)
         if (showToast) toast.success(t('i693.saved'))
         return true
@@ -200,13 +275,15 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
 
-      const pdf = await pdfjs.getDocument(PDF_URL).promise
+      const templateBytes = await fetch(PDF_URL).then((r) => r.arrayBuffer())
+      const pdf = await loadPdfJsDocument(pdfjs, new Uint8Array(templateBytes))
       pdfRef.current = pdf
       await applyI693FormToPdfDocument(pdf, data)
 
       host.innerHTML = ''
       const linkService = new PdfLinkService(pdf.numPages)
       const nextPageHosts: PageAnnotationHost[] = []
+      const nextCombPlacements: I693DomCombPlacement[] = []
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum)
@@ -272,14 +349,21 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         formLayerDiv.addEventListener('change', () => void syncFormFromPdf())
         formLayerDiv.addEventListener('input', () => void syncFormFromPdf())
 
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+        nextCombPlacements.push(
+          ...discoverCombPlacementsFromLayer(formLayerDiv, pageBox, pageNum)
+        )
+
         nextPageHosts.push({
           page: pageNum,
           width: viewport.width,
           height: viewport.height,
           hostEl: annHostDiv,
+          pageBoxEl: pageBox,
         })
       }
 
+      setCombPlacements(nextCombPlacements)
       setPageHosts(nextPageHosts)
       setPdfReady(true)
     },
@@ -291,13 +375,13 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       const host = previewHostRef.current
       if (!host) return
 
-      setPdfReady(false)
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-      const pdfData = new Uint8Array(bytes)
-      const pdf = await pdfjs.getDocument({ data: pdfData }).promise
+      const pdf = await loadPdfJsDocument(pdfjs, bytes)
       host.innerHTML = ''
       const linkService = new PdfLinkService(pdf.numPages)
+      const nextPreviewPageHosts: PageAnnotationHost[] = []
+      const nextPreviewCombPlacements: I693DomCombPlacement[] = []
 
       for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
         const page = await pdf.getPage(pageNum)
@@ -322,12 +406,20 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         const ctx = canvas.getContext('2d')
         if (!ctx) continue
 
-        const annotationLayerDiv = document.createElement('div')
-        annotationLayerDiv.className = 'annotationLayer absolute inset-0 pointer-events-none'
-        annotationLayerDiv.style.pointerEvents = 'none'
+        const formWrap = document.createElement('div')
+        formWrap.className = 'absolute inset-0 z-10'
+
+        const formLayerDiv = document.createElement('div')
+        formLayerDiv.className = 'annotationLayer absolute inset-0'
+
+        const annHostDiv = document.createElement('div')
+        annHostDiv.className = 'absolute inset-0 z-30'
+        annHostDiv.style.pointerEvents = 'none'
 
         pageBox.appendChild(canvas)
-        pageBox.appendChild(annotationLayerDiv)
+        formWrap.appendChild(formLayerDiv)
+        pageBox.appendChild(formWrap)
+        pageBox.appendChild(annHostDiv)
         wrap.appendChild(pageBox)
         host.appendChild(wrap)
 
@@ -339,7 +431,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
         const annotationsList = await page.getAnnotations()
         const layer = new pdfjs.AnnotationLayer({
-          div: annotationLayerDiv,
+          div: formLayerDiv,
           page,
           viewport,
           accessibilityManager: null,
@@ -349,29 +441,31 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         })
         await layer.render({
           viewport,
-          div: annotationLayerDiv,
+          div: formLayerDiv,
           page,
           annotations: annotationsList,
           linkService: linkService as any,
           renderForms: true,
           annotationStorage: pdf.annotationStorage,
         })
+        lockPreviewFormLayer(formLayerDiv)
+        addPreviewInteractionShield(formWrap)
 
-        const controls = annotationLayerDiv.querySelectorAll('input, select, textarea')
-        controls.forEach((el) => {
-          if (
-            el instanceof HTMLInputElement ||
-            el instanceof HTMLTextAreaElement ||
-            el instanceof HTMLSelectElement
-          ) {
-            el.disabled = true
-          }
-          el.setAttribute('tabindex', '-1')
-          ;(el as HTMLElement).style.pointerEvents = 'none'
+        nextPreviewCombPlacements.push(
+          ...discoverCombPlacementsFromLayer(formLayerDiv, pageBox, pageNum)
+        )
+
+        nextPreviewPageHosts.push({
+          page: pageNum,
+          width: viewport.width,
+          height: viewport.height,
+          hostEl: annHostDiv,
+          pageBoxEl: pageBox,
         })
       }
 
-      setPdfReady(true)
+      setPreviewCombPlacements(nextPreviewCombPlacements)
+      setPreviewPageHosts(nextPreviewPageHosts)
     },
     [t]
   )
@@ -379,13 +473,18 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const refreshPreview = useCallback(async () => {
     if (mode !== 'preview') return
     setPreviewLoading(true)
+    setPdfReady(false)
     try {
       const ok = await saveCurrent(true)
-      if (!ok) return
+      if (!ok) {
+        setPreviewLoading(false)
+        return
+      }
       const bytes = await fetchFilledPdfBytes()
-      bytesRef.current = bytes
+      bytesRef.current = clonePdfBytes(bytes)
       setPreviewTick((n) => n + 1)
-    } finally {
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Preview refresh failed')
       setPreviewLoading(false)
     }
   }, [fetchFilledPdfBytes, mode, saveCurrent])
@@ -425,25 +524,54 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       host.innerHTML = ''
       pdfRef.current = null
       setPageHosts([])
+      setCombPlacements([])
       setPdfReady(false)
     }
   }, [editorTick, mode, renderEditorPdf])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (mode !== 'preview' || previewTick === 0 || !bytesRef.current) return
-    const host = previewHostRef.current
-    if (!host) return
 
-    void (async () => {
-      try {
-        await renderPreviewPdf(bytesRef.current!, scale)
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'PDF preview failed to load')
+    let cancelled = false
+
+    const run = async (attempt = 0) => {
+      const host = previewHostRef.current
+      if (!host) {
+        if (attempt < 40 && !cancelled) {
+          requestAnimationFrame(() => void run(attempt + 1))
+        } else if (!cancelled) {
+          toast.error('Preview could not start — try again')
+          setPreviewLoading(false)
+        }
+        return
       }
-    })()
+
+      try {
+        setPreviewError(null)
+        await renderPreviewPdf(clonePdfBytes(bytesRef.current!), scale)
+        if (!cancelled) setPdfReady(true)
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'PDF preview failed to load'
+        if (!cancelled) {
+          setPreviewError(message)
+          const quiet =
+            message.toLowerCase().includes('password') ||
+            message.toLowerCase().includes('encryption')
+          if (!quiet) toast.error(message)
+          setPdfReady(true)
+        }
+      } finally {
+        if (!cancelled) setPreviewLoading(false)
+      }
+    }
+
+    void run()
 
     return () => {
-      host.innerHTML = ''
+      cancelled = true
+      if (previewHostRef.current) previewHostRef.current.innerHTML = ''
+      setPreviewPageHosts([])
+      setPreviewCombPlacements([])
       setPdfReady(false)
     }
   }, [mode, previewTick, renderPreviewPdf, scale])
@@ -451,21 +579,36 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const switchToPreview = useCallback(async () => {
     if (mode === 'preview') return
     setPreviewLoading(true)
+    setPdfReady(false)
+    setPreviewError(null)
+    setTool('none')
     try {
       const ok = await saveCurrent(true)
-      if (!ok) return
+      if (!ok) {
+        setPreviewLoading(false)
+        return
+      }
       const bytes = await fetchFilledPdfBytes()
-      bytesRef.current = bytes
+      bytesRef.current = clonePdfBytes(bytes)
       setMode('preview')
       setPreviewTick((n) => n + 1)
-      setTool('none')
-    } finally {
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Preview failed'
+      setPreviewError(message)
+      const quiet =
+        message.toLowerCase().includes('password') ||
+        message.toLowerCase().includes('encryption')
+      if (!quiet) toast.error(message)
       setPreviewLoading(false)
+      setPdfReady(true)
     }
   }, [fetchFilledPdfBytes, mode, saveCurrent])
 
   const switchToEditor = useCallback(() => {
     if (mode === 'editor') return
+    setPreviewError(null)
+    setPreviewPageHosts([])
+    setPreviewCombPlacements([])
     setMode('editor')
     setEditorTick((n) => n + 1)
   }, [mode])
@@ -474,7 +617,9 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     if (mode !== 'preview') return
     setDownloadLoading(true)
     try {
-      const bytes = await fetchFilledPdfBytes()
+      const ok = await saveCurrent(false)
+      if (!ok) return
+      const bytes = await fetchFilledPdfBytes(false)
       const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -488,7 +633,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     } finally {
       setDownloadLoading(false)
     }
-  }, [encounterId, fetchFilledPdfBytes, mode, t])
+  }, [encounterId, fetchFilledPdfBytes, mode, saveCurrent, t])
 
   const onPickImage = useCallback(() => {
     imageInputRef.current?.click()
@@ -549,22 +694,28 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       }
 
       if (!ann) return
-      setAnnotations((prev) => [...prev, ann])
+      commitAnnotations((prev) => [...prev, ann])
       setDirty(true)
       if (tool !== 'text') setTool('none')
     },
-    [tool]
+    [commitAnnotations, tool]
   )
 
-  const updateAnnotation = useCallback((id: string, updater: (a: I693Annotation) => I693Annotation) => {
-    setAnnotations((prev) => prev.map((a) => (a.id === id ? updater(a) : a)))
-    setDirty(true)
-  }, [])
+  const updateAnnotation = useCallback(
+    (id: string, updater: (a: I693Annotation) => I693Annotation) => {
+      commitAnnotations((prev) => prev.map((a) => (a.id === id ? updater(a) : a)))
+      setDirty(true)
+    },
+    [commitAnnotations]
+  )
 
-  const removeAnnotation = useCallback((id: string) => {
-    setAnnotations((prev) => prev.filter((a) => a.id !== id))
-    setDirty(true)
-  }, [])
+  const removeAnnotation = useCallback(
+    (id: string) => {
+      commitAnnotations((prev) => prev.filter((a) => a.id !== id))
+      setDirty(true)
+    },
+    [commitAnnotations]
+  )
 
   const editorAnnotationPortals = useMemo(() => {
     if (mode !== 'editor') return null
@@ -767,6 +918,145 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     })
   }, [addAnnotationAt, annotations, mode, pageHosts, tool, updateAnnotation, removeAnnotation])
 
+  const previewAnnotationPortals = useMemo(() => {
+    if (mode !== 'preview') return null
+    return previewPageHosts.map((pageHost) => {
+      const pageAnnotations = annotations.filter((a) => a.page === pageHost.page)
+      const layer = (
+        <div className="absolute inset-0 z-30 pointer-events-none">
+          {pageAnnotations.map((a) => {
+            if (a.type === 'text') {
+              const x = toPx(a.xPercent, pageHost.width)
+              const y = toPx(a.yPercent, pageHost.height)
+              const w = Math.max(60, toPx(a.widthPercent, pageHost.width))
+              const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+              return (
+                <div
+                  key={a.id}
+                  className="absolute overflow-hidden text-black"
+                  style={{
+                    left: x,
+                    top: y,
+                    width: w,
+                    height: h,
+                    fontSize: `${ANNOTATION_TEXT_SIZE}px`,
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {a.value}
+                </div>
+              )
+            }
+
+            if (a.type === 'cross') {
+              const x = toPx(a.xPercent, pageHost.width)
+              const y = toPx(a.yPercent, pageHost.height)
+              const size = Math.max(16, toPx(a.sizePercent, pageHost.width))
+              return (
+                <div
+                  key={a.id}
+                  className="absolute"
+                  style={{ left: x, top: y, width: size, height: size }}
+                >
+                  <svg viewBox="0 0 100 100" className="h-full w-full">
+                    <line x1="8" y1="8" x2="92" y2="92" stroke="black" strokeWidth="10" />
+                    <line x1="92" y1="8" x2="8" y2="92" stroke="black" strokeWidth="10" />
+                  </svg>
+                </div>
+              )
+            }
+
+            const x = toPx(a.xPercent, pageHost.width)
+            const y = toPx(a.yPercent, pageHost.height)
+            const w = Math.max(48, toPx(a.widthPercent, pageHost.width))
+            const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+            return (
+              <img
+                key={a.id}
+                src={a.imageUrl}
+                alt=""
+                className="absolute object-contain"
+                style={{ left: x, top: y, width: w, height: h }}
+              />
+            )
+          })}
+        </div>
+      )
+      return createPortal(layer, pageHost.hostEl, `preview-ann-${pageHost.page}`)
+    })
+  }, [annotations, mode, previewPageHosts])
+
+  const previewCombPortals = useMemo(() => {
+    if (mode !== 'preview' || previewCombPlacements.length === 0) return null
+
+    return previewPageHosts.flatMap((pageHost) => {
+      const fieldsOnPage = previewCombPlacements.filter((f) => f.page === pageHost.page)
+
+      return fieldsOnPage.map((field) => {
+        const raw = getNestedValue(form as unknown as Record<string, unknown>, field.key)
+        const value = raw == null ? '' : String(raw)
+
+        return createPortal(
+          <I693PdfCharCellField
+            placement={{
+              key: field.key,
+              page: pageHost.page,
+              x: field.leftPx,
+              y: field.topPx,
+              count: field.count,
+              cellWidth: field.cellWidthPx,
+              height: field.heightPx,
+              mode: field.mode,
+              label: field.label,
+            }}
+            value={value}
+            pixelCoords
+            editScale={1}
+            readOnly
+            onChange={() => {}}
+          />,
+          pageHost.pageBoxEl,
+          `preview-comb-${field.widgetName}`
+        )
+      })
+    })
+  }, [form, mode, previewCombPlacements, previewPageHosts])
+
+  const charCellPortals = useMemo(() => {
+    if (mode !== 'editor' || combPlacements.length === 0) return null
+
+    return pageHosts.flatMap((pageHost) => {
+      const fieldsOnPage = combPlacements.filter((f) => f.page === pageHost.page)
+
+      return fieldsOnPage.map((field) => {
+        const raw = getNestedValue(form as unknown as Record<string, unknown>, field.key)
+        const value = raw == null ? '' : String(raw)
+
+        return createPortal(
+          <I693PdfCharCellField
+            placement={{
+              key: field.key,
+              page: pageHost.page,
+              x: field.leftPx,
+              y: field.topPx,
+              count: field.count,
+              cellWidth: field.cellWidthPx,
+              height: field.heightPx,
+              mode: field.mode,
+              label: field.label,
+            }}
+            value={value}
+            pixelCoords
+            editScale={1}
+            onChange={(v) => void updateCombField(field.key, v)}
+          />,
+          pageHost.pageBoxEl,
+          `comb-${field.widgetName}`
+        )
+      })
+    })
+  }, [combPlacements, form, mode, pageHosts, updateCombField])
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -861,11 +1151,25 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                 type="button"
                 title="Add image"
                 onClick={onPickImage}
-                className={`h-8 w-8 rounded-md border text-base leading-none ${
+                className={`flex h-8 w-8 items-center justify-center rounded-md border leading-none ${
                   tool === 'image' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                ⌷
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-4 w-4"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                  <circle cx="8.5" cy="8.5" r="1.5" />
+                  <path d="M21 15l-5-5L5 21" />
+                </svg>
               </button>
             </div>
           )}
@@ -923,26 +1227,48 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       />
 
       <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-14rem)]">
-        {!pdfReady && (
+        {previewError && mode === 'preview' ? (
+          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100/95 p-8 text-center">
+            <p className="text-sm font-medium text-red-700">{previewError}</p>
+            <button
+              type="button"
+              onClick={() => void switchToEditor()}
+              className="px-4 py-2 rounded-lg bg-[#2E6EF3] text-white text-sm font-medium"
+            >
+              Back to editor
+            </button>
+          </div>
+        ) : !pdfReady ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
             <LoadingSpinner
-              message={mode === 'preview' && previewLoading ? 'Saving and preparing preview...' : t('i693.pdf_editor_loading')}
+              message={
+                previewLoading || saving
+                  ? mode === 'preview'
+                    ? 'Saving and preparing preview…'
+                    : t('i693.pdf_editor_loading')
+                  : t('i693.pdf_editor_loading')
+              }
               variant="light"
             />
           </div>
-        )}
+        ) : null}
         {mode === 'editor' ? (
-          <div
-            ref={editorHostRef}
-            className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
-          />
+          <>
+            <div
+              ref={editorHostRef}
+              className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
+            />
+            {charCellPortals}
+          </>
         ) : (
           <div
             ref={previewHostRef}
-            className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)]"
+            className="i693-pdfjs-preview min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-none [&_.annotationLayer_input]:pointer-events-none [&_.annotationLayer_input]:cursor-default [&_.annotationLayer_input]:select-none [&_.annotationLayer_input]:caret-transparent"
           />
         )}
         {editorAnnotationPortals}
+        {previewAnnotationPortals}
+        {previewCombPortals}
       </div>
       {dirty && (
         <p className="text-xs text-amber-700">

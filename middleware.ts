@@ -116,9 +116,14 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Security: Rate limiting for API routes
-  if (request.nextUrl.pathname.startsWith('/api/')) {
-    const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown'
+  // Security: Rate limiting for API routes (shared per IP; dev uses a higher cap)
+  if (isProduction && request.nextUrl.pathname.startsWith('/api/')) {
+    const forwarded = request.headers.get('x-forwarded-for')
+    const ip =
+      request.ip ||
+      (forwarded ? forwarded.split(',')[0]?.trim() : null) ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
     if (!rateLimitCheck(ip, { limit: 100, windowMs: 60000 })) {
       return NextResponse.json(
         { error: 'Too many requests', code: 'RATE_LIMIT_EXCEEDED' },
