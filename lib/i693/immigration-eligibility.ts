@@ -55,6 +55,9 @@ const ENCOUNTER_IMMIGRATION_SELECT = `
   )
 `
 
+/** Supabase select fragment for immigration eligibility checks (server). */
+export const ENCOUNTER_I693_ELIGIBILITY_SELECT = ENCOUNTER_IMMIGRATION_SELECT
+
 export async function loadEncounterImmigrationContext(
   admin: SupabaseClient,
   encounterId: number

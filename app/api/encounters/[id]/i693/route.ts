@@ -3,8 +3,11 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
-import { mergeI693Form, isImmigrationEncounter } from '@/lib/i693/types'
-import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
+import { mergeI693Form } from '@/lib/i693/types'
+import {
+  isImmigrationEncounterForI693,
+  loadEncounterImmigrationContext,
+} from '@/lib/i693/immigration-eligibility'
 import { prefillFromPatient } from '@/lib/i693/ai-fill'
 import type { I693FormData } from '@/lib/i693/types'
 import { buildI693ClinicalContext } from '@/lib/i693/build-context'
@@ -44,6 +47,16 @@ function queueI693PatientFileSync(
   void syncI693PdfToPatientFileAfterSave(admin, encounterId, patientId, formData, annotations, userId).catch(
     (err) => console.error('[i693] patient file sync on save:', err)
   )
+}
+
+async function maybeSyncImmigrationCase(
+  admin: ReturnType<typeof createAdminClient>,
+  encounterId: number
+) {
+  const ctx = await loadEncounterImmigrationContext(admin, encounterId)
+  if (ctx?.isImmigration) {
+    await syncImmigrationCase(admin, encounterId)
+  }
 }
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
@@ -178,10 +191,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
           .single()
         if (retry.error) throw retry.error
         const { data } = retry
-        const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
-        if (isImmigrationEncounter(encMeta?.consent_ack)) {
-          await syncImmigrationCase(admin, encounterId)
-        }
+        await maybeSyncImmigrationCase(admin, encounterId)
         await logI693Audit('saved', encounterId, {
           patient_id: enc.patient_id,
           status,
@@ -196,10 +206,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         })
       }
       if (error) throw error
-      const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
-      if (isImmigrationEncounter(encMeta?.consent_ack)) {
-        await syncImmigrationCase(admin, encounterId)
-      }
+      await maybeSyncImmigrationCase(admin, encounterId)
       await logI693Audit('saved', encounterId, {
         patient_id: enc.patient_id,
         status,
@@ -225,10 +232,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       annotationsPersisted = false
     }
     if (error) throw error
-    const { data: encMeta } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()
-    if (isImmigrationEncounter(encMeta?.consent_ack)) {
-      await syncImmigrationCase(admin, encounterId)
-    }
+    await maybeSyncImmigrationCase(admin, encounterId)
     await logI693Audit('saved', encounterId, {
       patient_id: enc.patient_id,
       status,

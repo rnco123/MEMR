@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useT } from '@/lib/i18n'
-import { isImmigrationEncounter } from '@/lib/i693/types'
+import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase/client'
@@ -126,6 +126,7 @@ interface Encounter {
   ready_for_doctor_at?: string | null
   ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
+  program_type?: string | null
   risk_level?: string | null
   risk_rationale?: string | null
   risk_factors?: string[] | null
@@ -142,6 +143,7 @@ interface Appointment {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string
+  services?: { title_en?: string | null; title_es?: string | null } | null
 }
 
 interface Pharmacy {
@@ -207,6 +209,15 @@ export function EncounterDetailModal({
   const [icdMessage, setIcdMessage] = useState<string | null>(null)
   const [modalTab, setModalTab] = useState<'details' | 'forms'>('details')
 
+  const showI693Form = useMemo(() => {
+    if (!encounter) return false
+    return isImmigrationEncounterForI693({
+      consent_ack: encounter.consent_ack,
+      program_type: encounter.program_type,
+      appointments: appointment ? { services: appointment.services ?? null } : null,
+    })
+  }, [encounter, appointment])
+
   const intakeSeverityBand = useMemo(
     () => severityBandFromIntake(intake?.severity),
     [intake?.severity]
@@ -247,7 +258,7 @@ export function EncounterDetailModal({
         // Fetch appointment to get onsite_type
         const { data: appointmentData } = await supabase
           .from('appointments')
-          .select('id, appointment_date, appointment_time, onsite_type')
+          .select('id, appointment_date, appointment_time, onsite_type, services:service_id ( title_en, title_es )')
           .eq('id', appointmentId)
           .single()
 
@@ -598,7 +609,7 @@ export function EncounterDetailModal({
             )}
           </div>
           <div className="flex items-center gap-3">
-            {!loading && encounter && isImmigrationEncounter(encounter.consent_ack) && (
+            {!loading && showI693Form && (
               <Link
                 href={i693Href}
                 className="px-4 py-2 border border-emerald-200 bg-emerald-50 text-emerald-800 rounded-xl text-sm font-semibold hover:bg-emerald-100 transition-colors"

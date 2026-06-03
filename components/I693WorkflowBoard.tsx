@@ -62,6 +62,7 @@ export function I693WorkflowBoard({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('none')
   const [view, setView] = useState<'list' | 'kanban'>('kanban')
+  const [patientSearch, setPatientSearch] = useState('')
 
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true)
@@ -83,15 +84,22 @@ export function I693WorkflowBoard({
   }, [load])
 
   const filtered = useMemo(() => {
+    const q = patientSearch.trim().toLowerCase()
     return rows.filter((r) => {
       if (!r.case) return false
       if (statusFilter !== 'all' && r.case.status !== statusFilter) return false
       if (quickFilter === 'missing_labs' && r.case.is_lab_complete) return false
       if (quickFilter === 'missing_vaccines' && r.case.is_vaccine_complete) return false
       if (quickFilter === 'needs_md' && r.case.status !== 'ready_review') return false
+      if (view === 'list' && q) {
+        const nameMatch = r.patient_name.toLowerCase().includes(q)
+        const encounterMatch = String(r.encounter_id).includes(q)
+        const patientIdMatch = String(r.patient_id).includes(q)
+        if (!nameMatch && !encounterMatch && !patientIdMatch) return false
+      }
       return true
     })
-  }, [rows, statusFilter, quickFilter])
+  }, [rows, statusFilter, quickFilter, patientSearch, view])
 
   const byColumn = useMemo(() => {
     const map: Record<ImmigrationWorkflowStatus, ApiRow[]> = {
@@ -281,6 +289,19 @@ export function I693WorkflowBoard({
           <p className="text-sm mt-2">{t('i693.no_cases_hint')}</p>
         </div>
       ) : view === 'list' ? (
+        <div className="space-y-3">
+          <input
+            type="search"
+            value={patientSearch}
+            onChange={(e) => setPatientSearch(e.target.value)}
+            placeholder={t('i693.wf_search_patient')}
+            className="w-full h-10 px-4 border border-slate-200 rounded-xl bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/30"
+          />
+          {filtered.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 text-sm">
+              {t('i693.wf_no_search_results')}
+            </div>
+          ) : (
         <ul className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 max-h-[calc(100vh-14rem)] overflow-y-auto">
           {filtered.map((row) => {
             const c = row.case!
@@ -325,6 +346,8 @@ export function I693WorkflowBoard({
             )
           })}
         </ul>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 min-h-[400px]">
           {WORKFLOW_COLUMNS.map((col) => (

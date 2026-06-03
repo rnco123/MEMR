@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError } from '@/lib/api-error-handler'
-import { isImmigrationEncounter } from '@/lib/i693/types'
+import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 
 export const dynamic = 'force-dynamic'
@@ -30,9 +30,14 @@ export async function GET() {
         appointment_id,
         status,
         consent_ack,
+        program_type,
         updated_at,
         patients:patient_id ( id, first_name, last_name, date_of_birth ),
-        appointments:appointment_id ( appointment_date, appointment_time )
+        appointments:appointment_id (
+          appointment_date,
+          appointment_time,
+          services:service_id ( title_en, title_es )
+        )
       `
       )
       .order('updated_at', { ascending: false })
@@ -40,9 +45,7 @@ export async function GET() {
 
     if (error) throw error
 
-    const immigration = (encounters ?? []).filter((e) =>
-      isImmigrationEncounter((e as { consent_ack?: unknown }).consent_ack)
-    )
+    const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
 
     const encounterIds = immigration.map((e) => (e as { id: number }).id)
     const i693Map = new Map<number, { status: string; ai_filled_at: string | null }>()

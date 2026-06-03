@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildI693Href } from '@/lib/i693/paths'
-import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
+import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 
 export type ImmigrationPatientDocument = {
   id: string
@@ -66,12 +66,20 @@ export async function listImmigrationDocumentsForPatient(
 
   const { data: immigrationEncounters } = await admin
     .from('encounters')
-    .select('id, created_at, program_type')
+    .select(
+      `
+      id,
+      created_at,
+      program_type,
+      consent_ack,
+      appointments:appointment_id ( services:service_id ( title_en, title_es ) )
+    `
+    )
     .eq('patient_id', patientId)
-    .eq('program_type', IMMIGRATION_PROGRAM)
     .order('created_at', { ascending: false })
 
   for (const enc of immigrationEncounters ?? []) {
+    if (!isImmigrationEncounterForI693(enc)) continue
     if (submissionEncounterIds.has(enc.id)) continue
     docs.push({
       id: `immigration-${enc.id}`,

@@ -1,5 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { isImmigrationEncounter, mergeI693Form, type I693FormData } from '@/lib/i693/types'
+import { mergeI693Form, type I693FormData } from '@/lib/i693/types'
+import {
+  isImmigrationEncounterForI693,
+  ENCOUNTER_I693_ELIGIBILITY_SELECT,
+} from '@/lib/i693/immigration-eligibility'
 import {
   IMMIGRATION_PROGRAM,
   type ImmigrationCaseRow,
@@ -171,12 +175,12 @@ export async function syncImmigrationCase(
 ): Promise<ImmigrationCaseRow | null> {
   const { data: enc, error: encErr } = await admin
     .from('encounters')
-    .select('id, patient_id, consent_ack, program_type')
+    .select(ENCOUNTER_I693_ELIGIBILITY_SELECT)
     .eq('id', encounterId)
     .maybeSingle()
 
   if (encErr) throw encErr
-  if (!enc || !isImmigrationEncounter(enc.consent_ack)) return null
+  if (!enc || !isImmigrationEncounterForI693(enc)) return null
 
   const patientId = Number(enc.patient_id)
   if (!Number.isFinite(patientId)) return null
@@ -284,7 +288,11 @@ export async function listImmigrationCases(admin: SupabaseClient): Promise<
       program_type,
       updated_at,
       patients:patient_id ( first_name, last_name ),
-      appointments:appointment_id ( appointment_date, appointment_time )
+      appointments:appointment_id (
+        appointment_date,
+        appointment_time,
+        services:service_id ( title_en, title_es )
+      )
     `
     )
     .order('updated_at', { ascending: false })
@@ -292,9 +300,7 @@ export async function listImmigrationCases(admin: SupabaseClient): Promise<
 
   if (error) throw error
 
-  const immigration = (encounters ?? []).filter((e) =>
-    isImmigrationEncounter((e as { consent_ack?: unknown }).consent_ack)
-  )
+  const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
 
   const results: Awaited<ReturnType<typeof listImmigrationCases>> = []
 
