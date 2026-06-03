@@ -60,7 +60,7 @@ export async function bakeI693AnnotationsOnPdf(
   if (!annotations.length) return inputBytes
 
   const mupdf = await loadMupdf()
-  const doc = mupdf.Document.openDocument(inputBytes, 'application/pdf') as MupdfPdfDoc
+  const doc = mupdf.Document.openDocument(inputBytes, 'application/pdf') as unknown as MupdfPdfDoc
 
   if (doc.needsPassword?.()) {
     for (const pwd of ['', ' ']) {

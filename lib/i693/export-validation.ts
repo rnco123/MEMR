@@ -42,7 +42,7 @@ export async function validateI693PdfExport(
   assertPdfBytes(bytes)
 
   const mupdf = await loadMupdf()
-  const doc = mupdf.Document.openDocument(bytes, 'application/pdf') as {
+  const doc = mupdf.Document.openDocument(bytes, 'application/pdf') as unknown as {
     countPages: () => number
     loadPage: (i: number) => MupdfWidgetPage
     needsPassword?: () => boolean

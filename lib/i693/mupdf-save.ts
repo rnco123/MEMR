@@ -25,7 +25,7 @@ export function mupdfBufferToBytes(buf: Uint8Array | MupdfSaveBuffer): Uint8Arra
 /** Re-save PDF bytes with MuPDF so encryption metadata is dropped for pdf.js preview. */
 export async function rewritePdfWithMupdf(bytes: Uint8Array): Promise<Uint8Array> {
   const mupdf = await loadMupdf()
-  const doc = mupdf.Document.openDocument(bytes, 'application/pdf') as MupdfPdfDoc
+  const doc = mupdf.Document.openDocument(bytes, 'application/pdf') as unknown as MupdfPdfDoc
 
   if (doc.needsPassword?.()) {
     let authed = false
