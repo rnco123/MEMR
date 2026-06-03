@@ -3,7 +3,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { UserRole, mapRoleToEnum } from './lib/roles'
 import { fetchUserRole } from './lib/fetch-user-role'
 import { getSupabasePublishableKey, getSupabaseUrl } from './lib/supabase/keys'
-import { validateRequest } from './lib/security/request-validator'
+import { maxRequestBodySizeForPath, validateRequest } from './lib/security/request-validator'
 import { rateLimitCheck } from './lib/rate-limit'
 
 const isProduction = process.env.NODE_ENV === 'production'
@@ -89,7 +89,9 @@ export async function middleware(request: NextRequest) {
   }
 
   // Security: Validate request
-  const requestValidation = validateRequest(request)
+  const requestValidation = validateRequest(request, {
+    maxBodySize: maxRequestBodySizeForPath(normalizedPathname),
+  })
   if (!requestValidation.valid) {
     return NextResponse.json(
       { error: requestValidation.error || 'Invalid request', code: 'SECURITY_ERROR' },

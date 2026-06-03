@@ -8,6 +8,8 @@ import { NextRequest } from 'next/server'
  * Maximum request body size (5MB)
  */
 const MAX_BODY_SIZE = 5 * 1024 * 1024
+const PATIENT_DOCUMENT_UPLOAD_MAX_BODY_SIZE = 55 * 1024 * 1024
+const I693_SUPPORTING_DOCUMENTS_MAX_BODY_SIZE = 90 * 1024 * 1024
 
 /**
  * Maximum URL length
@@ -17,15 +19,19 @@ const MAX_URL_LENGTH = 2048
 /**
  * Validate request size
  */
-export function validateRequestSize(request: NextRequest): { valid: boolean; error?: string } {
+export function validateRequestSize(
+  request: NextRequest,
+  options: { maxBodySize?: number } = {}
+): { valid: boolean; error?: string } {
+  const maxBodySize = options.maxBodySize ?? MAX_BODY_SIZE
   const contentLength = request.headers.get('content-length')
   
   if (contentLength) {
     const size = parseInt(contentLength, 10)
-    if (size > MAX_BODY_SIZE) {
+    if (size > maxBodySize) {
       return {
         valid: false,
-        error: `Request body too large. Maximum size: ${MAX_BODY_SIZE / 1024 / 1024}MB`,
+        error: `Request body too large. Maximum size: ${maxBodySize / 1024 / 1024}MB`,
       }
     }
   }
@@ -39,6 +45,18 @@ export function validateRequestSize(request: NextRequest): { valid: boolean; err
   }
 
   return { valid: true }
+}
+
+export function maxRequestBodySizeForPath(pathname: string): number {
+  if (/^\/api\/encounters\/[^/]+\/i693\/supporting-documents$/.test(pathname)) {
+    return I693_SUPPORTING_DOCUMENTS_MAX_BODY_SIZE
+  }
+
+  if (/^\/api\/patients\/[^/]+\/documents$/.test(pathname)) {
+    return PATIENT_DOCUMENT_UPLOAD_MAX_BODY_SIZE
+  }
+
+  return MAX_BODY_SIZE
 }
 
 /**
@@ -117,9 +135,12 @@ export function checkXss(url: string): { valid: boolean; error?: string } {
 /**
  * Comprehensive request validation
  */
-export function validateRequest(request: NextRequest): { valid: boolean; error?: string } {
+export function validateRequest(
+  request: NextRequest,
+  options: { maxBodySize?: number } = {}
+): { valid: boolean; error?: string } {
   // Check request size
-  const sizeCheck = validateRequestSize(request)
+  const sizeCheck = validateRequestSize(request, options)
   if (!sizeCheck.valid) {
     return sizeCheck
   }

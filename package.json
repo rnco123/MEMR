@@ -27,9 +27,12 @@
         "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs"
     },
     "dependencies": {
+        "@ai-sdk/openai": "^3.0.67",
+        "@aws-sdk/client-textract": "^3.1060.0",
         "@daily-co/daily-js": "^0.83.1",
         "@sentry/nextjs": "^10.38.0",
         "@supabase/ssr": "^0.8.0",
+        "ai": "^6.0.195",
         "jspdf": "^4.2.1",
         "lru-cache": "^10.1.0",
         "mupdf": "^1.27.0",

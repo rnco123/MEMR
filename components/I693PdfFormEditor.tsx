@@ -11,6 +11,10 @@ import { EMPTY_I693_FORM } from '@/lib/i693/types'
 import { extractFormDataFromApi, parseFormDataFromApi } from '@/lib/i693/form-api'
 import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
 import {
+  I693AiDraftPdfReview,
+  type I693SupportingDocumentDraft,
+} from '@/components/I693AiDraftPdfReview'
+import {
   applyI693FormToPdfDocument,
   extractI693FormFromPdfDocument,
 } from '@/lib/i693/pdfjs-form-bridge'
@@ -22,6 +26,7 @@ import {
 } from '@/lib/i693/pdf-comb-fields'
 import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
+import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import {
   type I693Annotation,
   type I693CrossAnnotation,
@@ -145,9 +150,13 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [previewCombPlacements, setPreviewCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [previewError, setPreviewError] = useState<string | null>(null)
+  const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const [supportingLoading, setSupportingLoading] = useState(false)
+  const [aiDraft, setAiDraft] = useState<I693SupportingDocumentDraft | null>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const previewHostRef = useRef<HTMLDivElement>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const supportingInputRef = useRef<HTMLInputElement>(null)
   const pendingImageUrlRef = useRef<string | null>(null)
   const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const formRef = useRef(form)
@@ -634,6 +643,91 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       setDownloadLoading(false)
     }
   }, [encounterId, fetchFilledPdfBytes, mode, saveCurrent, t])
+
+  const onPickSupportingDocuments = useCallback(() => {
+    supportingInputRef.current?.click()
+  }, [])
+
+  const onSupportingDocumentsSelected = useCallback((fileList: FileList | null) => {
+    const files = Array.from(fileList ?? [])
+    const pdfs = files.filter((file) => (
+      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    ))
+    if (files.length > 0 && pdfs.length !== files.length) {
+      toast.warning('Only PDF supporting documents can be used for I-693 AI fill.')
+    }
+    setSupportingFiles(pdfs)
+    setAiDraft(null)
+  }, [])
+
+  const generateSupportingDocumentDraft = useCallback(async () => {
+    if (supportingFiles.length === 0) {
+      toast.error('Select at least one supporting PDF first')
+      return
+    }
+
+    setSupportingLoading(true)
+    try {
+      if (pdfRef.current) {
+        const next = await extractI693FormFromPdfDocument(pdfRef.current, formRef.current)
+        setForm(next)
+        formRef.current = next
+      }
+
+      const body = new FormData()
+      for (const file of supportingFiles) body.append('documents', file)
+      body.append('current_form', JSON.stringify(formRef.current))
+
+      const res = await fetch(`/api/encounters/${encounterId}/i693/supporting-documents`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        body,
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || json.message || 'Supporting document AI fill failed')
+
+      const draft: I693SupportingDocumentDraft = {
+        form_data: parseFormDataFromApi(json.form_data),
+        evidence: Array.isArray(json.evidence) ? json.evidence : [],
+        warnings: Array.isArray(json.warnings) ? json.warnings : [],
+        filled_fields: Array.isArray(json.filled_fields) ? json.filled_fields : [],
+        filled_count: Number(json.filled_count ?? 0),
+        model: String(json.model ?? 'OpenAI'),
+        documents: Array.isArray(json.documents) ? json.documents : [],
+      }
+      setAiDraft(draft)
+      if (draft.filled_count > 0) {
+        toast.success(`AI draft generated with ${draft.filled_count} fields`)
+      } else {
+        toast.warning('AI draft generated, but no supported fields were found')
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Supporting document AI fill failed')
+    } finally {
+      setSupportingLoading(false)
+    }
+  }, [encounterId, supportingFiles])
+
+  const acceptAiDraft = useCallback(() => {
+    if (!aiDraft) return
+    const next = mergeAcceptedI693AiDraft(formRef.current, aiDraft.form_data)
+    setForm(next)
+    formRef.current = next
+    setDirty(true)
+    setAiDraft(null)
+    setSupportingFiles([])
+    if (supportingInputRef.current) supportingInputRef.current.value = ''
+    if (mode !== 'editor') setMode('editor')
+    setEditorTick((n) => n + 1)
+    toast.success('AI draft applied to the default editor. Review and save when ready.')
+  }, [aiDraft, mode])
+
+  const rejectAiDraft = useCallback(() => {
+    setAiDraft(null)
+    if (supportingInputRef.current) supportingInputRef.current.value = ''
+    toast.info('AI draft rejected')
+  }, [])
 
   const onPickImage = useCallback(() => {
     imageInputRef.current?.click()
@@ -1226,55 +1320,115 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         onChange={(e) => onImageSelected(e.target.files?.[0] ?? null)}
       />
 
-      <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-14rem)]">
-        {previewError && mode === 'preview' ? (
-          <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100/95 p-8 text-center">
-            <p className="text-sm font-medium text-red-700">{previewError}</p>
-            <button
-              type="button"
-              onClick={() => void switchToEditor()}
-              className="px-4 py-2 rounded-lg bg-[#2E6EF3] text-white text-sm font-medium"
-            >
-              Back to editor
-            </button>
-          </div>
-        ) : !pdfReady ? (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
-            <LoadingSpinner
-              message={
-                previewLoading || saving
-                  ? mode === 'preview'
-                    ? 'Saving and preparing preview…'
-                    : t('i693.pdf_editor_loading')
-                  : t('i693.pdf_editor_loading')
-              }
-              variant="light"
-            />
-          </div>
-        ) : null}
-        {mode === 'editor' ? (
-          <>
-            <div
-              ref={editorHostRef}
-              className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
-            />
-            {charCellPortals}
-          </>
-        ) : (
-          <div
-            ref={previewHostRef}
-            className="i693-pdfjs-preview min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-none [&_.annotationLayer_input]:pointer-events-none [&_.annotationLayer_input]:cursor-default [&_.annotationLayer_input]:select-none [&_.annotationLayer_input]:caret-transparent"
-          />
-        )}
-        {editorAnnotationPortals}
-        {previewAnnotationPortals}
-        {previewCombPortals}
+      <input
+        ref={supportingInputRef}
+        type="file"
+        accept="application/pdf,.pdf"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          onSupportingDocumentsSelected(e.target.files)
+          e.currentTarget.value = ''
+        }}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Supporting documents</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            {supportingFiles.length > 0
+              ? supportingFiles.map((file) => file.name).join(', ')
+              : 'No supporting PDFs selected'}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onPickSupportingDocuments}
+            disabled={supportingLoading || saving || previewLoading}
+            className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <span>Select PDFs</span>
+            {supportingFiles.length > 0 && (
+              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-semibold leading-none text-white">
+                {supportingFiles.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => void generateSupportingDocumentDraft()}
+            disabled={supportingLoading || saving || previewLoading || supportingFiles.length === 0}
+            className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {supportingLoading ? 'Generating…' : 'Generate AI draft'}
+          </button>
+        </div>
       </div>
-      {dirty && (
-        <p className="text-xs text-amber-700">
-          Unsaved PDF changes. Switching to Preview mode will auto-save form + annotations.
-        </p>
-      )}
+
+      <div className={`grid gap-4 ${aiDraft ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,42%)]' : ''}`}>
+        <div className="min-w-0 space-y-3">
+          <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-14rem)]">
+            {previewError && mode === 'preview' ? (
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-100/95 p-8 text-center">
+                <p className="text-sm font-medium text-red-700">{previewError}</p>
+                <button
+                  type="button"
+                  onClick={() => void switchToEditor()}
+                  className="px-4 py-2 rounded-lg bg-[#2E6EF3] text-white text-sm font-medium"
+                >
+                  Back to editor
+                </button>
+              </div>
+            ) : !pdfReady ? (
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
+                <LoadingSpinner
+                  message={
+                    previewLoading || saving
+                      ? mode === 'preview'
+                        ? 'Saving and preparing preview…'
+                        : t('i693.pdf_editor_loading')
+                      : t('i693.pdf_editor_loading')
+                  }
+                  variant="light"
+                />
+              </div>
+            ) : null}
+            {mode === 'editor' ? (
+              <>
+                <div
+                  ref={editorHostRef}
+                  className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
+                />
+                {charCellPortals}
+              </>
+            ) : (
+              <div
+                ref={previewHostRef}
+                className="i693-pdfjs-preview min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-14rem)] [&_.annotationLayer]:pointer-events-none [&_.annotationLayer_input]:pointer-events-none [&_.annotationLayer_input]:cursor-default [&_.annotationLayer_input]:select-none [&_.annotationLayer_input]:caret-transparent"
+              />
+            )}
+            {editorAnnotationPortals}
+            {previewAnnotationPortals}
+            {previewCombPortals}
+          </div>
+          {dirty && (
+            <p className="text-xs text-amber-700">
+              Unsaved PDF changes. Switching to Preview mode will auto-save form + annotations.
+            </p>
+          )}
+        </div>
+
+        {aiDraft && (
+          <aside className="min-w-0 xl:sticky xl:top-4 xl:self-start">
+            <I693AiDraftPdfReview
+              draft={aiDraft}
+              onAccept={acceptAiDraft}
+              onReject={rejectAiDraft}
+            />
+          </aside>
+        )}
+      </div>
     </div>
   )
 }
