@@ -3,6 +3,7 @@ import { mergeI693Form, type I693FormData } from '@/lib/i693/types'
 import {
   isImmigrationEncounterForI693,
   ENCOUNTER_I693_ELIGIBILITY_SELECT,
+  resolveEncounterPatientId,
 } from '@/lib/i693/immigration-eligibility'
 import {
   IMMIGRATION_PROGRAM,
@@ -128,6 +129,65 @@ export async function deriveCaseFlags(
 
 const TASK_TYPES = ['intake', 'tb_lab', 'xray', 'vaccine_record', 'md_signature'] as const
 
+type ImmigrationCaseWriteRow = {
+  patient_id: number
+  encounter_id: number
+  status: ImmigrationWorkflowStatus
+  status_color: ImmigrationStatusColor
+  missing_items: string[]
+  is_lab_complete: boolean
+  is_vaccine_complete: boolean
+  is_intake_complete: boolean
+  is_md_signed: boolean
+  is_delivered: boolean
+  delivery_type: string | null
+  delivery_date: string | null
+  notes: string | null
+  updated_at: string
+}
+
+function isPgError(err: unknown, code: string): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === code
+}
+
+/** Update-first save avoids duplicate-key races from parallel list syncs. */
+async function saveImmigrationCaseRow(
+  admin: SupabaseClient,
+  row: ImmigrationCaseWriteRow
+): Promise<ImmigrationCaseRow> {
+  const { data: updated, error: updateError } = await admin
+    .from('immigration_cases')
+    .update(row)
+    .eq('encounter_id', row.encounter_id)
+    .select()
+    .maybeSingle()
+
+  if (updateError) throw updateError
+  if (updated) return updated as ImmigrationCaseRow
+
+  const { data: inserted, error: insertError } = await admin
+    .from('immigration_cases')
+    .insert(row)
+    .select()
+    .single()
+
+  if (!insertError && inserted) return inserted as ImmigrationCaseRow
+
+  if (isPgError(insertError, '23505')) {
+    const { data: retry, error: retryError } = await admin
+      .from('immigration_cases')
+      .update(row)
+      .eq('encounter_id', row.encounter_id)
+      .select()
+      .single()
+    if (retryError) throw retryError
+    return retry as ImmigrationCaseRow
+  }
+
+  if (insertError) throw insertError
+  throw new Error(`Failed to save immigration case for encounter ${row.encounter_id}`)
+}
+
 async function syncTasks(
   admin: SupabaseClient,
   caseId: number,
@@ -182,8 +242,16 @@ export async function syncImmigrationCase(
   if (encErr) throw encErr
   if (!enc || !isImmigrationEncounterForI693(enc)) return null
 
-  const patientId = Number(enc.patient_id)
-  if (!Number.isFinite(patientId)) return null
+  const patientId = resolveEncounterPatientId(enc)
+  if (!patientId) return null
+
+  const encounterPatientId = Number(enc.patient_id)
+  if (!Number.isFinite(encounterPatientId) || encounterPatientId <= 0) {
+    await admin
+      .from('encounters')
+      .update({ patient_id: patientId, updated_at: new Date().toISOString() })
+      .eq('id', encounterId)
+  }
 
   if (enc.program_type !== IMMIGRATION_PROGRAM) {
     await admin
@@ -246,27 +314,28 @@ export async function syncImmigrationCase(
     updated_at: now,
   }
 
-  let caseRow: ImmigrationCaseRow
-  if (existing?.id) {
-    const { data, error } = await admin
-      .from('immigration_cases')
-      .update(row)
-      .eq('id', existing.id)
-      .select()
-      .single()
-    if (error) throw error
-    caseRow = data as ImmigrationCaseRow
-  } else {
-    const { data, error } = await admin.from('immigration_cases').insert(row).select().single()
-    if (error) throw error
-    caseRow = data as ImmigrationCaseRow
-  }
+  const caseRow = await saveImmigrationCaseRow(admin, row)
 
   await syncTasks(admin, caseRow.id, missing_items, flags)
   return caseRow
 }
 
-export async function listImmigrationCases(admin: SupabaseClient): Promise<
+type ListImmigrationCasesResult = Awaited<ReturnType<typeof listImmigrationCasesInner>>
+
+let listImmigrationCasesInflight: Promise<ListImmigrationCasesResult> | null = null
+
+/** Coalesce parallel /api/i693/cases requests so sync does not run twice at once. */
+export async function listImmigrationCases(admin: SupabaseClient): Promise<ListImmigrationCasesResult> {
+  if (listImmigrationCasesInflight) {
+    return listImmigrationCasesInflight
+  }
+  listImmigrationCasesInflight = listImmigrationCasesInner(admin).finally(() => {
+    listImmigrationCasesInflight = null
+  })
+  return listImmigrationCasesInflight
+}
+
+async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
   {
     encounter_id: number
     patient_id: number
@@ -289,9 +358,11 @@ export async function listImmigrationCases(admin: SupabaseClient): Promise<
       updated_at,
       patients:patient_id ( first_name, last_name ),
       appointments:appointment_id (
+        patient_id,
         appointment_date,
         appointment_time,
-        services:service_id ( title_en, title_es )
+        services:service_id ( title_en, title_es ),
+        patients:patient_id ( first_name, last_name )
       )
     `
     )
@@ -301,58 +372,92 @@ export async function listImmigrationCases(admin: SupabaseClient): Promise<
   if (error) throw error
 
   const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
+  const encounterIds = immigration.map((e) => Number((e as { id: number }).id)).filter((id) => id > 0)
 
-  const results: Awaited<ReturnType<typeof listImmigrationCases>> = []
+  const [{ data: caseRows }, { data: submissions }] = await Promise.all([
+    encounterIds.length > 0
+      ? admin.from('immigration_cases').select('*').in('encounter_id', encounterIds)
+      : Promise.resolve({ data: [] as ImmigrationCaseRow[] }),
+    encounterIds.length > 0
+      ? admin.from('i693_submissions').select('encounter_id, status').in('encounter_id', encounterIds)
+      : Promise.resolve({ data: [] as { encounter_id: number; status: string }[] }),
+  ])
+
+  const caseByEncounter = new Map(
+    (caseRows ?? []).map((row) => [Number(row.encounter_id), row as ImmigrationCaseRow])
+  )
+  const i693StatusByEncounter = new Map(
+    (submissions ?? []).map((row) => [Number(row.encounter_id), String(row.status)])
+  )
+
+  const defaultCaseRow = (patientId: number, encounterId: number): ImmigrationCaseRow => ({
+    id: 0,
+    patient_id: patientId,
+    encounter_id: encounterId,
+    status: 'incomplete',
+    status_color: 'red',
+    missing_items: ['intake'],
+    is_lab_complete: false,
+    is_vaccine_complete: false,
+    is_intake_complete: false,
+    is_md_signed: false,
+    is_delivered: false,
+    delivery_type: null,
+    delivery_date: null,
+    notes: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  })
+
+  const results: ListImmigrationCasesResult = []
+  const missingCaseEncounterIds: number[] = []
 
   for (const e of immigration) {
     const raw = e as Record<string, unknown>
     const encounterId = Number(raw.id)
-    const patientId = Number(raw.patient_id)
+    const patientId = resolveEncounterPatientId(e as Parameters<typeof resolveEncounterPatientId>[0])
+    if (!patientId) {
+      console.warn(`[listImmigrationCases] skipping encounter ${encounterId}: no patient_id`)
+      continue
+    }
+
     const patientsRaw = raw.patients
-    const patient =
+    const apptRaw = raw.appointments
+    const appt =
+      apptRaw && typeof apptRaw === 'object' && !Array.isArray(apptRaw)
+        ? (apptRaw as {
+            appointment_date?: string | null
+            appointment_time?: string | null
+            patients?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[]
+          })
+        : Array.isArray(apptRaw) && apptRaw[0]
+          ? (apptRaw[0] as {
+              appointment_date?: string | null
+              appointment_time?: string | null
+              patients?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[]
+            })
+          : null
+
+    const patientFromEncounter =
       patientsRaw && typeof patientsRaw === 'object' && !Array.isArray(patientsRaw)
         ? (patientsRaw as { first_name?: string; last_name?: string })
         : Array.isArray(patientsRaw) && patientsRaw[0]
           ? (patientsRaw[0] as { first_name?: string; last_name?: string })
           : null
-    const apptRaw = raw.appointments
-    const appt =
-      apptRaw && typeof apptRaw === 'object' && !Array.isArray(apptRaw)
-        ? (apptRaw as { appointment_date?: string | null; appointment_time?: string | null })
-        : Array.isArray(apptRaw) && apptRaw[0]
-          ? (apptRaw[0] as { appointment_date?: string | null; appointment_time?: string | null })
+
+    const apptPatientsRaw = appt?.patients
+    const patientFromAppointment =
+      apptPatientsRaw && typeof apptPatientsRaw === 'object' && !Array.isArray(apptPatientsRaw)
+        ? apptPatientsRaw
+        : Array.isArray(apptPatientsRaw) && apptPatientsRaw[0]
+          ? apptPatientsRaw[0]
           : null
 
-    let caseRow: ImmigrationCaseRow | null = null
-    try {
-      caseRow = await syncImmigrationCase(admin, encounterId)
-    } catch (syncErr) {
-      console.error(`[listImmigrationCases] sync failed for encounter ${encounterId}:`, syncErr)
-      caseRow = {
-        id: 0,
-        patient_id: patientId,
-        encounter_id: encounterId,
-        status: 'incomplete',
-        status_color: 'red',
-        missing_items: ['intake'],
-        is_lab_complete: false,
-        is_vaccine_complete: false,
-        is_intake_complete: false,
-        is_md_signed: false,
-        is_delivered: false,
-        delivery_type: null,
-        delivery_date: null,
-        notes: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
-    }
+    const patient = patientFromEncounter ?? patientFromAppointment
 
-    const { data: sub } = await admin
-      .from('i693_submissions')
-      .select('status')
-      .eq('encounter_id', encounterId)
-      .maybeSingle()
+    const storedCase = caseByEncounter.get(encounterId)
+    const caseRow = storedCase ?? defaultCaseRow(patientId, encounterId)
+    if (!storedCase) missingCaseEncounterIds.push(encounterId)
 
     results.push({
       encounter_id: encounterId,
@@ -363,9 +468,28 @@ export async function listImmigrationCases(admin: SupabaseClient): Promise<
       appointment_date: appt?.appointment_date ?? null,
       appointment_time: appt?.appointment_time ?? null,
       case: caseRow,
-      i693_status: sub?.status ? String(sub.status) : null,
+      i693_status: i693StatusByEncounter.get(encounterId) ?? null,
     })
   }
 
+  void syncMissingImmigrationCasesInBackground(admin, missingCaseEncounterIds)
+
   return results
+}
+
+/** Create/sync case rows for encounters missing from immigration_cases (non-blocking). */
+function syncMissingImmigrationCasesInBackground(
+  admin: SupabaseClient,
+  encounterIds: number[]
+): void {
+  if (encounterIds.length === 0) return
+  void (async () => {
+    for (const encounterId of encounterIds.slice(0, 25)) {
+      try {
+        await syncImmigrationCase(admin, encounterId)
+      } catch (err) {
+        console.warn(`[listImmigrationCases] background sync failed for encounter ${encounterId}:`, err)
+      }
+    }
+  })()
 }

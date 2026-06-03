@@ -13,27 +13,49 @@ type AppointmentServiceShape = {
 } | null
 
 type EncounterImmigrationShape = {
+  patient_id?: number | null
   consent_ack?: unknown
   program_type?: string | null
   appointments?:
     | {
+        patient_id?: number | null
         services?: AppointmentServiceShape | AppointmentServiceShape[]
       }
     | {
+        patient_id?: number | null
         services?: AppointmentServiceShape | AppointmentServiceShape[]
       }[]
     | null
 }
 
-function resolveAppointmentService(
+function resolveAppointmentRow(
   appointments: EncounterImmigrationShape['appointments']
-): AppointmentServiceShape {
+): { patient_id?: number | null; services?: AppointmentServiceShape | AppointmentServiceShape[] } | null {
   if (!appointments) return null
   const appt = Array.isArray(appointments) ? appointments[0] : appointments
   if (!appt || typeof appt !== 'object') return null
-  const svc = (appt as { services?: AppointmentServiceShape | AppointmentServiceShape[] }).services
+  return appt as { patient_id?: number | null; services?: AppointmentServiceShape | AppointmentServiceShape[] }
+}
+
+function resolveAppointmentService(
+  appointments: EncounterImmigrationShape['appointments']
+): AppointmentServiceShape {
+  const appt = resolveAppointmentRow(appointments)
+  if (!appt) return null
+  const svc = appt.services
   if (!svc) return null
   return Array.isArray(svc) ? svc[0] ?? null : svc
+}
+
+/** Resolve patient id from encounter row, falling back to linked appointment. */
+export function resolveEncounterPatientId(enc: EncounterImmigrationShape | null | undefined): number | null {
+  if (!enc) return null
+  const direct = Number(enc.patient_id)
+  if (Number.isFinite(direct) && direct > 0) return direct
+  const appt = resolveAppointmentRow(enc.appointments)
+  const fromAppt = Number(appt?.patient_id)
+  if (Number.isFinite(fromAppt) && fromAppt > 0) return fromAppt
+  return null
 }
 
 /** True when encounter is an immigration I-693 workflow (consent, program, or appointment service). */
@@ -51,6 +73,7 @@ const ENCOUNTER_IMMIGRATION_SELECT = `
   consent_ack,
   program_type,
   appointments:appointment_id (
+    patient_id,
     services:service_id ( title_en, title_es )
   )
 `
@@ -74,11 +97,11 @@ export async function loadEncounterImmigrationContext(
   if (error) throw error
   if (!enc) return null
 
-  const patientId = Number(enc.patient_id)
-  if (!Number.isFinite(patientId)) return null
+  const resolvedPatientId = resolveEncounterPatientId(enc as EncounterImmigrationShape)
+  if (!resolvedPatientId) return null
 
   return {
-    patientId,
+    patientId: resolvedPatientId,
     isImmigration: isImmigrationEncounterForI693(enc as EncounterImmigrationShape),
   }
 }

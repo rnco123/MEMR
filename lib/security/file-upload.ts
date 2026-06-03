@@ -25,9 +25,44 @@ const ALLOWED_MIME_TYPES = [
 const ALLOWED_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf', '.doc', '.docx']
 
 /**
- * Maximum file size (10MB)
+ * Maximum file size (10MB) — chat and general uploads
  */
 const MAX_FILE_SIZE = 10 * 1024 * 1024
+
+/** Patient chart documents (PDF / images) */
+export const PATIENT_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
+
+const PATIENT_DOCUMENT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf'] as const
+
+const PATIENT_DOCUMENT_MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.pdf': 'application/pdf',
+}
+
+const PATIENT_DOCUMENT_MIMES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'application/pdf',
+])
+
+function fileExtension(fileName: string): string {
+  const dot = fileName.lastIndexOf('.')
+  if (dot < 0) return ''
+  return fileName.slice(dot).toLowerCase()
+}
+
+/** Resolve content type from browser MIME and/or file extension (Windows often omits MIME). */
+export function resolvePatientDocumentContentType(file: File): string | null {
+  const ext = fileExtension(file.name)
+  if (file.type) {
+    if (file.type === 'image/jpg') return 'image/jpeg'
+    if (PATIENT_DOCUMENT_MIMES.has(file.type)) return file.type
+  }
+  return PATIENT_DOCUMENT_MIME_BY_EXT[ext] ?? null
+}
 
 /**
  * Validate file upload
@@ -86,28 +121,61 @@ export function validateFileUpload(file: File): FileValidationResult {
   return { valid: true }
 }
 
+/** Validate patient chart document uploads (50MB, PDF/PNG/JPEG). */
+export function validatePatientDocumentUpload(file: File): FileValidationResult {
+  if (file.size === 0) {
+    return { valid: false, error: 'File is empty' }
+  }
+  if (file.size > PATIENT_DOCUMENT_MAX_BYTES) {
+    return {
+      valid: false,
+      error: `File size exceeds maximum allowed size of ${PATIENT_DOCUMENT_MAX_BYTES / 1024 / 1024}MB`,
+    }
+  }
+
+  const ext = fileExtension(file.name)
+  if (!PATIENT_DOCUMENT_EXTENSIONS.includes(ext as (typeof PATIENT_DOCUMENT_EXTENSIONS)[number])) {
+    return {
+      valid: false,
+      error: 'Invalid file type. Please upload PDF, PNG, JPEG, or JPG files only.',
+    }
+  }
+
+  if (!resolvePatientDocumentContentType(file)) {
+    return {
+      valid: false,
+      error: 'Invalid file type. Please upload PDF, PNG, JPEG, or JPG files only.',
+    }
+  }
+
+  if (!isValidFileName(file.name)) {
+    return {
+      valid: false,
+      error: 'Invalid file name. File name contains invalid characters.',
+    }
+  }
+
+  if (isSuspiciousFileName(file.name)) {
+    return { valid: false, error: 'File name is not allowed' }
+  }
+
+  return { valid: true }
+}
+
 /**
  * Validate file name
  */
 function isValidFileName(fileName: string): boolean {
-  // Check for path traversal attempts
   if (fileName.includes('..') || fileName.includes('/') || fileName.includes('\\')) {
     return false
   }
-
-  // Check for null bytes
-  if (fileName.includes('\0')) {
+  if (fileName.includes('\0') || /[\x00-\x1f]/.test(fileName)) {
     return false
   }
-
-  // Check length
   if (fileName.length > 255) {
     return false
   }
-
-  // Check for only valid characters
-  const validPattern = /^[a-zA-Z0-9._-]+$/
-  return validPattern.test(fileName.replace(/\s/g, ''))
+  return true
 }
 
 /**
@@ -128,40 +196,46 @@ function isSuspiciousFileName(fileName: string): boolean {
  * In production, use a proper antivirus/security scanner
  */
 export async function scanFileContent(file: File): Promise<FileValidationResult> {
-  // Basic content validation - check first few bytes for file signature
+  const contentType = file.type || null
+  return scanFileContentByType(file, contentType)
+}
+
+/** Content signature check for patient chart uploads (uses extension when MIME is missing). */
+export async function scanPatientDocumentContent(file: File): Promise<FileValidationResult> {
+  const contentType = resolvePatientDocumentContentType(file)
+  if (!contentType) {
+    return { valid: false, error: 'Invalid file type' }
+  }
+  return scanFileContentByType(file, contentType)
+}
+
+async function scanFileContentByType(
+  file: File,
+  contentType: string | null
+): Promise<FileValidationResult> {
+  if (!contentType) return { valid: true }
+
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer.slice(0, 8))
 
-  // PNG signature
   const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
-  // JPEG signature
   const jpegSignature = [0xff, 0xd8, 0xff]
-  // PDF signature
-  const pdfSignature = [0x25, 0x50, 0x44, 0x46] // %PDF
+  const pdfSignature = [0x25, 0x50, 0x44, 0x46]
 
   const isPng = bytes.slice(0, 8).every((byte, i) => byte === pngSignature[i])
   const isJpeg = bytes.slice(0, 3).every((byte, i) => byte === jpegSignature[i])
   const isPdf = bytes.slice(0, 4).every((byte, i) => byte === pdfSignature[i])
 
-  if (file.type === 'image/png' && !isPng) {
-    return {
-      valid: false,
-      error: 'File content does not match declared type (PNG)',
-    }
+  if (contentType === 'image/png' && !isPng) {
+    return { valid: false, error: 'File content does not match declared type (PNG)' }
   }
 
-  if ((file.type === 'image/jpeg' || file.type === 'image/jpg') && !isJpeg) {
-    return {
-      valid: false,
-      error: 'File content does not match declared type (JPEG)',
-    }
+  if (contentType === 'image/jpeg' && !isJpeg) {
+    return { valid: false, error: 'File content does not match declared type (JPEG)' }
   }
 
-  if (file.type === 'application/pdf' && !isPdf) {
-    return {
-      valid: false,
-      error: 'File content does not match declared type (PDF)',
-    }
+  if (contentType === 'application/pdf' && !isPdf) {
+    return { valid: false, error: 'File content does not match declared type (PDF)' }
   }
 
   return { valid: true }

@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getI693BasePath } from '@/lib/i693/paths'
 import { listImmigrationDocumentsForPatient } from '@/lib/patient-documents/immigration-docs'
+import { requireClinicalRole } from '@/lib/locations/scope'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -131,26 +132,19 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid patient ID' }, { status: 400 })
     }
 
-    // Verify user is authenticated (relaxed: log error but don't block if Supabase cookies are present)
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      console.error('Warning: auth.getUser() failed in documents POST, continuing with Supabase RLS:', userError)
-      // We rely on Supabase RLS to enforce data access; do not return 401 here.
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get user profile for name
-    let userName = 'Unknown'
-    if (user) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('full_name')
-        .eq('uid', user.id)
-        .single()
-      userName = profile?.full_name || user.user_metadata?.full_name || user.email || 'Unknown'
+    try {
+      await requireClinicalRole(supabase, user.id)
+    } catch {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const formData = await request.formData()
@@ -172,39 +166,25 @@ export async function POST(
       )
     }
 
-    // Enhanced file validation using security utilities
-    const { validateFileUpload, scanFileContent, generateSecureFileName } = await import('@/lib/security/file-upload')
-    
-    const fileValidation = validateFileUpload(file)
+    const {
+      validatePatientDocumentUpload,
+      scanPatientDocumentContent,
+      generateSecureFileName,
+      resolvePatientDocumentContentType,
+    } = await import('@/lib/security/file-upload')
+
+    const fileValidation = validatePatientDocumentUpload(file)
     if (!fileValidation.valid) {
       return NextResponse.json({ error: fileValidation.error }, { status: 400 })
     }
 
-    // Scan file content for malicious patterns
-    const contentScan = await scanFileContent(file)
+    const contentScan = await scanPatientDocumentContent(file)
     if (!contentScan.valid) {
       return NextResponse.json({ error: contentScan.error }, { status: 400 })
     }
 
-    // Validate file type (PDF, PNG, JPEG, JPG only)
-    // Note: validateFileUpload already checks file type, but we do an additional check here
-    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
-    const allowedExtensions = ['.png', '.jpeg', '.jpg', '.pdf']
-    const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
-    
-    if (!allowedTypes.includes(file.type) || (fileExtension && !allowedExtensions.includes(fileExtension))) {
-      return NextResponse.json({ 
-        error: 'Invalid file type. Please upload PDF, PNG, JPEG, or JPG files only.' 
-      }, { status: 400 })
-    }
+    const contentType = resolvePatientDocumentContentType(file) ?? 'application/octet-stream'
 
-    // Validate file size (max 50MB)
-    const maxSize = 50 * 1024 * 1024 // 50MB
-    if (file.size > maxSize) {
-      return NextResponse.json({ error: 'File size exceeds 50MB limit' }, { status: 400 })
-    }
-
-    // Validate document category (label)
     const validCategories = [
       'image',
       'report',
@@ -220,51 +200,55 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid document category' }, { status: 400 })
     }
 
-    // Generate secure file name using security utility
     const fileName = generateSecureFileName(file.name)
     const filePath = `patient-${patientId}/${fileName}`
 
-    // Upload file to Supabase Storage
-    const { data: uploadData, error: uploadError } = await supabase.storage
+    const supabaseAdmin = createAdminClient()
+
+    const { error: uploadError } = await supabaseAdmin.storage
       .from('patient-documents')
       .upload(filePath, file, {
         cacheControl: '3600',
         upsert: false,
+        contentType,
       })
 
     if (uploadError) {
       console.error('Error uploading file:', uploadError)
-      return NextResponse.json({ error: 'Failed to upload file' }, { status: 500 })
+      return NextResponse.json(
+        { error: uploadError.message || 'Failed to upload file' },
+        { status: 500 }
+      )
     }
 
-    // Signed URL so the new doc opens in viewer (works with private bucket)
-    const { data: signed } = await supabase.storage
+    const { data: signed } = await supabaseAdmin.storage
       .from('patient-documents')
       .createSignedUrl(filePath, 3600)
-    const fileUrl = signed?.signedUrl ?? supabase.storage.from('patient-documents').getPublicUrl(filePath).data.publicUrl
+    const fileUrl =
+      signed?.signedUrl ??
+      supabaseAdmin.storage.from('patient-documents').getPublicUrl(filePath).data.publicUrl
 
-    // Insert document record
-    // Schema: id (uuid), patient_id (bigint), file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at
-    // Note: file_name stores the document name the user typed, not the actual file name
-    const { data: document, error: insertError } = await supabase
+    const { data: document, error: insertError } = await supabaseAdmin
       .from('patient_documents')
       .insert({
         patient_id: patientId,
-        document_category: documentLabel, // Use document_label from form as document_category
-        file_path: filePath, // Store the storage path
-        file_name: documentName.trim(), // Use the document name the user typed, not the file name
+        document_category: documentLabel,
+        file_path: filePath,
+        file_name: documentName.trim(),
         file_size: file.size,
-        file_type: file.type,
-        uploaded_by: user?.id ?? null,
+        file_type: contentType,
+        uploaded_by: user.id,
       })
       .select()
       .single()
 
     if (insertError) {
       console.error('Error inserting document:', insertError)
-      // Try to delete uploaded file if database insert fails
-      await supabase.storage.from('patient-documents').remove([filePath])
-      return NextResponse.json({ error: 'Failed to save document record' }, { status: 500 })
+      await supabaseAdmin.storage.from('patient-documents').remove([filePath])
+      return NextResponse.json(
+        { error: insertError.message || 'Failed to save document record' },
+        { status: 500 }
+      )
     }
 
     // Transform document to match frontend interface (same format as GET endpoint)

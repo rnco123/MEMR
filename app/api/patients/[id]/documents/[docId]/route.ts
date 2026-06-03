@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { requireClinicalRole } from '@/lib/locations/scope'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Force dynamic rendering since we use cookies for authentication
@@ -23,8 +25,15 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get document to retrieve file path
-    const { data: document, error: fetchError } = await supabase
+    try {
+      await requireClinicalRole(supabase, user.id)
+    } catch {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    const supabaseAdmin = createAdminClient()
+
+    const { data: document, error: fetchError } = await supabaseAdmin
       .from('patient_documents')
       .select('file_path')
       .eq('id', docId)
@@ -34,11 +43,9 @@ export async function DELETE(
       return NextResponse.json({ error: 'Document not found' }, { status: 404 })
     }
 
-    // Use file_path directly from schema
     const filePath = document.file_path
 
-    // Delete from database
-    const { error: deleteError } = await supabase
+    const { error: deleteError } = await supabaseAdmin
       .from('patient_documents')
       .delete()
       .eq('id', docId)
@@ -48,9 +55,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Failed to delete document' }, { status: 500 })
     }
 
-    // Delete file from storage
     if (filePath) {
-      const { error: storageError } = await supabase.storage
+      const { error: storageError } = await supabaseAdmin.storage
         .from('patient-documents')
         .remove([filePath])
 

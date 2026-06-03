@@ -750,7 +750,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
 
     setLoadingDocuments(true)
     try {
-      const response = await fetch(`/api/patients/${patientId.toString()}/documents`)
+      const response = await fetch(`/api/patients/${patientId.toString()}/documents`, {
+        credentials: 'include',
+      })
       if (response.ok) {
         const data = await response.json()
         setDocuments(data.documents || [])
@@ -831,6 +833,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       const response = await fetch(`/api/patients/${patientId.toString()}/documents`, {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       })
 
       if (response.ok) {
@@ -872,6 +875,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     try {
       const response = await fetch(`/api/patients/${patientId.toString()}/documents/${documentToDelete}`, {
         method: 'DELETE',
+        credentials: 'include',
       })
 
       if (response.ok) {
