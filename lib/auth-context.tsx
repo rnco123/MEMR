@@ -49,6 +49,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Prefer same-origin API when clinic DNS blocks *.supabase.co in the browser
+  const fetchRoleViaApi = async (): Promise<UserRole | null> => {
+    try {
+      const res = await fetch('/api/me/profile', { credentials: 'include' })
+      if (!res.ok) return null
+      const json = (await res.json()) as { role?: string | null }
+      return mapRoleToEnum(json.role)
+    } catch {
+      return null
+    }
+  }
+
   // Fetch role from Supabase (uses shared helper with uid/id fallback)
   const fetchUserRoleWithRetry = async (
     userId: string,
@@ -98,7 +110,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return metadataRole
     }
 
-    // If no role in metadata, fetch from database
+    const apiRole = await fetchRoleViaApi()
+    if (apiRole) return apiRole
+
+    // If no role in metadata, fetch from database (direct Supabase — may fail on restricted DNS)
     const dbRole = await fetchUserRoleWithRetry(user.id, user.email)
     if (dbRole) {
       // Update user metadata with role for faster access
@@ -403,23 +418,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const signIn = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-    if (!error && data.user) {
-      // Immediately after sign-in, the browser auth cookies/tokens can take a moment
-      // to propagate to subsequent RLS-protected reads. Retry role extraction once
-      // if we didn't get a role the first time.
-      let userRole = await extractRole(data.user)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = (await res.json()) as {
+        error?: string
+        user?: User
+        role?: string | null
+      }
+
+      if (!res.ok) {
+        return { error: { message: data.error || 'Sign in failed' } }
+      }
+
+      const signedInUser = data.user ?? null
+      let userRole =
+        mapRoleToEnum(data.role) ||
+        mapRoleToEnum(signedInUser?.user_metadata?.role) ||
+        null
+
+      if (signedInUser && !userRole) {
+        userRole = await extractRole(signedInUser)
+      }
       if (!userRole) {
         await new Promise((resolve) => setTimeout(resolve, 500))
-        const { data: latest } = await supabase.auth.getUser()
-        userRole = await extractRole(latest.user)
+        userRole = await fetchRoleViaApi()
+      }
+
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) {
+        setSession(session)
+        setUser(session.user)
+      } else if (signedInUser) {
+        setUser(signedInUser)
       }
 
       updateRole(userRole, true)
-      logAuditEventClient('user_logged_in', 'user', data.user.id, { role: userRole }).catch(() => {})
+      if (signedInUser?.id) {
+        logAuditEventClient('user_logged_in', 'user', signedInUser.id, { role: userRole }).catch(() => {})
+      }
       if (userRole === 'admin') {
         router.push('/admin')
       } else if (userRole) {
@@ -428,8 +469,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         router.push('/')
       }
       router.refresh()
+      return { error: null }
+    } catch (err) {
+      const message =
+        err instanceof TypeError
+          ? 'Cannot reach the login server. Check your internet connection or try a different network.'
+          : 'Sign in failed'
+      return { error: { message } }
     }
-    return { error }
   }
 
   const testSignIn = async (email: string, password: string) => {
