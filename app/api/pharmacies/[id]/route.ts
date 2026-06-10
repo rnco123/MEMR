@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-error-handler'
 import { pharmacyUpdateSchema } from '@/lib/validation'
 import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
+import { createAdminClient } from '@/lib/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,9 +17,10 @@ function parseId(raw: string | undefined): number {
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requirePharmacyAdminUser()
+    await requirePharmacyAdminUser()
+    const admin = createAdminClient()
 
-    const { data, error } = await supabase
+    const { data, error } = await admin
       .from('pharmacy')
       .select('id, name, address, phone, email, created_at, updated_at')
       .eq('id', pharmacyId)
@@ -36,7 +38,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requirePharmacyAdminUser()
+    await requirePharmacyAdminUser()
+    const admin = createAdminClient()
 
     let body: unknown
     try {
@@ -58,7 +61,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
     if (v.email !== undefined) patch.email = v.email ?? null
 
-    const { data, error } = await supabase
+    const { data, error } = await admin
       .from('pharmacy')
       .update(patch)
       .eq('id', pharmacyId)
@@ -77,10 +80,11 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 export async function DELETE(_request: Request, { params }: { params: { id: string } }) {
   try {
     const pharmacyId = parseId(params.id)
-    const { supabase } = await requirePharmacyAdminUser()
+    await requirePharmacyAdminUser()
+    const admin = createAdminClient()
 
     // FKs are ON DELETE SET NULL on encounters.pharmacy_id and prescriptions.pharmacy_id.
-    const { error } = await supabase.from('pharmacy').delete().eq('id', pharmacyId)
+    const { error } = await admin.from('pharmacy').delete().eq('id', pharmacyId)
     if (error) throw error
 
     return NextResponse.json({ success: true })

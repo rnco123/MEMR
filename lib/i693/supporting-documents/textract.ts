@@ -28,12 +28,57 @@ export class I693TextractDocumentError extends Error {
   }
 }
 
+export class I693TextractConfigError extends Error {
+  constructor(
+    message = 'AWS Textract is not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env (see .env.example).'
+  ) {
+    super(message)
+    this.name = 'I693TextractConfigError'
+  }
+}
+
 function textractRegion(): string {
   return process.env.AWS_TEXTRACT_REGION?.trim() || process.env.AWS_REGION?.trim() || 'us-east-1'
 }
 
+function textractCredentials():
+  | { accessKeyId: string; secretAccessKey: string }
+  | undefined {
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim()
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim()
+  if (!accessKeyId || !secretAccessKey) return undefined
+  return { accessKeyId, secretAccessKey }
+}
+
+export function isI693TextractConfigured(): boolean {
+  return textractCredentials() != null
+}
+
+/** Fail fast before OCR when AWS keys are missing from the server environment. */
+export function assertI693TextractConfigured(): void {
+  if (!isI693TextractConfigured()) {
+    throw new I693TextractConfigError()
+  }
+}
+
 export function createI693TextractClient(): TextractClient {
-  return new TextractClient({ region: textractRegion() })
+  const credentials = textractCredentials()
+  if (!credentials) {
+    throw new I693TextractConfigError()
+  }
+  return new TextractClient({
+    region: textractRegion(),
+    credentials,
+  })
+}
+
+function isCredentialsProviderError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error != null &&
+    'name' in error &&
+    (error as { name?: string }).name === 'CredentialsProviderError'
+  )
 }
 
 function blockPage(block: Block): number {
@@ -171,6 +216,9 @@ async function detectTextFromBytes(
       throw new I693TextractDocumentError(
         `${fileName} is too large for synchronous Textract OCR after rendering.`
       )
+    }
+    if (isCredentialsProviderError(error)) {
+      throw new I693TextractConfigError()
     }
     throw error
   }

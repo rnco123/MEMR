@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { phoneDigitsOnly } from '@/lib/phone-digits'
 
 type Pharmacy = {
   id: number
@@ -193,8 +194,11 @@ function PharmaciesPage() {
             <div>
               <label className="text-sm text-slate-700">{t('pharmacies.phone')}</label>
               <input
+                type="tel"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={createForm.phone}
-                onChange={(e) => setCreateForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) => setCreateForm((f) => ({ ...f, phone: phoneDigitsOnly(e.target.value) }))}
                 className="mt-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
                 placeholder={t('pharmacies.phone_placeholder')}
               />
@@ -287,9 +291,12 @@ function PharmaciesPage() {
                             className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
                           />
                           <input
+                            type="tel"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
                             value={editForm.phone}
-                            onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
-                            placeholder={t('pharmacies.phone')}
+                            onChange={(e) => setEditForm((f) => ({ ...f, phone: phoneDigitsOnly(e.target.value) }))}
+                            placeholder={t('pharmacies.phone_placeholder')}
                             className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
                           />
                           <input
@@ -401,5 +408,5 @@ function PharmaciesPage() {
 
 export default withRoleProtection(PharmaciesPage, {
   allowedRoles: [UserRole.ADMIN],
-  redirectTo: '/dashboard',
+  redirectTo: '/admin',
 })

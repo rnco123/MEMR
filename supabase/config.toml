@@ -1,0 +1,5 @@
+# Minimal config for Supabase CLI (project ref from NEXT_PUBLIC_SUPABASE_URL).
+project_id = "kxtbfmlatysaxjzppmti"
+
+[db]
+major_version = 15

@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { fetchUserRole } from '@/lib/fetch-user-role'
-import { AuthenticationError, AuthorizationError } from '@/lib/api-error-handler'
+import { requireAdminUser } from '@/lib/admin-auth'
 import { createClient } from '@/lib/supabase/server'
+import { UserRole } from '@/lib/roles'
 
-export const PHARMACY_ADMIN_ROLES = new Set(['admin'])
+export const PHARMACY_ADMIN_ROLES = new Set([UserRole.ADMIN])
 
 export type ClinicalUser = {
   id: string
@@ -14,21 +14,10 @@ export async function requirePharmacyAdminUser(): Promise<{
   supabase: SupabaseClient
   user: ClinicalUser
 }> {
+  const user = await requireAdminUser()
   const supabase = await createClient()
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser()
-
-  if (error || !user) {
-    throw new AuthenticationError()
+  return {
+    supabase: supabase as unknown as SupabaseClient,
+    user: { id: user.id, role: UserRole.ADMIN },
   }
-
-  const roleInfo = await fetchUserRole(supabase, user.id)
-  const role = roleInfo?.role ?? ''
-  if (!PHARMACY_ADMIN_ROLES.has(role)) {
-    throw new AuthorizationError('Pharmacy management is restricted to admins')
-  }
-
-  return { supabase: supabase as unknown as SupabaseClient, user: { id: user.id, role } }
 }

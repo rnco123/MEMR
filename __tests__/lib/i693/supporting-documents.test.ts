@@ -1,6 +1,8 @@
 import { mergeI693Form } from '@/lib/i693/types'
 import {
+  I693TextractConfigError,
   I693TextractDocumentError,
+  assertI693TextractConfigured,
   extractTextFromI693SupportingPdf,
   textractBlocksToText,
 } from '@/lib/i693/supporting-documents/textract'
@@ -13,6 +15,22 @@ import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-
 import { saveI693SupportingPdfsToPatientDocuments } from '@/lib/i693/supporting-documents/patient-documents'
 
 describe('I-693 supporting document AI flow', () => {
+  const originalAccessKey = process.env.AWS_ACCESS_KEY_ID
+  const originalSecretKey = process.env.AWS_SECRET_ACCESS_KEY
+
+  afterEach(() => {
+    if (originalAccessKey === undefined) delete process.env.AWS_ACCESS_KEY_ID
+    else process.env.AWS_ACCESS_KEY_ID = originalAccessKey
+    if (originalSecretKey === undefined) delete process.env.AWS_SECRET_ACCESS_KEY
+    else process.env.AWS_SECRET_ACCESS_KEY = originalSecretKey
+  })
+
+  test('fails fast when AWS Textract credentials are missing', () => {
+    delete process.env.AWS_ACCESS_KEY_ID
+    delete process.env.AWS_SECRET_ACCESS_KEY
+    expect(() => assertI693TextractConfigured()).toThrow(I693TextractConfigError)
+  })
+
   test('orders Textract LINE blocks by page and position', () => {
     const result = textractBlocksToText([
       {

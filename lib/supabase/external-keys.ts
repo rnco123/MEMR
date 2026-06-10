@@ -5,6 +5,14 @@
  * without using that project's auth in this app.
  */
 
+export function isExternalSupabaseConfigured(): boolean {
+  const url = process.env.EXTERNAL_SUPABASE_URL
+  const key =
+    process.env.EXTERNAL_SUPABASE_SECRET_KEY ||
+    process.env.EXTERNAL_SUPABASE_SERVICE_ROLE_KEY
+  return Boolean(url && key)
+}
+
 export function getExternalSupabaseUrl(): string {
   const url = process.env.EXTERNAL_SUPABASE_URL
   if (!url) {

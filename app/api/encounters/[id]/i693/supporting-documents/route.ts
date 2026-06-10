@@ -8,7 +8,9 @@ import { mergeI693Form } from '@/lib/i693/types'
 import type { I693FormData } from '@/lib/i693/types'
 import { getI693EditorFields } from '@/lib/i693/get-editor-fields'
 import {
+  I693TextractConfigError,
   I693TextractDocumentError,
+  assertI693TextractConfigured,
   extractTextFromI693SupportingPdfs,
 } from '@/lib/i693/supporting-documents/textract'
 import { generateI693DraftFromSupportingDocuments } from '@/lib/i693/supporting-documents/ai-draft'
@@ -108,6 +110,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       await validateSupportingPdf(file)
     }
 
+    assertI693TextractConfigured()
+
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin
       .from('encounters')
@@ -163,7 +167,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       patient_documents: patientDocuments,
     })
   } catch (e) {
-    if (e instanceof I693TextractDocumentError) {
+    if (e instanceof I693TextractDocumentError || e instanceof I693TextractConfigError) {
       return handleApiError(new ValidationError(e.message))
     }
     return handleApiError(e)

@@ -327,9 +327,14 @@ export default function AdminOverviewPage() {
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-slate-700">{t('admin.locations')}</h2>
-            <Link href="/admin/users" className="text-xs text-purple-600 hover:underline font-medium">
-              {t('admin.assign_staff')}
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/admin/locations" className="text-xs text-purple-600 hover:underline font-medium">
+                {t('admin.manage_locations')}
+              </Link>
+              <Link href="/admin/users" className="text-xs text-purple-600 hover:underline font-medium">
+                {t('admin.assign_staff')}
+              </Link>
+            </div>
           </div>
           {loading ? (
             <div className="space-y-2">

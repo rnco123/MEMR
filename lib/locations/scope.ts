@@ -8,6 +8,11 @@ export type LocationRow = {
   title: string
   address?: string | null
   location_code?: string | null
+  phone?: string | null
+  email?: string | null
+  opening_hours?: string | null
+  google_map_url?: string | null
+  is_active?: boolean
 }
 
 export type LocationScope = {
@@ -86,8 +91,9 @@ export async function getAssignedLocations(
 
   const { data } = await admin
     .from('locations')
-    .select('id, title, address, location_code')
+    .select('id, title, address, location_code, phone, email, opening_hours, google_map_url, is_active')
     .in('id', scope.locationIds)
+    .eq('is_active', true)
     .order('title')
 
   return (data ?? []) as LocationRow[]

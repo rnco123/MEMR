@@ -17,7 +17,6 @@ type ConsentKey =
 
 interface EncounterRooming {
   id: number
-  pharmacy_id?: number | null
   identity_verified_at?: string | null
   prescribing_location_ack_at?: string | null
   ma_supervision_ack_at?: string | null
@@ -33,7 +32,6 @@ interface EncounterRooming {
 interface Props {
   encounterId: number
   encounter: EncounterRooming
-  pharmacies: { id: number; name: string | null }[]
   onUpdated: () => void
 }
 
@@ -49,17 +47,13 @@ const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
   { key: 'ma_supervision', labelKey: 'encounter_modal.consent_ma_supervision' },
 ]
 
-export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUpdated }: Props) {
+export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Props) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
   const [syncingToMcm, setSyncingToMcm] = useState(false)
   const [findings, setFindings] = useState(encounter.ma_exam_findings ?? '')
-  const [pharmacyId, setPharmacyId] = useState<string>(encounter.pharmacy_id ? String(encounter.pharmacy_id) : '')
 
   const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
-
-  const selectClass =
-    'bg-[#f9fbff] border border-slate-200 rounded-xl px-3 py-2 text-slate-900 text-sm min-w-[200px] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 [color-scheme:light]'
 
   const patchRooming = async (body: Record<string, unknown>) => {
     setSaving(true)
@@ -187,30 +181,6 @@ export function EncounterRoomingPanel({ encounterId, encounter, pharmacies, onUp
           >
             {syncingToMcm ? t('encounter_modal.rooming_copying') : t('encounter_modal.rooming_copy_mcm')}
           </button>
-        </div>
-      </div>
-
-      <div>
-        <label className="text-sm text-slate-500 block mb-1">{t('encounter_modal.rooming_pharmacy')}</label>
-        <div className="flex gap-2 flex-wrap">
-          <select
-            value={pharmacyId}
-            disabled={saving}
-            onChange={(e) => {
-              const v = e.target.value
-              setPharmacyId(v)
-              const num = v ? Number(v) : null
-              void patchRooming({ pharmacy_id: num })
-            }}
-            className={`${selectClass} cursor-pointer`}
-          >
-            <option value="">{t('encounter_modal.rooming_pharmacy_select')}</option>
-            {pharmacies.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name || t('encounter_modal.pharmacy_numbered', { id: p.id })}
-              </option>
-            ))}
-          </select>
         </div>
       </div>
 

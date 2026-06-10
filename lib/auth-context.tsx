@@ -6,7 +6,7 @@ import type { User, Session } from '@supabase/supabase-js'
 import { useRouter } from 'next/navigation'
 import type { UserRole } from './roles'
 import { isValidRole, mapRoleToEnum } from './roles'
-import { fetchUserRole } from './fetch-user-role'
+import { fetchProfileFields } from './fetch-user-role'
 import { isAbortError } from './is-abort-error'
 import { logAuditEventClient } from './audit'
 

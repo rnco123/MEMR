@@ -68,7 +68,8 @@ export async function getCachedLocations() {
       const supabase = await createClient()
       const { data, error } = await supabase
         .from('locations')
-        .select('id, title, address, location_code')
+        .select('id, title, address, location_code, phone, email, opening_hours, google_map_url, is_active')
+        .eq('is_active', true)
         .order('title', { ascending: true })
 
       if (error) {

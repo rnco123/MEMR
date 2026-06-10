@@ -1,11 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
 import { useT } from '@/lib/i18n'
+import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import {
-  MISSING_ITEM_LABELS,
   WORKFLOW_COLUMNS,
+  type ImmigrationCaseRow,
   type ImmigrationWorkflowStatus,
 } from '@/lib/immigration/types'
 
@@ -15,32 +17,19 @@ type ApiRow = {
   patient_name: string
   appointment_date: string | null
   appointment_time: string | null
+  location_id: number | null
+  location_title: string | null
   i693_status: string | null
-  case: {
-    status: ImmigrationWorkflowStatus
-    status_color: string
-    missing_items: string[]
-    is_lab_complete: boolean
-    is_vaccine_complete: boolean
-    is_intake_complete: boolean
-    is_md_signed: boolean
-    is_delivered: boolean
-  } | null
+  case: ImmigrationCaseRow | null
 }
 
 type StatusFilter = 'all' | ImmigrationWorkflowStatus
-type QuickFilter = 'none' | 'missing_labs' | 'missing_vaccines' | 'needs_md'
 
 const COLOR_DOT: Record<string, string> = {
   red: 'bg-red-500',
   yellow: 'bg-amber-400',
   green: 'bg-emerald-500',
   blue: 'bg-blue-500',
-}
-
-function formatMissing(items: string[]): string {
-  if (!items.length) return ''
-  return items.map((k) => MISSING_ITEM_LABELS[k] ?? k).join(', ')
 }
 
 type Props = {
@@ -57,40 +46,59 @@ export function I693WorkflowBoard({
   onOpenPdfEditor,
 }: Props) {
   const { t } = useT()
+  const {
+    locations: userLocations,
+    unrestricted: locationsUnrestricted,
+  } = useUserLocations()
   const [rows, setRows] = useState<ApiRow[]>([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('none')
   const [view, setView] = useState<'list' | 'kanban'>('kanban')
   const [patientSearch, setPatientSearch] = useState('')
+  const [movingEncounterId, setMovingEncounterId] = useState<number | null>(null)
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([])
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    try {
-      const res = await fetch('/api/i693/cases', { credentials: 'include', cache: 'no-store' })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to load cases')
-      setRows((json.data ?? []) as ApiRow[])
-    } catch (e) {
-      console.error(e)
-      if (!silent) setRows([])
-    } finally {
-      if (!silent) setLoading(false)
-    }
-  }, [])
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true)
+      try {
+        const params = new URLSearchParams()
+        selectedLocationIds.forEach((id) => params.append('location_id', String(id)))
+        const url = params.size > 0 ? `/api/i693/cases?${params}` : '/api/i693/cases'
+        const res = await fetch(url, { credentials: 'include', cache: 'no-store' })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to load cases')
+        setRows((json.data ?? []) as ApiRow[])
+      } catch (e) {
+        console.error(e)
+        if (!silent) setRows([])
+      } finally {
+        if (!silent) setLoading(false)
+      }
+    },
+    [selectedLocationIds]
+  )
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (selectedLocationIds.length === 0) return
+
+    const availableIds = new Set(userLocations.map((loc) => loc.id))
+    setSelectedLocationIds((current) => {
+      const next = current.filter((id) => availableIds.has(id))
+      if (next.length === current.length) return current
+      return next.length === userLocations.length ? [] : next
+    })
+  }, [selectedLocationIds.length, userLocations])
 
   const filtered = useMemo(() => {
     const q = patientSearch.trim().toLowerCase()
     return rows.filter((r) => {
       if (!r.case) return false
       if (statusFilter !== 'all' && r.case.status !== statusFilter) return false
-      if (quickFilter === 'missing_labs' && r.case.is_lab_complete) return false
-      if (quickFilter === 'missing_vaccines' && r.case.is_vaccine_complete) return false
-      if (quickFilter === 'needs_md' && r.case.status !== 'ready_review') return false
       if (view === 'list' && q) {
         const nameMatch = r.patient_name.toLowerCase().includes(q)
         const encounterMatch = String(r.encounter_id).includes(q)
@@ -99,7 +107,7 @@ export function I693WorkflowBoard({
       }
       return true
     })
-  }, [rows, statusFilter, quickFilter, patientSearch, view])
+  }, [rows, statusFilter, patientSearch, view])
 
   const byColumn = useMemo(() => {
     const map: Record<ImmigrationWorkflowStatus, ApiRow[]> = {
@@ -118,12 +126,74 @@ export function I693WorkflowBoard({
     () => rows.find((r) => r.encounter_id === selectedEncounterId) ?? null,
     [rows, selectedEncounterId]
   )
+  const showLocationFilter = locationsUnrestricted || userLocations.length > 0
+
+  const moveCase = useCallback(
+    async (row: ApiRow, nextStatus: ImmigrationWorkflowStatus) => {
+      if (!row.case || row.case.status === nextStatus || movingEncounterId === row.encounter_id) return
+
+      const previousRows = rows
+      const nextColor = WORKFLOW_COLUMNS.find((col) => col.status === nextStatus)?.color ?? row.case.status_color
+      setMovingEncounterId(row.encounter_id)
+      setRows((current) =>
+        current.map((item) =>
+          item.encounter_id === row.encounter_id && item.case
+            ? {
+                ...item,
+                case: {
+                  ...item.case,
+                  status: nextStatus,
+                  status_color: nextColor,
+                },
+              }
+            : item
+        )
+      )
+
+      try {
+        const res = await fetch(`/api/i693/cases/${row.encounter_id}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to move case')
+
+        setRows((current) =>
+          current.map((item) =>
+            item.encounter_id === row.encounter_id
+              ? { ...item, case: json.data as ImmigrationCaseRow }
+              : item
+          )
+        )
+      } catch (e) {
+        console.error(e)
+        setRows(previousRows)
+      } finally {
+        setMovingEncounterId(null)
+      }
+    },
+    [movingEncounterId, rows]
+  )
+
+  const handleCardDragStart = (event: DragEvent<HTMLDivElement>, encounterId: number) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', String(encounterId))
+  }
+
+  const handleColumnDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>, status: ImmigrationWorkflowStatus) => {
+      event.preventDefault()
+      const encounterId = Number(event.dataTransfer.getData('text/plain'))
+      const row = rows.find((item) => item.encounter_id === encounterId)
+      if (row) void moveCase(row, status)
+    },
+    [moveCase, rows]
+  )
 
   const renderCard = (row: ApiRow) => {
     const c = row.case!
-    const missing = formatMissing(
-      Array.isArray(c.missing_items) ? (c.missing_items as string[]) : []
-    )
     const appt =
       row.appointment_date &&
       `${row.appointment_date}${row.appointment_time ? ` ${row.appointment_time}` : ''}`
@@ -131,11 +201,13 @@ export function I693WorkflowBoard({
     return (
       <div
         key={row.encounter_id}
+        draggable={movingEncounterId !== row.encounter_id}
+        onDragStart={(event) => handleCardDragStart(event, row.encounter_id)}
         className={`rounded-xl border bg-white p-3 shadow-sm transition-shadow ${
           selectedEncounterId === row.encounter_id
             ? 'border-[#2E6EF3] ring-2 ring-[#2E6EF3]/20'
             : 'border-slate-200 hover:border-slate-300'
-        }`}
+        } ${movingEncounterId === row.encounter_id ? 'opacity-60' : 'cursor-move'}`}
       >
         <button
           type="button"
@@ -143,11 +215,6 @@ export function I693WorkflowBoard({
           className="w-full text-left"
         >
           <p className="font-semibold text-slate-900 text-sm">{row.patient_name}</p>
-          {missing && (
-            <p className="text-xs text-red-600 mt-1">
-              {t('i693.wf_missing')}: {missing}
-            </p>
-          )}
           {appt && (
             <p className="text-xs text-slate-500 mt-1">
               {t('i693.wf_appt')}: {appt}
@@ -156,6 +223,11 @@ export function I693WorkflowBoard({
           {row.i693_status && (
             <p className="text-xs text-slate-400 mt-0.5 capitalize">
               I-693: {row.i693_status.replaceAll('_', ' ')}
+            </p>
+          )}
+          {c.status_updated_by_name && (
+            <p className="text-[11px] text-slate-500 mt-2" title={c.status_updated_at ?? undefined}>
+              {t('i693.wf_moved_by', { name: c.status_updated_by_name })}
             </p>
           )}
         </button>
@@ -203,29 +275,19 @@ export function I693WorkflowBoard({
             )
           })}
         </div>
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ['none', 'i693.wf_filter_none'],
-              ['missing_labs', 'i693.wf_filter_labs'],
-              ['missing_vaccines', 'i693.wf_filter_vaccines'],
-              ['needs_md', 'i693.wf_filter_md'],
-            ] as const
-          ).map(([key, labelKey]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setQuickFilter(key)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${
-                quickFilter === key
-                  ? 'border-[#2E6EF3] bg-[#eef3ff] text-[#2E6EF3]'
-                  : 'border-slate-200 bg-white text-slate-600'
-              }`}
-            >
-              {t(labelKey)}
-            </button>
-          ))}
-        </div>
+        {showLocationFilter && (
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+              {t('location.filter_label')}
+            </span>
+            <LocationCheckboxDropdown
+              locations={userLocations}
+              selectedIds={selectedLocationIds}
+              onChange={setSelectedLocationIds}
+              unrestricted={locationsUnrestricted}
+            />
+          </div>
+        )}
         <div className="ml-auto flex gap-2">
           <button
             type="button"
@@ -306,9 +368,6 @@ export function I693WorkflowBoard({
           {filtered.map((row) => {
             const c = row.case!
             const dot = COLOR_DOT[c.status_color] ?? 'bg-slate-400'
-            const missing = formatMissing(
-              Array.isArray(c.missing_items) ? (c.missing_items as string[]) : []
-            )
             return (
               <li key={row.encounter_id}>
                 <div
@@ -324,9 +383,12 @@ export function I693WorkflowBoard({
                     <span className={`mt-1.5 w-3 h-3 rounded-full shrink-0 ${dot}`} />
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-slate-900">{row.patient_name}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        {missing ? `${t('i693.wf_missing')}: ${missing}` : t('i693.wf_no_missing')}
-                      </p>
+                      {row.appointment_date && (
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          {t('i693.wf_appt')}: {row.appointment_date}
+                          {row.appointment_time ? ` ${row.appointment_time}` : ''}
+                        </p>
+                      )}
                     </div>
                   </button>
                   <div className="shrink-0 flex flex-col gap-1 px-2">
@@ -353,6 +415,8 @@ export function I693WorkflowBoard({
           {WORKFLOW_COLUMNS.map((col) => (
             <div
               key={col.status}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => handleColumnDrop(event, col.status)}
               className="rounded-2xl border border-slate-200 bg-slate-50/80 flex flex-col min-h-[320px]"
             >
               <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2">

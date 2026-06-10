@@ -55,6 +55,12 @@ export const config = {
   openai: {
     apiKey: getEnvVar('OPENAI_API_KEY', false),
   },
+  /** Server-only: Resend transactional email (prescriptions to pharmacy). */
+  email: {
+    resendApiKey: getEnvVar('RESEND_API_KEY', false),
+    fromEmail: getEnvVar('RESEND_FROM_EMAIL', false),
+    fromName: getEnvVar('RESEND_FROM_NAME', false) || 'MyClinicMD',
+  },
 } as const
 
 // Validate critical config on module load — server only (client never has SERVICE_ROLE or ADMIN_SIGNUP_PIN)

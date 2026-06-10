@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { fetchUserRole } from '@/lib/fetch-user-role'
+import { fetchProfileFields, fetchUserRole } from '@/lib/fetch-user-role'
 import {
   handleApiError,
   AuthenticationError,
@@ -95,8 +95,19 @@ export async function PATCH(
       throw new ValidationError('Invalid workflow status')
     }
 
+    const actorProfile = manualStatus
+      ? await fetchProfileFields(supabase, user.id, 'full_name, email', { email: user.email })
+      : null
+    const actorName =
+      (typeof actorProfile?.full_name === 'string' && actorProfile.full_name.trim()) ||
+      (typeof actorProfile?.email === 'string' && actorProfile.email.trim()) ||
+      user.email ||
+      'Unknown user'
+
     const caseRow = await syncImmigrationCase(admin, encounterId, {
       manualStatus,
+      statusUpdatedByUserId: manualStatus ? user.id : undefined,
+      statusUpdatedByName: manualStatus ? actorName : undefined,
       is_delivered: body.is_delivered,
       delivery_type: body.delivery_type,
       delivery_date: body.delivery_date,

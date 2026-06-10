@@ -14,6 +14,7 @@ import {
   I693AiDraftPdfReview,
   type I693SupportingDocumentDraft,
 } from '@/components/I693AiDraftPdfReview'
+import { I693SplitView } from '@/components/I693SplitView'
 import {
   applyI693FormToPdfDocument,
   extractI693FormFromPdfDocument,
@@ -130,6 +131,43 @@ function addPreviewInteractionShield(formWrap: HTMLDivElement): void {
   formWrap.appendChild(shield)
 }
 
+function isTextFormWidget(node: EventTarget | Element | null): node is HTMLInputElement | HTMLTextAreaElement {
+  if (!(node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) return false
+  if (node instanceof HTMLTextAreaElement) return true
+  return !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'hidden'].includes(node.type)
+}
+
+function fitPdfFormWidgetFont(el: HTMLInputElement | HTMLTextAreaElement): void {
+  const width = el.clientWidth || el.getBoundingClientRect().width
+  const height = el.clientHeight || el.getBoundingClientRect().height
+  if (!width || !height) return
+
+  const valueLength = Math.max((el.value || el.placeholder || '').length, 1)
+  const baseFontSize = Math.max(6, Math.min(10, height * 0.72))
+  const fittedFontSize = Math.max(5, Math.min(baseFontSize, (width - 4) / (valueLength * 0.54)))
+  const lineHeight = Math.min(height, Math.max(fittedFontSize * 1.15, fittedFontSize + 1))
+
+  el.style.boxSizing = 'border-box'
+  el.style.fontSize = `${fittedFontSize}px`
+  el.style.lineHeight = `${lineHeight}px`
+  el.style.padding = '0 1px'
+  el.style.overflow = 'hidden'
+  el.style.textOverflow = 'clip'
+  el.style.whiteSpace = el instanceof HTMLTextAreaElement ? 'pre-wrap' : 'nowrap'
+}
+
+function fitPdfFormLayerFonts(root: HTMLElement): void {
+  root.querySelectorAll('input, textarea').forEach((node) => {
+    if (isTextFormWidget(node)) fitPdfFormWidgetFont(node)
+  })
+}
+
+function fittedAnnotationFontSize(value: string, width: number, height: number): number {
+  const valueLength = Math.max((value || '').length, 1)
+  const baseFontSize = Math.max(6, Math.min(ANNOTATION_TEXT_SIZE, height * 0.72))
+  return Math.max(5, Math.min(baseFontSize, (width - 6) / (valueLength * 0.54)))
+}
+
 export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const { t } = useT()
   const [loading, setLoading] = useState(true)
@@ -151,6 +189,8 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [previewError, setPreviewError] = useState<string | null>(null)
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
+  const [splitViewOpen, setSplitViewOpen] = useState(false)
+  const [splitDocIndex, setSplitDocIndex] = useState(0)
   const [supportingLoading, setSupportingLoading] = useState(false)
   const [aiDraft, setAiDraft] = useState<I693SupportingDocumentDraft | null>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
@@ -355,8 +395,13 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           renderForms: true,
           annotationStorage: pdf.annotationStorage,
         })
-        formLayerDiv.addEventListener('change', () => void syncFormFromPdf())
-        formLayerDiv.addEventListener('input', () => void syncFormFromPdf())
+        fitPdfFormLayerFonts(formLayerDiv)
+        const handleFormLayerEdit = (event: Event) => {
+          if (isTextFormWidget(event.target)) fitPdfFormWidgetFont(event.target)
+          void syncFormFromPdf()
+        }
+        formLayerDiv.addEventListener('change', handleFormLayerEdit)
+        formLayerDiv.addEventListener('input', handleFormLayerEdit)
 
         await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
         nextCombPlacements.push(
@@ -457,6 +502,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           renderForms: true,
           annotationStorage: pdf.annotationStorage,
         })
+        fitPdfFormLayerFonts(formLayerDiv)
         lockPreviewFormLayer(formLayerDiv)
         addPreviewInteractionShield(formWrap)
 
@@ -650,18 +696,63 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
   const onSupportingDocumentsSelected = useCallback((fileList: FileList | null) => {
     const files = Array.from(fileList ?? [])
-    const pdfs = files.filter((file) => (
-      file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-    ))
-    if (files.length > 0 && pdfs.length !== files.length) {
-      toast.warning('Only PDF supporting documents can be used for I-693 AI fill.')
+    const supported = files.filter((file) => {
+      const name = file.name.toLowerCase()
+      return (
+        file.type === 'application/pdf' ||
+        name.endsWith('.pdf') ||
+        file.type.startsWith('image/') ||
+        /\.(png|jpe?g|webp)$/.test(name)
+      )
+    })
+    if (files.length > 0 && supported.length !== files.length) {
+      toast.warning('Only PDF or image documents can be opened in SplitView.')
     }
-    setSupportingFiles(pdfs)
+    const pdfs = supported.filter(
+      (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+    )
+    if (supported.length > pdfs.length) {
+      toast.info('Images open in SplitView. AI fill uses PDFs only.')
+    }
+    setSupportingFiles(supported)
+    setSplitDocIndex(0)
+    setSplitViewOpen(pdfs.length > 0)
     setAiDraft(null)
   }, [])
 
+  const hideSplitView = useCallback(() => {
+    setSplitViewOpen(false)
+  }, [])
+
+  const removeSupportingDocument = useCallback((index: number) => {
+    setSupportingFiles((prev) => {
+      const next = prev.filter((_, fileIndex) => fileIndex !== index)
+      if (next.length === 0) {
+        setSplitViewOpen(false)
+        setSplitDocIndex(0)
+        if (supportingInputRef.current) supportingInputRef.current.value = ''
+        return next
+      }
+
+      setSplitDocIndex((current) => {
+        if (current > index) return current - 1
+        if (current >= next.length) return Math.max(0, next.length - 1)
+        return current
+      })
+      return next
+    })
+  }, [])
+
+  const supportingPdfFiles = useMemo(
+    () =>
+      supportingFiles.filter(
+        (file) => file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
+      ),
+    [supportingFiles]
+  )
+
   const generateSupportingDocumentDraft = useCallback(async () => {
-    if (supportingFiles.length === 0) {
+    if (supportingPdfFiles.length === 0) {
       toast.error('Select at least one supporting PDF first')
       return
     }
@@ -675,7 +766,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       }
 
       const body = new FormData()
-      for (const file of supportingFiles) body.append('documents', file)
+      for (const file of supportingPdfFiles) body.append('documents', file)
       body.append('current_form', JSON.stringify(formRef.current))
 
       const res = await fetch(`/api/encounters/${encounterId}/i693/supporting-documents`, {
@@ -707,7 +798,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     } finally {
       setSupportingLoading(false)
     }
-  }, [encounterId, supportingFiles])
+  }, [encounterId, supportingPdfFiles])
 
   const acceptAiDraft = useCallback(() => {
     if (!aiDraft) return
@@ -716,6 +807,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     formRef.current = next
     setDirty(true)
     setAiDraft(null)
+    setSplitViewOpen(false)
     setSupportingFiles([])
     if (supportingInputRef.current) supportingInputRef.current.value = ''
     if (mode !== 'editor') setMode('editor')
@@ -840,6 +932,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               const y = toPx(a.yPercent, pageHost.height)
               const w = Math.max(60, toPx(a.widthPercent, pageHost.width))
               const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+              const fontSize = fittedAnnotationFontSize(a.value, w, h)
               return (
                 <Rnd
                   key={a.id}
@@ -892,7 +985,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                         }))
                       }
                       className="h-full w-full resize-none bg-transparent outline-none text-black whitespace-nowrap overflow-hidden"
-                      style={{ fontSize: `${ANNOTATION_TEXT_SIZE}px`, lineHeight: 1.2 }}
+                      style={{ fontSize: `${fontSize}px`, lineHeight: 1.2 }}
                     />
                   </div>
                 </Rnd>
@@ -1024,6 +1117,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               const y = toPx(a.yPercent, pageHost.height)
               const w = Math.max(60, toPx(a.widthPercent, pageHost.width))
               const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
+              const fontSize = fittedAnnotationFontSize(a.value, w, h)
               return (
                 <div
                   key={a.id}
@@ -1033,7 +1127,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                     top: y,
                     width: w,
                     height: h,
-                    fontSize: `${ANNOTATION_TEXT_SIZE}px`,
+                    fontSize: `${fontSize}px`,
                     lineHeight: 1.2,
                   }}
                 >
@@ -1323,7 +1417,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       <input
         ref={supportingInputRef}
         type="file"
-        accept="application/pdf,.pdf"
+        accept="application/pdf,.pdf,image/png,image/jpeg,image/jpg,image/webp"
         multiple
         className="hidden"
         onChange={(e) => {
@@ -1337,9 +1431,44 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           <h3 className="text-sm font-semibold text-slate-900">Supporting documents</h3>
           <p className="mt-1 text-xs text-slate-500">
             {supportingFiles.length > 0
-              ? supportingFiles.map((file) => file.name).join(', ')
-              : 'No supporting PDFs selected'}
+              ? t('i693.splitview_open_hint')
+              : t('i693.splitview_empty_hint')}
           </p>
+          {supportingFiles.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {supportingFiles.map((file, index) => (
+                <div
+                  key={`${file.name}-${file.size}-${index}`}
+                  className={`inline-flex max-w-full items-center gap-1 rounded-lg border pl-2.5 pr-1 py-1 text-xs font-medium ${
+                    splitViewOpen && splitDocIndex === index
+                      ? 'border-violet-300 bg-violet-50 text-violet-800'
+                      : 'border-slate-200 bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSplitDocIndex(index)
+                      setSplitViewOpen(true)
+                    }}
+                    className="max-w-[200px] truncate text-left hover:underline"
+                    title={file.name}
+                  >
+                    {file.name}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeSupportingDocument(index)}
+                    className="inline-flex h-5 w-5 items-center justify-center rounded text-slate-500 hover:bg-slate-200 hover:text-slate-800"
+                    title={t('i693.splitview_remove_document')}
+                    aria-label={t('i693.splitview_remove_document')}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <button
@@ -1358,7 +1487,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           <button
             type="button"
             onClick={() => void generateSupportingDocumentDraft()}
-            disabled={supportingLoading || saving || previewLoading || supportingFiles.length === 0}
+            disabled={supportingLoading || saving || previewLoading || supportingPdfFiles.length === 0}
             className="rounded-lg bg-violet-600 px-3 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
           >
             {supportingLoading ? 'Generating…' : 'Generate AI draft'}
@@ -1366,7 +1495,11 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         </div>
       </div>
 
-      <div className={`grid gap-4 ${aiDraft ? 'xl:grid-cols-[minmax(0,1fr)_minmax(360px,42%)]' : ''}`}>
+      <div
+        className={`grid gap-4 ${
+          splitViewOpen || aiDraft ? 'lg:grid-cols-[minmax(0,1fr)_minmax(320px,44%)]' : ''
+        }`}
+      >
         <div className="min-w-0 space-y-3">
           <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-14rem)]">
             {previewError && mode === 'preview' ? (
@@ -1419,14 +1552,25 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           )}
         </div>
 
-        {aiDraft && (
-          <aside className="min-w-0 xl:sticky xl:top-4 xl:self-start">
-            <I693AiDraftPdfReview
-              draft={aiDraft}
-              onAccept={acceptAiDraft}
-              onReject={rejectAiDraft}
-            />
-          </aside>
+        {(splitViewOpen || aiDraft) && (
+          <div className="flex min-w-0 flex-col gap-4">
+            {splitViewOpen && supportingFiles.length > 0 ? (
+              <I693SplitView
+                files={supportingFiles}
+                activeIndex={splitDocIndex}
+                onActiveIndexChange={setSplitDocIndex}
+                onClosePanel={hideSplitView}
+                onRemoveDocument={removeSupportingDocument}
+              />
+            ) : null}
+            {aiDraft ? (
+              <I693AiDraftPdfReview
+                draft={aiDraft}
+                onAccept={acceptAiDraft}
+                onReject={rejectAiDraft}
+              />
+            ) : null}
+          </div>
         )}
       </div>
     </div>

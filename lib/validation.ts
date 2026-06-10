@@ -146,6 +146,27 @@ export const prescriptionCreateSchema = z.object({
 
 export type PrescriptionCreateInput = z.infer<typeof prescriptionCreateSchema>
 
+/** Encounter workflow prescription (doctor + nurse until encounter completed) */
+export const encounterPrescriptionCreateSchema = z.object({
+  medication_name: z.string().min(1).max(500),
+  dosage: z.string().max(500).optional().nullable(),
+  dosage_instruction: z.string().max(150).optional().nullable(),
+  instructions: z.string().max(2000).optional().nullable(),
+  strength: z.string().max(50).optional().nullable(),
+  route: z.string().max(50).optional().nullable(),
+  frequency: z.string().max(50).optional().nullable(),
+  duration: z.string().max(50).optional().nullable(),
+  quantity: z.string().max(100).optional().nullable(),
+  refills: z.number().int().min(0).max(99).optional().default(0),
+  notes: z.string().max(2000).optional().nullable(),
+})
+
+export type EncounterPrescriptionCreateInput = z.infer<typeof encounterPrescriptionCreateSchema>
+
+export const encounterPrescriptionUpdateSchema = encounterPrescriptionCreateSchema.partial()
+
+export type EncounterPrescriptionUpdateInput = z.infer<typeof encounterPrescriptionUpdateSchema>
+
 export const roomingPatchSchema = z.object({
   identity_verified: z.boolean().optional(),
   prescribing_location_ack: z.boolean().optional(),
@@ -204,6 +225,12 @@ export const pharmacyCreateSchema = z.object({
 
 export type PharmacyCreateInput = z.infer<typeof pharmacyCreateSchema>
 
+export const pharmacyRegistryCreateSchema = pharmacyCreateSchema.extend({
+  assign_to_encounter_id: z.number().int().positive().optional(),
+})
+
+export type PharmacyRegistryCreateInput = z.infer<typeof pharmacyRegistryCreateSchema>
+
 export const pharmacyUpdateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   address: nullableOptionalString(1000),
@@ -212,3 +239,52 @@ export const pharmacyUpdateSchema = z.object({
 })
 
 export type PharmacyUpdateInput = z.infer<typeof pharmacyUpdateSchema>
+
+const nullableOptionalEmail = z.preprocess(
+  (val) => (val === '' || val === undefined ? null : val),
+  z.string().email('Invalid email address').max(200).trim().toLowerCase().nullable().optional()
+)
+
+const nullableTenantId = z.preprocess(
+  (val) => (val === '' || val === undefined || val === null ? null : val),
+  z.number().int().positive().nullable().optional()
+)
+
+export const locationCreateSchema = z.object({
+  title: z.string().min(1).max(200),
+  tenant_id: nullableTenantId,
+  location_code: nullableOptionalString(50),
+  address: nullableOptionalString(1000),
+  phone: nullableOptionalString(50),
+  email: nullableOptionalEmail,
+  opening_hours: nullableOptionalString(2000),
+  google_map_url: nullableOptionalString(2000),
+  is_active: z.boolean().optional(),
+})
+
+export type LocationCreateInput = z.infer<typeof locationCreateSchema>
+
+export const locationUpdateSchema = z.object({
+  title: z.string().min(1).max(200).optional(),
+  tenant_id: nullableTenantId,
+  location_code: nullableOptionalString(50),
+  address: nullableOptionalString(1000),
+  phone: nullableOptionalString(50),
+  email: nullableOptionalEmail,
+  opening_hours: nullableOptionalString(2000),
+  google_map_url: nullableOptionalString(2000),
+  is_active: z.boolean().optional(),
+})
+
+export type LocationUpdateInput = z.infer<typeof locationUpdateSchema>
+
+export const tenantCreateSchema = z.object({
+  name: z.string().min(1).max(200),
+  tenant_code: z
+    .string()
+    .min(1)
+    .max(20)
+    .regex(/^[a-zA-Z0-9_-]+$/, 'Tenant code must be letters, numbers, hyphen, or underscore'),
+})
+
+export type TenantCreateInput = z.infer<typeof tenantCreateSchema>

@@ -11,6 +11,11 @@ import {
   type ImmigrationStatusColor,
   type ImmigrationWorkflowStatus,
 } from '@/lib/immigration/types'
+import {
+  isAllowedByLocationScope,
+  resolveEffectiveLocationId,
+  type LocationScope,
+} from '@/lib/locations/scope'
 
 export type CaseFlags = {
   is_lab_complete: boolean
@@ -53,6 +58,18 @@ export function computeWorkflowFromFlags(flags: CaseFlags): {
 
 function hasText(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0
+}
+
+function firstObject<T extends Record<string, unknown>>(value: unknown): T | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as T
+  if (Array.isArray(value) && value[0] && typeof value[0] === 'object') return value[0] as T
+  return null
+}
+
+function readNumber(value: unknown): number | null {
+  if (value == null || value === '') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
 }
 
 export async function deriveCaseFlags(
@@ -143,6 +160,9 @@ type ImmigrationCaseWriteRow = {
   delivery_type: string | null
   delivery_date: string | null
   notes: string | null
+  status_updated_by?: string | null
+  status_updated_by_name?: string | null
+  status_updated_at?: string | null
   updated_at: string
 }
 
@@ -227,6 +247,8 @@ export async function syncImmigrationCase(
   encounterId: number,
   options?: {
     manualStatus?: ImmigrationWorkflowStatus
+    statusUpdatedByUserId?: string | null
+    statusUpdatedByName?: string | null
     is_delivered?: boolean
     delivery_type?: string | null
     delivery_date?: string | null
@@ -297,6 +319,9 @@ export async function syncImmigrationCase(
   }
 
   const now = new Date().toISOString()
+  const statusChanged = Boolean(
+    options?.manualStatus && (!existing || existing.status !== options.manualStatus)
+  )
   const row = {
     patient_id: patientId,
     encounter_id: encounterId,
@@ -311,6 +336,13 @@ export async function syncImmigrationCase(
     delivery_type: options?.delivery_type ?? existing?.delivery_type ?? null,
     delivery_date: options?.delivery_date ?? existing?.delivery_date ?? null,
     notes: options?.notes ?? existing?.notes ?? null,
+    ...(statusChanged
+      ? {
+          status_updated_by: options?.statusUpdatedByUserId ?? null,
+          status_updated_by_name: options?.statusUpdatedByName ?? null,
+          status_updated_at: now,
+        }
+      : {}),
     updated_at: now,
   }
 
@@ -320,28 +352,45 @@ export async function syncImmigrationCase(
   return caseRow
 }
 
+type ListImmigrationCasesOptions = {
+  scope?: LocationScope
+  locationFilterIds?: number[]
+}
+
 type ListImmigrationCasesResult = Awaited<ReturnType<typeof listImmigrationCasesInner>>
 
 let listImmigrationCasesInflight: Promise<ListImmigrationCasesResult> | null = null
 
 /** Coalesce parallel /api/i693/cases requests so sync does not run twice at once. */
-export async function listImmigrationCases(admin: SupabaseClient): Promise<ListImmigrationCasesResult> {
+export async function listImmigrationCases(
+  admin: SupabaseClient,
+  options: ListImmigrationCasesOptions = {}
+): Promise<ListImmigrationCasesResult> {
+  if (options.scope || options.locationFilterIds?.length) {
+    return listImmigrationCasesInner(admin, options)
+  }
+
   if (listImmigrationCasesInflight) {
     return listImmigrationCasesInflight
   }
-  listImmigrationCasesInflight = listImmigrationCasesInner(admin).finally(() => {
+  listImmigrationCasesInflight = listImmigrationCasesInner(admin, options).finally(() => {
     listImmigrationCasesInflight = null
   })
   return listImmigrationCasesInflight
 }
 
-async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
+async function listImmigrationCasesInner(
+  admin: SupabaseClient,
+  options: ListImmigrationCasesOptions
+): Promise<
   {
     encounter_id: number
     patient_id: number
     patient_name: string
     appointment_date: string | null
     appointment_time: string | null
+    location_id: number | null
+    location_title: string | null
     case: ImmigrationCaseRow | null
     i693_status: string | null
   }[]
@@ -356,13 +405,14 @@ async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
       consent_ack,
       program_type,
       updated_at,
-      patients:patient_id ( first_name, last_name ),
+      patients:patient_id ( first_name, last_name, location_id ),
       appointments:appointment_id (
         patient_id,
+        location_id,
         appointment_date,
         appointment_time,
         services:service_id ( title_en, title_es ),
-        patients:patient_id ( first_name, last_name )
+        patients:patient_id ( first_name, last_name, location_id )
       )
     `
     )
@@ -390,6 +440,30 @@ async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
     (submissions ?? []).map((row) => [Number(row.encounter_id), String(row.status)])
   )
 
+  const locationIds = new Set<number>()
+  for (const e of immigration) {
+    const raw = e as Record<string, unknown>
+    const patient = firstObject<{ location_id?: unknown }>(raw.patients)
+    const appt = firstObject<{ location_id?: unknown; patients?: unknown }>(raw.appointments)
+    const apptPatient = firstObject<{ location_id?: unknown }>(appt?.patients)
+    const effectiveLocationId = resolveEffectiveLocationId(
+      readNumber(patient?.location_id ?? apptPatient?.location_id),
+      readNumber(appt?.location_id)
+    )
+    if (effectiveLocationId != null) locationIds.add(effectiveLocationId)
+  }
+
+  const locationTitleById = new Map<number, string>()
+  if (locationIds.size > 0) {
+    const { data: locations } = await admin
+      .from('locations')
+      .select('id, title')
+      .in('id', [...locationIds])
+    for (const loc of locations ?? []) {
+      locationTitleById.set(Number(loc.id), String(loc.title ?? ''))
+    }
+  }
+
   const defaultCaseRow = (patientId: number, encounterId: number): ImmigrationCaseRow => ({
     id: 0,
     patient_id: patientId,
@@ -405,6 +479,9 @@ async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
     delivery_type: null,
     delivery_date: null,
     notes: null,
+    status_updated_by: null,
+    status_updated_by_name: null,
+    status_updated_at: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })
@@ -421,39 +498,39 @@ async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
       continue
     }
 
-    const patientsRaw = raw.patients
-    const apptRaw = raw.appointments
-    const appt =
-      apptRaw && typeof apptRaw === 'object' && !Array.isArray(apptRaw)
-        ? (apptRaw as {
-            appointment_date?: string | null
-            appointment_time?: string | null
-            patients?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[]
-          })
-        : Array.isArray(apptRaw) && apptRaw[0]
-          ? (apptRaw[0] as {
-              appointment_date?: string | null
-              appointment_time?: string | null
-              patients?: { first_name?: string; last_name?: string } | { first_name?: string; last_name?: string }[]
-            })
-          : null
-
-    const patientFromEncounter =
-      patientsRaw && typeof patientsRaw === 'object' && !Array.isArray(patientsRaw)
-        ? (patientsRaw as { first_name?: string; last_name?: string })
-        : Array.isArray(patientsRaw) && patientsRaw[0]
-          ? (patientsRaw[0] as { first_name?: string; last_name?: string })
-          : null
-
-    const apptPatientsRaw = appt?.patients
-    const patientFromAppointment =
-      apptPatientsRaw && typeof apptPatientsRaw === 'object' && !Array.isArray(apptPatientsRaw)
-        ? apptPatientsRaw
-        : Array.isArray(apptPatientsRaw) && apptPatientsRaw[0]
-          ? apptPatientsRaw[0]
-          : null
+    const patientFromEncounter = firstObject<{
+      first_name?: string
+      last_name?: string
+      location_id?: unknown
+    }>(raw.patients)
+    const appt = firstObject<{
+      appointment_date?: string | null
+      appointment_time?: string | null
+      location_id?: unknown
+      patients?: unknown
+    }>(raw.appointments)
+    const patientFromAppointment = firstObject<{
+      first_name?: string
+      last_name?: string
+      location_id?: unknown
+    }>(appt?.patients)
 
     const patient = patientFromEncounter ?? patientFromAppointment
+    const effectiveLocationId = resolveEffectiveLocationId(
+      readNumber(patientFromEncounter?.location_id ?? patientFromAppointment?.location_id),
+      readNumber(appt?.location_id)
+    )
+
+    if (
+      options.locationFilterIds?.length &&
+      (effectiveLocationId == null || !options.locationFilterIds.includes(effectiveLocationId))
+    ) {
+      continue
+    }
+
+    if (options.scope && !isAllowedByLocationScope(options.scope, effectiveLocationId)) {
+      continue
+    }
 
     const storedCase = caseByEncounter.get(encounterId)
     const caseRow = storedCase ?? defaultCaseRow(patientId, encounterId)
@@ -467,6 +544,8 @@ async function listImmigrationCasesInner(admin: SupabaseClient): Promise<
         : `Patient #${patientId}`,
       appointment_date: appt?.appointment_date ?? null,
       appointment_time: appt?.appointment_time ?? null,
+      location_id: effectiveLocationId,
+      location_title: effectiveLocationId != null ? locationTitleById.get(effectiveLocationId) ?? null : null,
       case: caseRow,
       i693_status: i693StatusByEncounter.get(encounterId) ?? null,
     })

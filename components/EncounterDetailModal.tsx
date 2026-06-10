@@ -11,6 +11,12 @@ import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { EncounterRoomingPanel } from './EncounterRoomingPanel'
+import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
+import {
+  mergePharmacyIntoList,
+  normalizePharmacyRow,
+  type PharmacyRecord,
+} from '@/lib/pharmacies/normalize'
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
 
 function patientAgeFromDob(dob: string | null): number | null {
@@ -117,6 +123,7 @@ interface Encounter {
   patient_id: number
   intake_id: number | null
   pharmacy_id: number | null
+  doctor_id?: number | null
   status: string
   encounter_code: string | null
   created_at: string
@@ -196,7 +203,7 @@ export function EncounterDetailModal({
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
-  const [pharmacies, setPharmacies] = useState<{ id: number; name: string | null }[]>([])
+  const [pharmacies, setPharmacies] = useState<PharmacyRecord[]>([])
 
   type IcdSuggestionRow = {
     code: string
@@ -252,8 +259,14 @@ export function EncounterDetailModal({
         const encTyped = encounterData as Encounter
         setEncounter(encTyped)
 
-        const { data: pharmList } = await supabase.from('pharmacy').select('id, name').order('name')
-        setPharmacies((pharmList as { id: number; name: string | null }[]) ?? [])
+        const { data: pharmList } = await supabase
+          .from('pharmacy')
+          .select('id, name, address, city, state, zip_code, phone, phone_number, email, is_active')
+          .or('is_active.is.null,is_active.eq.true')
+          .order('name')
+        let pharmacyRegistry = ((pharmList as Record<string, unknown>[]) ?? []).map((row) =>
+          normalizePharmacyRow(row)
+        )
 
         // Fetch appointment to get onsite_type
         const { data: appointmentData } = await supabase
@@ -351,10 +364,21 @@ export function EncounterDetailModal({
 
           if (pharmacyError) {
             console.error('Error fetching pharmacy:', pharmacyError)
+            setPharmacy(null)
           } else if (pharmacyData) {
             setPharmacy(pharmacyData as Pharmacy)
+            pharmacyRegistry = mergePharmacyIntoList(
+              pharmacyRegistry,
+              normalizePharmacyRow(pharmacyData as Record<string, unknown>)
+            )
+          } else {
+            setPharmacy(null)
           }
+        } else {
+          setPharmacy(null)
         }
+
+        setPharmacies(pharmacyRegistry)
 
       } catch (error) {
         console.error('Error fetching encounter details:', error)
@@ -365,6 +389,39 @@ export function EncounterDetailModal({
 
     fetchData()
   }, [isOpen, encounterId, appointmentId, patientId, supabase])
+
+  const reloadPharmacyRegistry = useCallback(async () => {
+    const { data: pharmList } = await supabase
+      .from('pharmacy')
+      .select('id, name, address, city, state, zip_code, phone, phone_number, email, is_active')
+      .or('is_active.is.null,is_active.eq.true')
+      .order('name')
+    setPharmacies(
+      ((pharmList as Record<string, unknown>[]) ?? []).map((row) => normalizePharmacyRow(row))
+    )
+  }, [supabase])
+
+  const refreshEncounterAndPharmacy = useCallback(async () => {
+    const { data: enc } = await supabase.from('encounters').select('*').eq('id', encounterId).single()
+    if (!enc) return
+    setEncounter(enc as Encounter)
+    const pid = (enc as Encounter).pharmacy_id
+
+    await reloadPharmacyRegistry()
+
+    if (pid) {
+      const { data: pharmacyData } = await supabase.from('pharmacy').select('*').eq('id', pid).maybeSingle()
+      const normalized = pharmacyData
+        ? normalizePharmacyRow(pharmacyData as Record<string, unknown>)
+        : null
+      setPharmacy((pharmacyData as Pharmacy) ?? null)
+      if (normalized) {
+        setPharmacies((prev) => mergePharmacyIntoList(prev, normalized))
+      }
+    } else {
+      setPharmacy(null)
+    }
+  }, [encounterId, supabase, reloadPharmacyRegistry])
 
   /** ICD-10-CM suggestions from intake + SOAP subjective (one request per modal open). */
   useEffect(() => {
@@ -901,7 +958,6 @@ export function EncounterDetailModal({
                 <EncounterRoomingPanel
                   encounterId={encounterId}
                   encounter={encounter}
-                  pharmacies={pharmacies}
                   onUpdated={async () => {
                     const { data: enc } = await supabase
                       .from('encounters')
@@ -910,6 +966,22 @@ export function EncounterDetailModal({
                       .single()
                     if (enc) setEncounter(enc as Encounter)
                   }}
+                />
+              )}
+
+              {encounter && (
+                <EncounterPrescriptionsPanel
+                  encounterId={encounterId}
+                  encounterStatus={encounter.status}
+                  hasDoctor={encounter.doctor_id != null}
+                  hasPharmacy={encounter.pharmacy_id != null}
+                  pharmacyId={encounter.pharmacy_id}
+                  assignedPharmacy={
+                    pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
+                  }
+                  pharmacies={pharmacies}
+                  onPharmacyUpdated={refreshEncounterAndPharmacy}
+                  onPharmaciesReload={reloadPharmacyRegistry}
                 />
               )}
 
@@ -1143,48 +1215,6 @@ export function EncounterDetailModal({
                 )}
               </div>
 
-              {/* Pharmacy */}
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                  </svg>
-                  {t('patient_file.pharmacy_section')}
-                </h3>
-                {pharmacy ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {pharmacy.name && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.name')}</p>
-                        <p className="text-slate-900 font-semibold">{pharmacy.name}</p>
-                      </div>
-                    )}
-                    {pharmacy.address && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.address')}</p>
-                        <p className="text-slate-900">{pharmacy.address}</p>
-                      </div>
-                    )}
-                    {pharmacy.phone && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.phone')}</p>
-                        <p className="text-slate-900">{pharmacy.phone}</p>
-                      </div>
-                    )}
-                    {pharmacy.email && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.email')}</p>
-                        <p className="text-slate-900">{pharmacy.email}</p>
-                      </div>
-                    )}
-                    {!pharmacy.name && !pharmacy.address && !pharmacy.phone && !pharmacy.email && (
-                      <p className="text-slate-600">{t('patient_file.pharmacy_no_details', { id: pharmacy.id })}</p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-slate-600">{t('encounter_modal.pharmacy_none_assigned')}</p>
-                )}
-              </div>
             </div>
             )}
           </div>

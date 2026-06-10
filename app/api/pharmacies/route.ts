@@ -88,7 +88,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(request: Request) {
   try {
-    const { supabase } = await requirePharmacyAdminUser()
+    await requirePharmacyAdminUser()
+    const admin = createAdminClient()
 
     let body: unknown
     try {
@@ -101,7 +102,7 @@ export async function POST(request: Request) {
     if (!parsed.success) throw parsed.error
 
     const v = parsed.data
-    const { data, error } = await supabase
+    const { data, error } = await admin
       .from('pharmacy')
       .insert({
         name: v.name,
@@ -109,6 +110,7 @@ export async function POST(request: Request) {
         phone: v.phone ?? null,
         phone_number: v.phone ?? null,
         email: v.email ?? null,
+        is_active: true,
       })
       .select('id, name, address, phone, email, created_at, updated_at')
       .single()

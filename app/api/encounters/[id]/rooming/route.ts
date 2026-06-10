@@ -73,12 +73,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       patch.pharmacy_id = v.pharmacy_id
     }
 
-    const { data, error } = await supabase.from('encounters').update(patch).eq('id', encounterId).select().single()
+    const admin = createAdminClient()
+    const { data, error } = await admin
+      .from('encounters')
+      .update(patch)
+      .eq('id', encounterId)
+      .select()
+      .single()
 
     if (error) throw error
 
     if (isImmigrationEncounter(data.consent_ack)) {
-      const admin = createAdminClient()
       await syncImmigrationCase(admin, encounterId)
     }
 

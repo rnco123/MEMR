@@ -18,6 +18,9 @@ export type ImmigrationCaseRow = {
   delivery_type: string | null
   delivery_date: string | null
   notes: string | null
+  status_updated_by: string | null
+  status_updated_by_name: string | null
+  status_updated_at: string | null
   created_at: string
   updated_at: string
 }
