@@ -50,23 +50,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Fetch role from Supabase (uses shared helper with uid/id fallback)
-  const fetchUserRoleWithRetry = async (userId: string, retryCount = 0): Promise<UserRole | null> => {
+  const fetchUserRoleWithRetry = async (
+    userId: string,
+    email: string | null | undefined,
+    retryCount = 0
+  ): Promise<UserRole | null> => {
     try {
       const timeoutPromise = new Promise<null>((resolve) => {
         setTimeout(() => resolve(null), 5000)
       })
-      const fetchPromise = fetchUserRole(supabase, userId)
+      const fetchPromise = fetchProfileFields(supabase, userId, 'role', { email })
       const result = await Promise.race([fetchPromise, timeoutPromise])
 
       if (result === null) {
         if (retryCount < 1) {
           await new Promise(resolve => setTimeout(resolve, 1000))
-          return fetchUserRoleWithRetry(userId, retryCount + 1)
+          return fetchUserRoleWithRetry(userId, email, retryCount + 1)
         }
         return null
       }
 
-      const mappedRole = mapRoleToEnum(result.role)
+      const mappedRole = mapRoleToEnum(typeof result.role === 'string' ? result.role : null)
       return mappedRole || null
     } catch (error) {
       if (isAbortError(error)) return null
@@ -75,7 +79,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.warn('Unexpected error fetching role, retrying...', error)
         }
         await new Promise(resolve => setTimeout(resolve, 1000))
-        return fetchUserRoleWithRetry(userId, retryCount + 1)
+        return fetchUserRoleWithRetry(userId, email, retryCount + 1)
       }
       if (process.env.NODE_ENV === 'development') {
         console.error('Error fetching user role:', error)
@@ -95,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // If no role in metadata, fetch from database
-    const dbRole = await fetchUserRoleWithRetry(user.id)
+    const dbRole = await fetchUserRoleWithRetry(user.id, user.email)
     if (dbRole) {
       // Update user metadata with role for faster access
       // Store in user metadata to avoid repeated queries
