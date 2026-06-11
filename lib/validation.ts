@@ -130,6 +130,49 @@ export const appointmentSchema = z.object({
 
 export type AppointmentInput = z.infer<typeof appointmentSchema>
 
+/** Optional intake captured when a nurse creates a walk-in visit. */
+export const nurseWalkInIntakeSchema = z.object({
+  chief_complaint: z.string().max(500).optional().nullable(),
+  onset: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional()
+    .nullable(),
+  location: z.string().max(200).optional().nullable(),
+  severity: z.number().int().min(1).max(10).optional().nullable(),
+  symptoms_description: z.string().max(2000).optional().nullable(),
+  relieving_factors: z.array(z.string().max(100)).optional(),
+  current_medications: z.string().max(1000).optional().nullable(),
+  medical_conditions: z.string().max(1000).optional().nullable(),
+  surgeries: z.enum(['yes', 'no']).optional().nullable(),
+  allergies: z.enum(['yes', 'no']).optional().nullable(),
+  fh_hypertension: z.boolean().optional(),
+  fh_diabetes: z.boolean().optional(),
+  fh_cancer: z.boolean().optional(),
+  fh_heart_disease: z.boolean().optional(),
+  tobacco_use: z.boolean().optional(),
+  alcohol_use: z.boolean().optional(),
+  drug_use: z.boolean().optional(),
+})
+
+export const nurseWalkInCreateSchema = z.object({
+  patient_id: z.number().int().positive(),
+  appointment_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  appointment_time: z
+    .string()
+    .regex(/^\d{2}:\d{2}(:\d{2})?$/)
+    .optional()
+    .nullable(),
+  service_id: z.number().int().positive().optional(),
+  location_id: z.number().int().positive().optional().nullable(),
+  onsite_type: z.enum(['telemedicine', 'onsite']).optional().default('onsite'),
+  pharmacy_id: z.number().int().positive().optional().nullable(),
+  intake: nurseWalkInIntakeSchema.optional(),
+})
+
+export type NurseWalkInIntakeInput = z.infer<typeof nurseWalkInIntakeSchema>
+export type NurseWalkInCreateInput = z.infer<typeof nurseWalkInCreateSchema>
+
 /** Doctor-recorded prescription (e-prescribe sync can populate external_rx_id) */
 export const prescriptionCreateSchema = z.object({
   patient_id: z.number().int().positive(),

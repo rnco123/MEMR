@@ -210,15 +210,6 @@ function DashboardPage() {
           console.error('Error updating encounter status:', statusError)
         }
 
-        const { error: appointmentError } = await supabase
-          .from('appointments')
-          .update({ status: 'in_progress' })
-          .eq('id', Number(appointment.id))
-
-        if (appointmentError) {
-          console.error('Error updating appointment status:', appointmentError)
-        }
-
         router.push(`/video?encounter=${appointment.encounter_id}`)
       } catch (error) {
         console.error('Error starting consultation:', error)

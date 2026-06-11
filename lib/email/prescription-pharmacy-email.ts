@@ -93,6 +93,7 @@ export function buildPrescriptionPharmacyEmail(ctx: PrescriptionPharmacyEmailCon
         ${ctx.doctor.specialty ? `<tr><td style="padding:6px 0;color:#64748b;">Specialty</td><td style="padding:6px 0;">${cell(ctx.doctor.specialty)}</td></tr>` : ''}
         ${ctx.doctor.phone ? `<tr><td style="padding:6px 0;color:#64748b;">Doctor phone</td><td style="padding:6px 0;">${cell(ctx.doctor.phone)}</td></tr>` : ''}
         ${ctx.doctor.email ? `<tr><td style="padding:6px 0;color:#64748b;">Doctor email</td><td style="padding:6px 0;">${cell(ctx.doctor.email)}</td></tr>` : ''}
+        ${ctx.doctor.ein ? `<tr><td style="padding:6px 0;color:#64748b;">EIN</td><td style="padding:6px 0;">${cell(ctx.doctor.ein)}</td></tr>` : ''}
         <tr><td colspan="2" style="padding:10px 0 4px;font-size:12px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;">Encounter</td></tr>
         <tr><td style="padding:6px 0;color:#64748b;width:140px;">Encounter</td><td style="padding:6px 0;">#${ctx.encounterId}</td></tr>
         ${ctx.pharmacyName ? `<tr><td style="padding:6px 0;color:#64748b;">Pharmacy</td><td style="padding:6px 0;">${cell(ctx.pharmacyName)}</td></tr>` : ''}
@@ -134,6 +135,7 @@ export function buildPrescriptionPharmacyEmail(ctx: PrescriptionPharmacyEmailCon
     ctx.doctor.specialty ? `Specialty: ${ctx.doctor.specialty}` : null,
     ctx.doctor.phone ? `Doctor phone: ${ctx.doctor.phone}` : null,
     ctx.doctor.email ? `Doctor email: ${ctx.doctor.email}` : null,
+    ctx.doctor.ein ? `EIN: ${ctx.doctor.ein}` : null,
     '',
     `Encounter: #${ctx.encounterId}`,
     ctx.pharmacyName ? `Pharmacy: ${ctx.pharmacyName}` : null,

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 
 type Pharmacy = {
@@ -16,6 +17,7 @@ type Pharmacy = {
   email: string | null
   created_at: string
   updated_at: string
+  linked_encounter_count?: number
 }
 
 const blankPharmacyForm = { name: '', address: '', phone: '', email: '' }
@@ -37,6 +39,8 @@ function PharmaciesPage() {
   const [sortBy, setSortBy] = useState<'updated_desc' | 'name_asc' | 'name_desc'>('updated_desc')
   const [page, setPage] = useState(1)
   const pageSize = 20
+  const [deleteTarget, setDeleteTarget] = useState<Pharmacy | null>(null)
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 300)
@@ -133,20 +137,30 @@ function PharmaciesPage() {
     }
   }
 
-  const deletePharmacy = async (id: number) => {
-    if (!window.confirm(t('pharmacies.confirm_delete_pharmacy'))) return
+  const confirmDeletePharmacy = async () => {
+    if (!deleteTarget) return
+    const linked = deleteTarget.linked_encounter_count ?? 0
+    setDeleteSubmitting(true)
     try {
-      const res = await fetch(`/api/pharmacies/${id}`, {
+      const res = await fetch(`/api/pharmacies/${deleteTarget.id}`, {
         method: 'DELETE',
         credentials: 'include',
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || t('pharmacies.toast_delete_failed'))
-      toast.success(t('pharmacies.toast_deleted'))
-      if (editingId === id) setEditingId(null)
+      const delinked = Number(json.delinked_encounter_count ?? linked)
+      toast.success(
+        delinked > 0
+          ? t('pharmacies.toast_deleted_delinked', { count: delinked })
+          : t('pharmacies.toast_deleted')
+      )
+      if (editingId === deleteTarget.id) setEditingId(null)
+      setDeleteTarget(null)
       await loadPharmacies()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('pharmacies.toast_delete_failed'))
+    } finally {
+      setDeleteSubmitting(false)
     }
   }
 
@@ -321,6 +335,14 @@ function PharmaciesPage() {
                           <span className="text-xs text-slate-500 shrink-0">
                             {t('pharmacies.id_label')} {p.id}
                           </span>
+                          {(p.linked_encounter_count ?? 0) > 0 && (
+                            <span
+                              className="text-xs font-medium text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full shrink-0"
+                              title={t('pharmacies.linked_encounters', { count: p.linked_encounter_count ?? 0 })}
+                            >
+                              {t('pharmacies.linked_encounters_short', { count: p.linked_encounter_count ?? 0 })}
+                            </span>
+                          )}
                           <span className="text-sm text-slate-500 truncate">
                             {p.address || '—'}
                             {(p.phone || p.email) ? ' · ' : ''}
@@ -362,7 +384,7 @@ function PharmaciesPage() {
                           </button>
                           <button
                             type="button"
-                            onClick={() => deletePharmacy(p.id)}
+                            onClick={() => setDeleteTarget(p)}
                             className="px-3 py-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm hover:bg-red-100"
                           >
                             {t('pharmacies.delete')}
@@ -377,6 +399,28 @@ function PharmaciesPage() {
           </ul>
         )}
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget != null}
+        onClose={() => {
+          if (!deleteSubmitting) setDeleteTarget(null)
+        }}
+        onConfirm={confirmDeletePharmacy}
+        title={t('pharmacies.delete_confirm_title')}
+        message={
+          deleteTarget
+            ? (deleteTarget.linked_encounter_count ?? 0) > 0
+              ? t('pharmacies.confirm_delete_pharmacy_with_links', {
+                  count: deleteTarget.linked_encounter_count ?? 0,
+                })
+              : t('pharmacies.confirm_delete_pharmacy_none')
+            : ''
+        }
+        confirmLabel={t('pharmacies.delete')}
+        variant="danger"
+        accent="violet"
+        loading={deleteSubmitting}
+      />
 
       {!loading && totalCount > 0 && (
         <div className="flex items-center justify-between mt-4 text-sm">

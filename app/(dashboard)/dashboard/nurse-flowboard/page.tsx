@@ -35,6 +35,7 @@ import { UserRole } from '@/lib/roles'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
+import { NurseAddEncounterModal } from '@/components/NurseAddEncounterModal'
 
 interface Appointment {
   id: number
@@ -142,6 +143,7 @@ function NurseFlowboardPage() {
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
   const [showFinalReviewDevNotice, setShowFinalReviewDevNotice] = useState(false)
+  const [showAddVisitModal, setShowAddVisitModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const initialLoadDone = useRef(false)
@@ -211,7 +213,7 @@ function NurseFlowboardPage() {
         params.set('location_id', String(selectedLocationId))
       }
       const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
-      const json = await res.json()
+      const json = await res.json().catch(() => ({}))
       if (!res.ok) {
         console.error('Error fetching flowboard:', json)
         setAppointments([])
@@ -406,12 +408,6 @@ function NurseFlowboardPage() {
         })
       }
 
-      // Update appointment status to in_progress
-      await supabase
-        .from('appointments')
-        .update({ status: 'in_progress' })
-        .eq('id', appointmentId)
-
       await fetchAllAppointments()
       await fetchAvailableDoctors()
     } catch (error) {
@@ -448,11 +444,20 @@ function NurseFlowboardPage() {
     <div className="p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('flow.title')}</h1>
-          <p className="text-slate-500 text-sm">
-            {t('flow.subtitle_nurse')}
-          </p>
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('flow.title')}</h1>
+            <p className="text-slate-500 text-sm">{t('flow.subtitle_nurse')}</p>
+          </div>
+          {role === UserRole.NURSE && (
+            <button
+              type="button"
+              onClick={() => setShowAddVisitModal(true)}
+              className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
+            >
+              + {t('flow.add_encounter')}
+            </button>
+          )}
         </div>
 
         {/* Stats Cards - Only for Nurse */}
@@ -573,6 +578,7 @@ function NurseFlowboardPage() {
           afterFilters={
             <div className="mt-3 border-t border-slate-200 pt-3">
               <SearchByDobDropdowns
+                layout="inline"
                 year={dobYear}
                 month={dobMonth}
                 day={dobDay}
@@ -1012,6 +1018,24 @@ function NurseFlowboardPage() {
           isOpen={showFinalReviewDevNotice}
           onClose={() => setShowFinalReviewDevNotice(false)}
         />
+
+        {role === UserRole.NURSE && (
+          <NurseAddEncounterModal
+            isOpen={showAddVisitModal}
+            onClose={() => setShowAddVisitModal(false)}
+            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
+            onCreated={async ({ encounterId, appointmentId, patientId }) => {
+              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+              await fetchAllAppointments(true)
+              setSelectedEncounter({
+                encounterId,
+                appointmentId,
+                patientId,
+                encounterStatus: 'appointment_initiated',
+              })
+            }}
+          />
+        )}
     </div>
   )
 }

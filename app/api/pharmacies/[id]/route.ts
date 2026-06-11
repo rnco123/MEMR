@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { handleApiError, NotFoundError, ValidationError } from '@/lib/api-error-handler'
 import { pharmacyUpdateSchema } from '@/lib/validation'
+import {
+  countPharmacyLinks,
+  delinkPharmacyFromEncountersAndPrescriptions,
+} from '@/lib/pharmacies/usage'
 import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -29,7 +33,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (error) throw error
     if (!data) throw new NotFoundError('Pharmacy not found')
 
-    return NextResponse.json({ data })
+    const links = await countPharmacyLinks(admin, pharmacyId)
+
+    return NextResponse.json({
+      data: {
+        ...data,
+        linked_encounter_count: links.encounterCount,
+        linked_prescription_count: links.prescriptionCount,
+      },
+    })
   } catch (e) {
     return handleApiError(e)
   }
@@ -83,11 +95,16 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
     await requirePharmacyAdminUser()
     const admin = createAdminClient()
 
-    // FKs are ON DELETE SET NULL on encounters.pharmacy_id and prescriptions.pharmacy_id.
+    const delinked = await delinkPharmacyFromEncountersAndPrescriptions(admin, pharmacyId)
+
     const { error } = await admin.from('pharmacy').delete().eq('id', pharmacyId)
     if (error) throw error
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({
+      success: true,
+      delinked_encounter_count: delinked.encounterCount,
+      delinked_prescription_count: delinked.prescriptionCount,
+    })
   } catch (e) {
     return handleApiError(e)
   }

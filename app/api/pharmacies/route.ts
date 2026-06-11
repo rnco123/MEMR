@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { pharmacyCreateSchema } from '@/lib/validation'
+import { countEncounterLinksByPharmacyIds } from '@/lib/pharmacies/usage'
 import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -73,7 +74,16 @@ export async function GET(req: NextRequest) {
 
     if (phErr) throw phErr
 
-    const data = (pharmacies ?? []).map((p) => normalizePharmacyRow(p as Record<string, unknown>))
+    const normalized = (pharmacies ?? []).map((p) => normalizePharmacyRow(p as Record<string, unknown>))
+    const encounterCounts = await countEncounterLinksByPharmacyIds(
+      admin,
+      normalized.map((p) => p.id)
+    )
+
+    const data = normalized.map((p) => ({
+      ...p,
+      linked_encounter_count: encounterCounts.get(p.id) ?? 0,
+    }))
 
     return NextResponse.json({
       data,

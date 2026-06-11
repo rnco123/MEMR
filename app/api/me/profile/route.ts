@@ -4,7 +4,9 @@ import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-
 import { isStaffAvatarId } from '@/lib/avatars/catalog'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { resolveDisplayName } from '@/lib/display-name'
+import { parseDoctorEin } from '@/lib/doctors/ein'
 import { loadProfileForUser, updateProfileForUser } from '@/lib/profile/load-profile'
+import { UserRole } from '@/lib/roles'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -12,6 +14,7 @@ export const dynamic = 'force-dynamic'
 const patchSchema = z.object({
   avatar_id: z.string().min(1).optional(),
   full_name: z.string().min(2).max(100).trim().optional(),
+  ein: z.union([z.string().max(20), z.null()]).optional(),
 })
 
 export async function GET() {
@@ -32,6 +35,16 @@ export async function GET() {
     const role = profile?.role ?? null
     const avatarId = profile?.avatar_id ?? null
 
+    let ein: string | null = null
+    if (role === UserRole.DOCTOR) {
+      const { data: doctorRow } = await supabase
+        .from('doctors')
+        .select('ein')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      ein = (doctorRow?.ein as string | null)?.trim() || null
+    }
+
     return NextResponse.json({
       uid: user.id,
       email,
@@ -43,6 +56,7 @@ export async function GET() {
         userMetadata: user.user_metadata,
       }),
       role,
+      ein,
       avatar_id: avatarId,
       avatar_url: avatarId ? resolveStaffAvatarUrl(avatarId) : null,
       active: profile?.active !== false,
@@ -79,17 +93,39 @@ export async function PATCH(req: NextRequest) {
     if (validated.avatar_id !== undefined) updates.avatar_id = validated.avatar_id
     if (validated.full_name !== undefined) updates.full_name = validated.full_name
 
-    if (Object.keys(updates).length === 0) {
+    if (validated.ein !== undefined) {
+      const profileForRole = await loadProfileForUser(supabase, user.id, { email: user.email })
+      if (profileForRole?.role !== UserRole.DOCTOR) {
+        throw new ValidationError('EIN can only be set for doctor accounts')
+      }
+      let parsedEin: string | null
+      try {
+        parsedEin = parseDoctorEin(validated.ein)
+      } catch (e) {
+        throw new ValidationError(e instanceof Error ? e.message : 'Invalid EIN')
+      }
+      const { error: einErr } = await supabase
+        .from('doctors')
+        .update({ ein: parsedEin })
+        .eq('user_id', user.id)
+      if (einErr) throw new ValidationError(einErr.message)
+    }
+
+    if (Object.keys(updates).length === 0 && validated.ein === undefined) {
       throw new ValidationError('No fields to update')
     }
 
-    const { error: updateErr, avatar_column_available } = await updateProfileForUser(
-      supabase,
-      user.id,
-      updates
-    )
-    if (updateErr) {
-      throw new ValidationError(updateErr.message)
+    let avatar_column_available = false
+    if (Object.keys(updates).length > 0) {
+      const { error: updateErr, avatar_column_available: avatarOk } = await updateProfileForUser(
+        supabase,
+        user.id,
+        updates
+      )
+      avatar_column_available = avatarOk
+      if (updateErr) {
+        throw new ValidationError(updateErr.message)
+      }
     }
 
     const profile = await loadProfileForUser(supabase, user.id, { email: user.email })
@@ -98,6 +134,16 @@ export async function PATCH(req: NextRequest) {
     const role = profile?.role ?? null
     const avatarId =
       profile?.avatar_id ?? (validated.avatar_id as string | undefined) ?? null
+
+    let ein: string | null = null
+    if (role === UserRole.DOCTOR) {
+      const { data: doctorRow } = await supabase
+        .from('doctors')
+        .select('ein')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      ein = (doctorRow?.ein as string | null)?.trim() || null
+    }
 
     return NextResponse.json({
       success: true,
@@ -110,6 +156,7 @@ export async function PATCH(req: NextRequest) {
         role,
         userMetadata: user.user_metadata,
       }),
+      ein,
       avatar_column_available,
     })
   } catch (err) {

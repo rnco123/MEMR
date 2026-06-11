@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { UserRole } from '@/lib/roles'
 import { useUserProfile } from '@/lib/user-profile-context'
 import { AvatarPicker } from '@/components/AvatarPicker'
 import { ChangePasswordForm } from '@/components/ChangePasswordForm'
@@ -14,13 +15,17 @@ export default function ProfilePage() {
   const { t } = useT()
   const { profile, loading, patchProfile, refreshProfile } = useUserProfile()
   const [fullName, setFullName] = useState('')
+  const [ein, setEin] = useState('')
   const [savingName, setSavingName] = useState(false)
+  const [savingEin, setSavingEin] = useState(false)
+  const isDoctor = profile?.role === UserRole.DOCTOR || role === UserRole.DOCTOR
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? profile.display_name ?? '')
+      setEin(profile.ein ?? '')
     }
-  }, [profile?.full_name, profile?.display_name])
+  }, [profile?.full_name, profile?.display_name, profile?.ein])
 
   const displayName =
     profile?.display_name ??
@@ -61,6 +66,28 @@ export default function ProfilePage() {
   const handleAvatarSaved = async (avatarId: string, avatarUrl: string) => {
     patchProfile({ avatar_id: avatarId, avatar_url: avatarUrl })
     await refreshProfile()
+  }
+
+  const saveEin = async (e: FormEvent) => {
+    e.preventDefault()
+    setSavingEin(true)
+    try {
+      const res = await fetch('/api/me/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ein: ein.trim() || null }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || data.message || 'Failed')
+      patchProfile({ ein: data.ein ?? null })
+      setEin(data.ein ?? '')
+      await refreshProfile()
+      toast.success(t('profile.ein_saved'))
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('profile.ein_save_failed'))
+    } finally {
+      setSavingEin(false)
+    }
   }
 
   return (
@@ -107,6 +134,30 @@ export default function ProfilePage() {
         </form>
         <p className="text-xs text-slate-500 mt-2">{t('profile.name_hint')}</p>
       </div>
+
+      {isDoctor && (
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-4">
+          <h2 className="text-base font-bold text-slate-900 mb-1">{t('profile.ein')}</h2>
+          <p className="text-xs text-slate-500 mb-3">{t('profile.ein_hint')}</p>
+          <form onSubmit={saveEin} className="flex flex-wrap gap-2">
+            <input
+              value={ein}
+              onChange={(e) => setEin(e.target.value)}
+              placeholder={t('profile.ein_placeholder')}
+              className="flex-1 min-w-[200px] h-10 border border-slate-200 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+              inputMode="numeric"
+              autoComplete="off"
+            />
+            <button
+              type="submit"
+              disabled={savingEin}
+              className="h-10 px-4 rounded-lg bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
+            >
+              {savingEin ? t('common.saving') : t('common.save')}
+            </button>
+          </form>
+        </div>
+      )}
 
       <div className="mb-4">
         <ChangePasswordForm />

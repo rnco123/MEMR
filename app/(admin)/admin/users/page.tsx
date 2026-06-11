@@ -24,6 +24,7 @@ interface StaffUser {
   avatar_id?: string | null
   avatar_url?: string | null
   assigned_locations?: Location[]
+  ein?: string | null
 }
 
 const PAGE_SIZE = 20
@@ -196,6 +197,7 @@ export default function AdminUsersPage() {
   const [resetPassword, setResetPassword] = useState('')
   const [showResetPw, setShowResetPw] = useState(false)
   const [editLocationIds, setEditLocationIds] = useState<number[]>([])
+  const [editEin, setEditEin] = useState('')
 
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -245,6 +247,7 @@ export default function AdminUsersPage() {
     setEditEmail(u.email ?? '')
     setEditRole(u.role === 'nurse' ? 'nurse' : 'doctor')
     setEditActive(u.active)
+    setEditEin(u.ein ?? '')
   }
 
   const openResetPassword = (u: StaffUser) => {
@@ -272,6 +275,7 @@ export default function AdminUsersPage() {
         email: editEmail.trim().toLowerCase(),
         role: editRole,
         active: editActive,
+        ...(editRole === 'doctor' ? { ein: editEin.trim() || null } : {}),
       })
       toast.success(t('admin.users.updated', { name: userLabel(editUser) }))
       setEditUser(null)
@@ -693,6 +697,23 @@ export default function AdminUsersPage() {
                   ))}
                 </div>
               </div>
+              {editRole === 'doctor' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    {t('admin.users.ein')}
+                    <span className="font-normal text-slate-400 ml-1">({t('common.optional')})</span>
+                  </label>
+                  <input
+                    value={editEin}
+                    onChange={(e) => setEditEin(e.target.value)}
+                    placeholder={t('profile.ein_placeholder')}
+                    className={INPUT_CLASS}
+                    inputMode="numeric"
+                    autoComplete="off"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">{t('profile.ein_hint')}</p>
+                </div>
+              )}
               <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
                 <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} className="w-4 h-4 accent-purple-600" />
                 {t('admin.users.active_account')}
