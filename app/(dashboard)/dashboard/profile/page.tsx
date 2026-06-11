@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { UserRole } from '@/lib/roles'
+import { UserRole, mapRoleToEnum } from '@/lib/roles'
 import { useUserProfile } from '@/lib/user-profile-context'
 import { AvatarPicker } from '@/components/AvatarPicker'
 import { ChangePasswordForm } from '@/components/ChangePasswordForm'
@@ -18,7 +18,8 @@ export default function ProfilePage() {
   const [ein, setEin] = useState('')
   const [savingName, setSavingName] = useState(false)
   const [savingEin, setSavingEin] = useState(false)
-  const isDoctor = profile?.role === UserRole.DOCTOR || role === UserRole.DOCTOR
+  const isDoctor =
+    mapRoleToEnum(profile?.role) === UserRole.DOCTOR || role === UserRole.DOCTOR
 
   useEffect(() => {
     if (profile) {
@@ -110,6 +111,11 @@ export default function ProfilePage() {
           <p className="text-lg font-semibold text-slate-900">{displayName}</p>
           <p className="text-sm text-slate-500">{profile?.email || user?.email}</p>
           <p className="text-xs text-slate-400 capitalize mt-0.5">{profile?.role || role}</p>
+          {isDoctor && ein ? (
+            <p className="text-xs text-slate-500 mt-1">
+              {t('profile.ein')}: <span className="font-medium text-slate-700">{ein}</span>
+            </p>
+          ) : null}
         </div>
       </div>
 

@@ -104,11 +104,35 @@ export async function PATCH(req: NextRequest) {
       } catch (e) {
         throw new ValidationError(e instanceof Error ? e.message : 'Invalid EIN')
       }
-      const { error: einErr } = await supabase
+
+      const doctorName =
+        profileForRole?.full_name?.trim() ||
+        (typeof user.user_metadata?.full_name === 'string' ? user.user_metadata.full_name.trim() : '') ||
+        user.email?.split('@')[0] ||
+        'Doctor'
+      const doctorEmail = profileForRole?.email ?? user.email ?? null
+
+      const { data: existingDoctor } = await supabase
         .from('doctors')
-        .update({ ein: parsedEin })
+        .select('id')
         .eq('user_id', user.id)
-      if (einErr) throw new ValidationError(einErr.message)
+        .maybeSingle()
+
+      if (existingDoctor) {
+        const { error: einErr } = await supabase
+          .from('doctors')
+          .update({ ein: parsedEin })
+          .eq('user_id', user.id)
+        if (einErr) throw new ValidationError(einErr.message)
+      } else {
+        const { error: einErr } = await supabase.from('doctors').insert({
+          user_id: user.id,
+          full_name: doctorName,
+          email: doctorEmail,
+          ein: parsedEin,
+        })
+        if (einErr) throw new ValidationError(einErr.message)
+      }
     }
 
     if (Object.keys(updates).length === 0 && validated.ein === undefined) {
