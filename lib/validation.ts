@@ -321,6 +321,30 @@ export const locationUpdateSchema = z.object({
 
 export type LocationUpdateInput = z.infer<typeof locationUpdateSchema>
 
+export const doctorSoapSaveSchema = z.object({
+  subjective_text: z.string().min(1, 'Subjective is required').max(50000),
+  objective_text: z.string().min(1, 'Objective is required').max(50000),
+  assessment_text: z.string().min(1, 'Assessment is required').max(50000),
+  plan_text: z.string().min(1, 'Plan is required').max(50000),
+  seeded_from_ai: z.boolean().optional(),
+})
+
+export type DoctorSoapSaveInput = z.infer<typeof doctorSoapSaveSchema>
+
+export const patientInfoSaveSchema = z.object({
+  first_name: z.string().min(1, 'First name is required').max(100).trim(),
+  last_name: z.string().min(1, 'Last name is required').max(100).trim(),
+  email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
+  phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  gender: z.union([z.enum(['male', 'female', 'other']), z.literal(''), z.null()]).optional(),
+  date_of_birth: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),
+  street_address: z.union([z.string().max(500), z.literal(''), z.null()]).optional(),
+  state: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
+  zip_code: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),
+})
+
+export type PatientInfoSaveInput = z.infer<typeof patientInfoSaveSchema>
+
 export const tenantCreateSchema = z.object({
   name: z.string().min(1).max(200),
   tenant_code: z

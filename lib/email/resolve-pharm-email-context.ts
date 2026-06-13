@@ -6,7 +6,7 @@ export type PharmEmailDoctorInfo = {
   phone: string | null
   email: string | null
   specialty: string | null
-  ein: string | null
+  npi: string | null
 }
 
 export type PharmEmailClinicInfo = {
@@ -42,7 +42,7 @@ export async function resolvePharmEmailDoctorAndClinic(
     phone: null,
     email: null,
     specialty: null,
-    ein: null,
+    npi: null,
   }
 
   let locationId: number | null = null
@@ -50,7 +50,7 @@ export async function resolvePharmEmailDoctorAndClinic(
   if (input.doctorId != null) {
     const { data: doctorRow } = await admin
       .from('doctors')
-      .select('id, full_name, specialty, phone, email, location_id, ein')
+      .select('id, full_name, specialty, phone, email, location_id, npi')
       .eq('id', input.doctorId)
       .maybeSingle()
 
@@ -61,7 +61,7 @@ export async function resolvePharmEmailDoctorAndClinic(
         phone: (doctorRow.phone as string | null) ?? null,
         email: (doctorRow.email as string | null) ?? null,
         specialty: (doctorRow.specialty as string | null) ?? null,
-        ein: (doctorRow.ein as string | null)?.trim() || null,
+        npi: (doctorRow.npi as string | null)?.trim() || null,
       }
       if (doctorRow.location_id != null) {
         locationId = Number(doctorRow.location_id)

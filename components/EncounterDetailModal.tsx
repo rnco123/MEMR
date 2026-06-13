@@ -18,6 +18,10 @@ import {
   type PharmacyRecord,
 } from '@/lib/pharmacies/normalize'
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
+import { EncounterSoapPanel } from './EncounterSoapPanel'
+import { EncounterPatientInfoPanel } from './EncounterPatientInfoPanel'
+import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-doctor-soap'
+import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 
 function patientAgeFromDob(dob: string | null): number | null {
   if (!dob) return null
@@ -240,16 +244,37 @@ export function EncounterDetailModal({
     const fetchData = async () => {
       setLoading(true)
       try {
-        // Fetch patient
-        const { data: patientData } = await supabase
-          .from('patients')
-          .select('*')
-          .eq('id', patientId)
+        // Patient demographics: encounter → appointment → patients (schema)
+        const { data: appointmentData, error: appointmentError } = await supabase
+          .from('appointments')
+          .select(
+            `id, appointment_date, appointment_time, onsite_type, patient_id,
+            services:service_id ( title_en, title_es ),
+            patients:patient_id (
+              id, first_name, last_name, email, phone, gender, date_of_birth,
+              zip_code, state, street_address, patient_code
+            )`
+          )
+          .eq('id', appointmentId)
           .single()
 
-        setPatient(patientData as Patient)
+        if (appointmentError) {
+          console.error('Error fetching appointment:', appointmentError)
+        }
 
-        // Fetch encounter
+        if (appointmentData) {
+          setAppointment({
+            id: appointmentData.id,
+            appointment_date: appointmentData.appointment_date,
+            appointment_time: appointmentData.appointment_time,
+            onsite_type: appointmentData.onsite_type,
+            services: appointmentData.services as Appointment['services'],
+          })
+          const linkedPatient = appointmentData.patients
+          if (linkedPatient && typeof linkedPatient === 'object' && !Array.isArray(linkedPatient)) {
+            setPatient(linkedPatient as Patient)
+          }
+        }
         const { data: encounterData } = await supabase
           .from('encounters')
           .select('*')
@@ -267,17 +292,6 @@ export function EncounterDetailModal({
         let pharmacyRegistry = ((pharmList as Record<string, unknown>[]) ?? []).map((row) =>
           normalizePharmacyRow(row)
         )
-
-        // Fetch appointment to get onsite_type
-        const { data: appointmentData } = await supabase
-          .from('appointments')
-          .select('id, appointment_date, appointment_time, onsite_type, services:service_id ( title_en, title_es )')
-          .eq('id', appointmentId)
-          .single()
-
-        if (appointmentData) {
-          setAppointment(appointmentData as Appointment)
-        }
 
         // Fetch intake form: try encounter.intake_id first, then by appointment_id (intake_form links to appointment)
         let intakeData: unknown = null
@@ -388,7 +402,7 @@ export function EncounterDetailModal({
     }
 
     fetchData()
-  }, [isOpen, encounterId, appointmentId, patientId, supabase])
+  }, [isOpen, encounterId, appointmentId, supabase])
 
   const reloadPharmacyRegistry = useCallback(async () => {
     const { data: pharmList } = await supabase
@@ -422,6 +436,14 @@ export function EncounterDetailModal({
       setPharmacy(null)
     }
   }, [encounterId, supabase, reloadPharmacyRegistry])
+
+  const canEditSoap = useMemo(() => {
+    if (!encounter) return false
+    if (!canEditSoapByRole(role)) return false
+    return canEditEncounterSoap(encounter.status)
+  }, [encounter, role])
+
+  const canEditPatientInfo = canEditSoap
 
   /** ICD-10-CM suggestions from intake + SOAP subjective (one request per modal open). */
   useEffect(() => {
@@ -491,119 +513,84 @@ export function EncounterDetailModal({
     })
   }
 
-  // Normalize AI SOAP text so it doesn't repeat headings like "**Subjective:**"
-  const cleanSoapSection = (text: string | null, section: 'subjective' | 'objective' | 'assessment' | 'plan'): string | null => {
-    if (!text) return null
+  const handleDownloadDoctorSoapPdf = useCallback(
+    async (soap: {
+      subjective_text: string
+      objective_text: string
+      assessment_text: string
+      plan_text: string
+    }) => {
+      const formatDateOnly = (dateString: string | null) => {
+        if (!dateString) return t('common.na')
+        return new Date(dateString).toLocaleDateString(localeTag, {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+        })
+      }
+      const generated = formatClinicDateTimeForLanguage(new Date(), language)
+      const addr =
+        [patient?.street_address, patient?.state, patient?.zip_code].filter(Boolean).join(', ') ||
+        t('common.na')
+      const apptTypeRaw = (appointment?.onsite_type || '').toLowerCase()
+      let apptType = t('common.na')
+      if (apptTypeRaw === 'onsite') apptType = t('encounter_modal.type_onsite')
+      else if (apptTypeRaw === 'offsite') apptType = t('encounter_modal.type_offsite')
+      else if (apptTypeRaw === 'telemedicine') apptType = t('encounter_modal.type_telemedicine')
+      else if (appointment?.onsite_type) apptType = appointment.onsite_type
 
-    // Build a label-specific regex that matches patterns like:
-    // "**Subjective:** ", "Subjective:", "subjective  -", etc.
-    let label: string
-    switch (section) {
-      case 'subjective':
-        label = 'subjective'
-        break
-      case 'objective':
-        label = 'objective'
-        break
-      case 'assessment':
-        label = 'assessment'
-        break
-      case 'plan':
-        label = 'plan'
-        break
-    }
+      const { downloadAiSoapPdf } = await import('@/lib/pdf/download-ai-soap-pdf')
 
-    const pattern = new RegExp(
-      String.raw`^\\s*(\\*\\*)?\\s*${label}\\s*:?\\s*(\\*\\*)?\\s*`,
-      'i'
-    )
-
-    return text.replace(pattern, '').trim()
-  }
-
-  const handleDownloadAiSoapPdf = useCallback(async () => {
-    if (!soapNotes) return
-    const formatDateOnly = (dateString: string | null) => {
-      if (!dateString) return t('common.na')
-      return new Date(dateString).toLocaleDateString(localeTag, {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      })
-    }
-    const generated = new Date().toLocaleString(localeTag, {
-      dateStyle: 'medium',
-      timeStyle: 'short',
-    })
-    const addr =
-      [patient?.street_address, patient?.state, patient?.zip_code].filter(Boolean).join(', ') || t('common.na')
-    const apptTypeRaw = (appointment?.onsite_type || '').toLowerCase()
-    let apptType = t('common.na')
-    if (apptTypeRaw === 'onsite') apptType = t('encounter_modal.type_onsite')
-    else if (apptTypeRaw === 'offsite') apptType = t('encounter_modal.type_offsite')
-    else if (apptTypeRaw === 'telemedicine') apptType = t('encounter_modal.type_telemedicine')
-    else if (appointment?.onsite_type) apptType = appointment.onsite_type
-
-    const { downloadAiSoapPdf } = await import('@/lib/pdf/download-ai-soap-pdf')
-
-    await downloadAiSoapPdf(
-      {
-        title: t('encounter_modal.ai_soap_notes'),
-        generatedLine: t('encounter_modal.pdf_generated', { date: generated }),
-        patientSectionTitle: t('encounter_modal.patient_info'),
-        patientRows: [
-          {
-            label: t('common.name'),
-            value: patient ? `${patient.first_name} ${patient.last_name}`.trim() : t('common.na'),
-          },
-          { label: t('encounter_modal.patient_code'), value: patient?.patient_code || t('common.na') },
-          { label: t('common.dob'), value: formatDateOnly(patient?.date_of_birth ?? null) },
-          { label: t('common.age'), value: patientAgeYears != null ? String(patientAgeYears) : t('common.na') },
-          { label: t('common.gender'), value: patient?.gender || t('common.na') },
-          { label: t('common.phone'), value: patient?.phone || t('common.na') },
-          { label: t('common.email'), value: patient?.email || t('common.na') },
-          { label: t('common.address'), value: addr },
-        ],
-        visitSectionTitle: t('encounter_modal.appointment_info'),
-        visitRows: [
-          { label: t('orders.encounter_id'), value: String(encounterId) },
-          { label: t('encounter_modal.encounter_code'), value: encounter?.encounter_code || t('common.na') },
-          { label: t('common.date'), value: formatDateOnly(appointment?.appointment_date ?? null) },
-          { label: t('common.time'), value: appointment?.appointment_time?.trim() || t('common.na') },
-          { label: t('common.type'), value: apptType },
-        ],
-        sections: [
-          {
-            title: t('encounter_modal.soap_subjective'),
-            body:
-              cleanSoapSection(soapNotes.subjective_text, 'subjective') || t('encounter_modal.soap_placeholder'),
-          },
-          {
-            title: t('encounter_modal.soap_objective'),
-            body: cleanSoapSection(soapNotes.objective_text, 'objective') || t('encounter_modal.soap_placeholder'),
-          },
-          {
-            title: t('encounter_modal.soap_assessment'),
-            body: cleanSoapSection(soapNotes.assessment_text, 'assessment') || t('encounter_modal.soap_placeholder'),
-          },
-          {
-            title: t('encounter_modal.soap_plan'),
-            body: cleanSoapSection(soapNotes.plan_text, 'plan') || t('encounter_modal.soap_placeholder'),
-          },
-        ],
-      },
-      `AI-SOAP-${(encounter?.encounter_code || String(encounterId)).replace(/[^a-zA-Z0-9-_]+/g, '_')}.pdf`
-    )
-  }, [
-    soapNotes,
-    patient,
-    encounter,
-    appointment,
-    encounterId,
-    patientAgeYears,
-    t,
-    localeTag,
-  ])
+      await downloadAiSoapPdf(
+        {
+          title: t('encounter_modal.doctor_soap_notes'),
+          generatedLine: t('encounter_modal.pdf_generated', { date: generated }),
+          patientSectionTitle: t('encounter_modal.patient_info'),
+          patientRows: [
+            {
+              label: t('common.name'),
+              value: patient ? `${patient.first_name} ${patient.last_name}`.trim() : t('common.na'),
+            },
+            { label: t('encounter_modal.patient_code'), value: patient?.patient_code || t('common.na') },
+            { label: t('common.dob'), value: formatDateOnly(patient?.date_of_birth ?? null) },
+            { label: t('common.age'), value: patientAgeYears != null ? String(patientAgeYears) : t('common.na') },
+            { label: t('common.gender'), value: patient?.gender || t('common.na') },
+            { label: t('common.phone'), value: patient?.phone || t('common.na') },
+            { label: t('common.email'), value: patient?.email || t('common.na') },
+            { label: t('common.address'), value: addr },
+          ],
+          visitSectionTitle: t('encounter_modal.appointment_info'),
+          visitRows: [
+            { label: t('orders.encounter_id'), value: String(encounterId) },
+            { label: t('encounter_modal.encounter_code'), value: encounter?.encounter_code || t('common.na') },
+            { label: t('common.date'), value: formatDateOnly(appointment?.appointment_date ?? null) },
+            { label: t('common.time'), value: appointment?.appointment_time?.trim() || t('common.na') },
+            { label: t('common.type'), value: apptType },
+          ],
+          sections: [
+            {
+              title: t('encounter_modal.soap_subjective'),
+              body: soap.subjective_text.trim() || t('encounter_modal.soap_placeholder'),
+            },
+            {
+              title: t('encounter_modal.soap_objective'),
+              body: soap.objective_text.trim() || t('encounter_modal.soap_placeholder'),
+            },
+            {
+              title: t('encounter_modal.soap_assessment'),
+              body: soap.assessment_text.trim() || t('encounter_modal.soap_placeholder'),
+            },
+            {
+              title: t('encounter_modal.soap_plan'),
+              body: soap.plan_text.trim() || t('encounter_modal.soap_placeholder'),
+            },
+          ],
+        },
+        `Doctor-SOAP-${(encounter?.encounter_code || String(encounterId)).replace(/[^a-zA-Z0-9-_]+/g, '_')}.pdf`
+      )
+    },
+    [patient, encounter, appointment, encounterId, patientAgeYears, t, localeTag, language]
+  )
 
   if (!isOpen) return null
 
@@ -868,11 +855,7 @@ export function EncounterDetailModal({
                       <p className="text-slate-500 text-sm mb-1">{t('common.time')}</p>
                       <p className="text-slate-900 font-semibold">
                         {appointment.appointment_time
-                          ? new Date(`2000-01-01T${appointment.appointment_time}`).toLocaleTimeString(localeTag, {
-                              hour: 'numeric',
-                              minute: '2-digit',
-                              hour12: true,
-                            })
+                          ? formatClinicTimeSlot(appointment.appointment_time)
                           : t('common.na')}
                       </p>
                     </div>
@@ -896,63 +879,12 @@ export function EncounterDetailModal({
                 </div>
               )}
 
-              {/* Patient Details */}
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                  </svg>
-                  {t('encounter_modal.patient_info')}
-                </h3>
-                {patient ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.name')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {patient.first_name} {patient.last_name}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.patient_code')}</p>
-                      <p className="text-slate-900 font-mono">{patient.patient_code || t('common.na')}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.age')}</p>
-                      <p className="text-slate-900">
-                        {patientAgeYears != null
-                          ? t('encounter_modal.age_years', { years: String(patientAgeYears) })
-                          : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.gender')}</p>
-                      <p className="text-slate-900">{patient.gender || t('common.na')}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.dob')}</p>
-                      <p className="text-slate-900">{formatDate(patient.date_of_birth)}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.email')}</p>
-                      <p className="text-slate-900">{patient.email || t('common.na')}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.phone')}</p>
-                      <p className="text-slate-900">{patient.phone || t('common.na')}</p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.address')}</p>
-                      <p className="text-slate-900">
-                        {patient.street_address || t('common.na')}
-                        {patient.state && `, ${patient.state}`}
-                        {patient.zip_code && ` ${patient.zip_code}`}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-600">{t('encounter_modal.patient_not_available')}</p>
-                )}
-              </div>
+              <EncounterPatientInfoPanel
+                encounterId={encounterId}
+                canEdit={canEditPatientInfo}
+                encounterStatus={encounter?.status ?? null}
+                onPatientUpdated={(updated) => setPatient(updated)}
+              />
 
               {encounter && (
                 <EncounterRoomingPanel
@@ -1155,65 +1087,13 @@ export function EncounterDetailModal({
                 )}
               </div>
 
-              {/* AI SOAP Notes */}
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <div className="flex items-start justify-between gap-3 mb-4">
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 min-w-0">
-                    <svg className="w-5 h-5 text-sky-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span className="truncate">{t('encounter_modal.ai_soap_notes')}</span>
-                  </h3>
-                  {soapNotes ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleDownloadAiSoapPdf()}
-                      title={t('encounter_modal.download_ai_soap_pdf')}
-                      aria-label={t('encounter_modal.download_ai_soap_pdf')}
-                      className="shrink-0 p-2 rounded-lg text-slate-500 hover:text-sky-700 hover:bg-sky-50 border border-transparent hover:border-sky-200 transition-colors"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </button>
-                  ) : null}
-                </div>
-                {soapNotes ? (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-slate-500 text-sm mb-2 font-semibold">{t('encounter_modal.soap_subjective')}</p>
-                      <p className="text-slate-900 bg-[#f9fbff] border border-slate-200 p-3 rounded-lg text-sm">
-                        {cleanSoapSection(soapNotes.subjective_text, 'subjective') || t('encounter_modal.soap_placeholder')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-2 font-semibold">{t('encounter_modal.soap_objective')}</p>
-                      <p className="text-slate-900 bg-[#f9fbff] border border-slate-200 p-3 rounded-lg text-sm">
-                        {cleanSoapSection(soapNotes.objective_text, 'objective') || t('encounter_modal.soap_placeholder')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-2 font-semibold">{t('encounter_modal.soap_assessment')}</p>
-                      <p className="text-slate-900 bg-[#f9fbff] border border-slate-200 p-3 rounded-lg text-sm">
-                        {cleanSoapSection(soapNotes.assessment_text, 'assessment') || t('encounter_modal.soap_placeholder')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-2 font-semibold">{t('encounter_modal.soap_plan')}</p>
-                      <p className="text-slate-900 bg-[#f9fbff] border border-slate-200 p-3 rounded-lg text-sm">
-                        {cleanSoapSection(soapNotes.plan_text, 'plan') || t('encounter_modal.soap_placeholder')}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-600">{t('encounter_modal.soap_not_available')}</p>
-                )}
-              </div>
+              <EncounterSoapPanel
+                encounterId={encounterId}
+                aiSoap={soapNotes}
+                canEdit={canEditSoap}
+                encounterStatus={encounter?.status ?? null}
+                onDownloadDoctorPdf={(soap) => void handleDownloadDoctorSoapPdf(soap)}
+              />
 
             </div>
             )}

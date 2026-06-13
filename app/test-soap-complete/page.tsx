@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type SoapRow = {
   id: number
@@ -205,7 +206,7 @@ function TestSoapCompleteInner() {
             <div className="space-y-4 text-sm">
               <p className="text-slate-500 text-xs">
                 id={soap.id}
-                {soap.created_at && ` · created ${new Date(soap.created_at).toLocaleString()}`}
+                {soap.created_at && ` · created ${formatClinicDateTimeForLanguage(soap.created_at, 'en')}`}
                 {soap.priority != null && ` · priority ${soap.priority}`}
               </p>
               <section>

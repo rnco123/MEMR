@@ -85,7 +85,7 @@ export async function PATCH(
     const admin = createAdminClient()
 
     if (body.resync) {
-      const caseRow = await syncImmigrationCase(admin, encounterId)
+      const caseRow = await syncImmigrationCase(admin, encounterId, { forceRecomputeStatus: true })
       if (!caseRow) throw new ValidationError('Not an immigration encounter')
       return NextResponse.json({ data: caseRow })
     }

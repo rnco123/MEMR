@@ -1,8 +1,10 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react'
+import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import {
@@ -45,7 +47,7 @@ export function I693WorkflowBoard({
   onClearSelection,
   onOpenPdfEditor,
 }: Props) {
-  const { t } = useT()
+  const { t, language } = useT()
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
@@ -98,7 +100,8 @@ export function I693WorkflowBoard({
     const q = patientSearch.trim().toLowerCase()
     return rows.filter((r) => {
       if (!r.case) return false
-      if (statusFilter !== 'all' && r.case.status !== statusFilter) return false
+      // List view: optional status tab. Kanban always shows all columns.
+      if (view === 'list' && statusFilter !== 'all' && r.case.status !== statusFilter) return false
       if (view === 'list' && q) {
         const nameMatch = r.patient_name.toLowerCase().includes(q)
         const encounterMatch = String(r.encounter_id).includes(q)
@@ -169,6 +172,7 @@ export function I693WorkflowBoard({
         )
       } catch (e) {
         console.error(e)
+        toast.error(e instanceof Error ? e.message : t('i693.wf_move_failed'))
         setRows(previousRows)
       } finally {
         setMovingEncounterId(null)
@@ -226,7 +230,14 @@ export function I693WorkflowBoard({
             </p>
           )}
           {c.status_updated_by_name && (
-            <p className="text-[11px] text-slate-500 mt-2" title={c.status_updated_at ?? undefined}>
+            <p
+              className="text-[11px] text-slate-500 mt-2"
+              title={
+                c.status_updated_at
+                  ? formatClinicDateTimeForLanguage(c.status_updated_at, language)
+                  : undefined
+              }
+            >
               {t('i693.wf_moved_by', { name: c.status_updated_by_name })}
             </p>
           )}

@@ -146,6 +146,13 @@ export async function deriveCaseFlags(
 
 const TASK_TYPES = ['intake', 'tb_lab', 'xray', 'vaccine_record', 'md_signature'] as const
 
+const WORKFLOW_STATUS_ORDER: Record<ImmigrationWorkflowStatus, number> = {
+  incomplete: 0,
+  ready_review: 1,
+  completed: 2,
+  delivered: 3,
+}
+
 type ImmigrationCaseWriteRow = {
   patient_id: number
   encounter_id: number
@@ -170,8 +177,22 @@ function isPgError(err: unknown, code: string): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === code
 }
 
-/** Update-first save avoids duplicate-key races from parallel list syncs. */
-async function saveImmigrationCaseRow(
+function isMissingStatusMoverColumnError(err: unknown): boolean {
+  if (!isPgError(err, 'PGRST204')) return false
+  const message = String((err as { message?: string }).message ?? '')
+  return (
+    message.includes('status_updated_at') ||
+    message.includes('status_updated_by') ||
+    message.includes('status_updated_by_name')
+  )
+}
+
+function withoutStatusMoverMetadata(row: ImmigrationCaseWriteRow): ImmigrationCaseWriteRow {
+  const { status_updated_by: _a, status_updated_by_name: _b, status_updated_at: _c, ...rest } = row
+  return rest
+}
+
+async function saveImmigrationCaseRowAttempt(
   admin: SupabaseClient,
   row: ImmigrationCaseWriteRow
 ): Promise<ImmigrationCaseRow> {
@@ -208,6 +229,22 @@ async function saveImmigrationCaseRow(
   throw new Error(`Failed to save immigration case for encounter ${row.encounter_id}`)
 }
 
+/** Update-first save avoids duplicate-key races from parallel list syncs. */
+async function saveImmigrationCaseRow(
+  admin: SupabaseClient,
+  row: ImmigrationCaseWriteRow
+): Promise<ImmigrationCaseRow> {
+  try {
+    return await saveImmigrationCaseRowAttempt(admin, row)
+  } catch (err) {
+    if (!isMissingStatusMoverColumnError(err)) throw err
+    console.warn(
+      '[syncImmigrationCase] status_updated_* columns missing — apply migration 063_i693_status_mover_metadata.sql'
+    )
+    return saveImmigrationCaseRowAttempt(admin, withoutStatusMoverMetadata(row))
+  }
+}
+
 async function syncTasks(
   admin: SupabaseClient,
   caseId: number,
@@ -228,7 +265,7 @@ async function syncTasks(
     const isMissing = missing_items.includes(taskType)
     const status = isComplete && !isMissing ? 'completed' : 'pending'
     const now = new Date().toISOString()
-    await admin.from('immigration_tasks').upsert(
+    const { error } = await admin.from('immigration_tasks').upsert(
       {
         case_id: caseId,
         task_type: taskType,
@@ -238,6 +275,9 @@ async function syncTasks(
       },
       { onConflict: 'case_id,task_type' }
     )
+    if (error) {
+      console.warn(`[syncImmigrationCase] immigration_tasks upsert failed (${taskType}):`, error.message)
+    }
   }
 }
 
@@ -247,6 +287,8 @@ export async function syncImmigrationCase(
   encounterId: number,
   options?: {
     manualStatus?: ImmigrationWorkflowStatus
+    /** When true, ignore a prior manual Kanban move and recompute status from checklist flags. */
+    forceRecomputeStatus?: boolean
     statusUpdatedByUserId?: string | null
     statusUpdatedByName?: string | null
     is_delivered?: boolean
@@ -311,6 +353,21 @@ export async function syncImmigrationCase(
     missing_items = computed.missing_items
     if (status === 'delivered') flags.is_delivered = true
     if (status === 'completed' || status === 'delivered') flags.is_md_signed = true
+  } else if (existing && !options?.forceRecomputeStatus) {
+    const computed = computeWorkflowFromFlags(flags)
+    const existingOrder = WORKFLOW_STATUS_ORDER[existing.status as ImmigrationWorkflowStatus] ?? 0
+    const computedOrder = WORKFLOW_STATUS_ORDER[computed.status] ?? 0
+    const manuallyMoved = Boolean(existing.status_updated_by)
+    const advancedOnBoard = existingOrder > computedOrder
+    if (manuallyMoved || advancedOnBoard) {
+      status = existing.status as ImmigrationWorkflowStatus
+      status_color = existing.status_color as ImmigrationStatusColor
+      missing_items = computed.missing_items
+    } else {
+      status = computed.status
+      status_color = computed.status_color
+      missing_items = computed.missing_items
+    }
   } else {
     const computed = computeWorkflowFromFlags(flags)
     status = computed.status

@@ -5,7 +5,7 @@ import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { logAuditEvent } from '@/lib/audit-server'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
-import { parseDoctorEin } from '@/lib/doctors/ein'
+import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { fetchAllLocations } from '@/lib/locations/fetch-all'
 import { z } from 'zod'
 
@@ -36,7 +36,7 @@ const patchUserSchema = z
     active: z.boolean().optional(),
     password: passwordSchema.optional(),
     location_ids: z.array(z.number().int().positive()).optional(),
-    ein: z.union([z.string().max(20), z.null()]).optional(),
+    npi: z.union([z.string().max(20), z.null()]).optional(),
   })
   .refine(
     (d) =>
@@ -46,7 +46,7 @@ const patchUserSchema = z
       d.active !== undefined ||
       d.password !== undefined ||
       d.location_ids !== undefined ||
-      d.ein !== undefined,
+      d.npi !== undefined,
     { message: 'At least one field to update is required' }
   )
 
@@ -56,13 +56,13 @@ async function syncStaffRecord(
   role: 'doctor' | 'nurse',
   fullName: string,
   email: string | null,
-  options?: { primaryLocationId?: number | null; ein?: string | null }
+  options?: { primaryLocationId?: number | null; npi?: string | null }
 ) {
   const locationPatch =
     options && 'primaryLocationId' in options
       ? { location_id: options.primaryLocationId ?? null }
       : {}
-  const einPatch = options && 'ein' in options ? { ein: options.ein ?? null } : {}
+  const npiPatch = options && 'npi' in options ? { npi: options.npi ?? null } : {}
 
   if (role === 'doctor') {
     const { data: existing } = await admin.from('doctors').select('id').eq('user_id', uid).maybeSingle()
@@ -70,7 +70,7 @@ async function syncStaffRecord(
       full_name: fullName,
       email,
       ...locationPatch,
-      ...einPatch,
+      ...npiPatch,
     }
     if (existing) {
       const { error } = await admin.from('doctors').update(payload).eq('user_id', uid)
@@ -126,7 +126,7 @@ export async function GET(_req: NextRequest) {
           .order('created_at', { ascending: false }),
         fetchAllLocations(admin),
         admin.from('user_locations').select('user_uid, location_id'),
-        admin.from('doctors').select('user_id, ein'),
+        admin.from('doctors').select('user_id, npi'),
       ])
 
     if (error) throw error
@@ -142,10 +142,10 @@ export async function GET(_req: NextRequest) {
       locationsByUser.set(row.user_uid, list)
     }
 
-    const einByUserId = new Map<string, string | null>()
+    const npiByUserId = new Map<string, string | null>()
     for (const d of doctors ?? []) {
       if (!d.user_id) continue
-      einByUserId.set(d.user_id, (d.ein as string | null)?.trim() || null)
+      npiByUserId.set(d.user_id, (d.npi as string | null)?.trim() || null)
     }
 
     const users = (profiles ?? []).map((p) => ({
@@ -155,7 +155,7 @@ export async function GET(_req: NextRequest) {
       avatar_id: p.avatar_id ?? null,
       avatar_url: resolveStaffAvatarUrl(p.avatar_id ?? null),
       assigned_locations: locationsByUser.get(p.uid) ?? [],
-      ein: p.role === 'doctor' ? (einByUserId.get(p.uid) ?? null) : null,
+      npi: p.role === 'doctor' ? (npiByUserId.get(p.uid) ?? null) : null,
     }))
 
     return NextResponse.json({ users, locations: locations ?? [] })
@@ -281,7 +281,7 @@ export async function PATCH(req: NextRequest) {
       throw new ValidationError('Invalid input', { issues })
     }
 
-    const { uid, full_name, email, role, active, password, location_ids, ein } = validated
+    const { uid, full_name, email, role, active, password, location_ids, npi } = validated
     if (uid === adminUser.id && (active === false || role)) {
       throw new ValidationError('You cannot deactivate or change your own role')
     }
@@ -330,15 +330,15 @@ export async function PATCH(req: NextRequest) {
       if (profileErr) throw profileErr
     }
 
-    let parsedEin: string | null | undefined
-    if (ein !== undefined) {
+    let parsedNpi: string | null | undefined
+    if (npi !== undefined) {
       if (nextRole !== 'doctor') {
-        throw new ValidationError('EIN can only be set for doctor accounts')
+        throw new ValidationError('NPI can only be set for doctor accounts')
       }
       try {
-        parsedEin = parseDoctorEin(ein)
+        parsedNpi = parseDoctorNpi(npi)
       } catch (e) {
-        throw new ValidationError(e instanceof Error ? e.message : 'Invalid EIN')
+        throw new ValidationError(e instanceof Error ? e.message : 'Invalid NPI')
       }
     }
 
@@ -347,13 +347,13 @@ export async function PATCH(req: NextRequest) {
       email !== undefined ||
       role !== undefined ||
       location_ids !== undefined ||
-      parsedEin !== undefined
+      parsedNpi !== undefined
     ) {
       await syncStaffRecord(admin, uid, nextRole, nextName, nextEmail, {
         ...(location_ids !== undefined
           ? { primaryLocationId: location_ids[0] ?? null }
           : {}),
-        ...(parsedEin !== undefined ? { ein: parsedEin } : {}),
+        ...(parsedNpi !== undefined ? { npi: parsedNpi } : {}),
       })
     }
 

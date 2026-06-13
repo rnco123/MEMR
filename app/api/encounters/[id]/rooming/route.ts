@@ -35,7 +35,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     const { data: existing, error: fetchError } = await supabase
       .from('encounters')
-      .select('id, consent_ack')
+      .select('id, consent_ack, program_type')
       .eq('id', encounterId)
       .maybeSingle()
 
@@ -47,7 +47,8 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         ? (existing.consent_ack as Record<string, string>)
         : {}
 
-    const mergedConsent = v.consent_ack ? { ...prevConsent, ...v.consent_ack } : undefined
+    // Client sends the full desired consent_ack map; replace (do not merge) so unchecked keys are removed.
+    const nextConsent = v.consent_ack
 
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
@@ -63,10 +64,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (v.ma_exam_findings !== undefined) {
       patch.ma_exam_findings = v.ma_exam_findings
     }
-    if (mergedConsent !== undefined) {
-      patch.consent_ack = mergedConsent
-      if (isImmigrationEncounter(mergedConsent)) {
+    if (nextConsent !== undefined) {
+      patch.consent_ack = nextConsent
+      if (isImmigrationEncounter(nextConsent)) {
         patch.program_type = IMMIGRATION_PROGRAM
+      } else if (
+        isImmigrationEncounter(prevConsent) &&
+        existing.program_type === IMMIGRATION_PROGRAM
+      ) {
+        patch.program_type = null
       }
     }
     if (v.pharmacy_id !== undefined) {

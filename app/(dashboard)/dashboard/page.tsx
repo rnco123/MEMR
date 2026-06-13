@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateOnly, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { AssignedLocationsPanel } from '@/components/AssignedLocationsPanel'
 
@@ -26,7 +27,7 @@ interface UpcomingAppointment {
 
 function DashboardPage() {
   const { user, role } = useAuth()
-  const { t } = useT()
+  const { t, language } = useT()
   const router = useRouter()
   const [isAvailable, setIsAvailable] = useState<boolean | null>(null)
   const [isToggling, setIsToggling] = useState(false)
@@ -479,18 +480,10 @@ function DashboardPage() {
             ) : (
               <div className="space-y-2">
                 {upcomingAppointments.map((appt) => {
-                  const dateTimeStr = appt.appointment_time
-                    ? `${appt.appointment_date}T${appt.appointment_time}`
-                    : appt.appointment_date
-                  const date = new Date(dateTimeStr)
-                  const dateLabel = date.toLocaleDateString(undefined, {
+                  const dateLabel = formatClinicDateOnly(appt.appointment_date, language, {
                     weekday: 'short',
-                    month: 'short',
-                    day: 'numeric',
                   })
-                  const timeLabel = appt.appointment_time
-                    ? date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-                    : null
+                  const timeLabel = appt.appointment_time ? formatClinicTimeSlot(appt.appointment_time) : null
 
                   return (
                     <div

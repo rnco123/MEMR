@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type Task = {
   id: number
@@ -21,7 +22,7 @@ type Task = {
 }
 
 function FollowUpsPage() {
-  const { t } = useT()
+  const { t, language } = useT()
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({
@@ -217,7 +218,7 @@ function FollowUpsPage() {
                     {task.encounter_id ? ` · Enc ${task.encounter_id}` : ''}
                   </p>
                   {task.due_at && (
-                    <p className="text-xs text-amber-600 mt-1 font-medium">{t('followups.due_at', { date: new Date(task.due_at).toLocaleString() })}</p>
+                    <p className="text-xs text-amber-600 mt-1 font-medium">{t('followups.due_at', { date: formatClinicDateTimeForLanguage(task.due_at, language) })}</p>
                   )}
                   {task.notes && <p className="text-sm text-slate-600 mt-2">{task.notes}</p>}
                   <Link href={`/patient-file/${task.patient_id}`} className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium mt-1.5 inline-block">

@@ -15,18 +15,18 @@ export default function ProfilePage() {
   const { t } = useT()
   const { profile, loading, patchProfile, refreshProfile } = useUserProfile()
   const [fullName, setFullName] = useState('')
-  const [ein, setEin] = useState('')
+  const [npi, setNpi] = useState('')
   const [savingName, setSavingName] = useState(false)
-  const [savingEin, setSavingEin] = useState(false)
+  const [savingNpi, setSavingNpi] = useState(false)
   const isDoctor =
     mapRoleToEnum(profile?.role) === UserRole.DOCTOR || role === UserRole.DOCTOR
 
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? profile.display_name ?? '')
-      setEin(profile.ein ?? '')
+      setNpi(profile.npi ?? '')
     }
-  }, [profile?.full_name, profile?.display_name, profile?.ein])
+  }, [profile?.full_name, profile?.display_name, profile?.npi])
 
   const displayName =
     profile?.display_name ??
@@ -69,25 +69,25 @@ export default function ProfilePage() {
     await refreshProfile()
   }
 
-  const saveEin = async (e: FormEvent) => {
+  const saveNpi = async (e: FormEvent) => {
     e.preventDefault()
-    setSavingEin(true)
+    setSavingNpi(true)
     try {
       const res = await fetch('/api/me/profile', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ein: ein.trim() || null }),
+        body: JSON.stringify({ npi: npi.trim() || null }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || data.message || 'Failed')
-      patchProfile({ ein: data.ein ?? null })
-      setEin(data.ein ?? '')
+      patchProfile({ npi: data.npi ?? null })
+      setNpi(data.npi ?? '')
       await refreshProfile()
-      toast.success(t('profile.ein_saved'))
+      toast.success(t('profile.npi_saved'))
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('profile.ein_save_failed'))
+      toast.error(err instanceof Error ? err.message : t('profile.npi_save_failed'))
     } finally {
-      setSavingEin(false)
+      setSavingNpi(false)
     }
   }
 
@@ -111,9 +111,9 @@ export default function ProfilePage() {
           <p className="text-lg font-semibold text-slate-900">{displayName}</p>
           <p className="text-sm text-slate-500">{profile?.email || user?.email}</p>
           <p className="text-xs text-slate-400 capitalize mt-0.5">{profile?.role || role}</p>
-          {isDoctor && ein ? (
+          {isDoctor && npi ? (
             <p className="text-xs text-slate-500 mt-1">
-              {t('profile.ein')}: <span className="font-medium text-slate-700">{ein}</span>
+              {t('profile.npi')}: <span className="font-medium text-slate-700">{npi}</span>
             </p>
           ) : null}
         </div>
@@ -143,23 +143,23 @@ export default function ProfilePage() {
 
       {isDoctor && (
         <div className="bg-white rounded-2xl border border-slate-200 p-6 mb-4">
-          <h2 className="text-base font-bold text-slate-900 mb-1">{t('profile.ein')}</h2>
-          <p className="text-xs text-slate-500 mb-3">{t('profile.ein_hint')}</p>
-          <form onSubmit={saveEin} className="flex flex-wrap gap-2">
+          <h2 className="text-base font-bold text-slate-900 mb-1">{t('profile.npi')}</h2>
+          <p className="text-xs text-slate-500 mb-3">{t('profile.npi_hint')}</p>
+          <form onSubmit={saveNpi} className="flex flex-wrap gap-2">
             <input
-              value={ein}
-              onChange={(e) => setEin(e.target.value)}
-              placeholder={t('profile.ein_placeholder')}
+              value={npi}
+              onChange={(e) => setNpi(e.target.value)}
+              placeholder={t('profile.npi_placeholder')}
               className="flex-1 min-w-[200px] h-10 border border-slate-200 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
               inputMode="numeric"
               autoComplete="off"
             />
             <button
               type="submit"
-              disabled={savingEin}
+              disabled={savingNpi}
               className="h-10 px-4 rounded-lg bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
             >
-              {savingEin ? t('common.saving') : t('common.save')}
+              {savingNpi ? t('common.saving') : t('common.save')}
             </button>
           </form>
         </div>

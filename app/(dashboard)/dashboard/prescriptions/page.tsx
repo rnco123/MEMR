@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type Row = {
   id: number
@@ -26,7 +27,7 @@ type Row = {
 
 function PrescriptionsPage() {
   const PAGE_SIZE = 20
-  const { t } = useT()
+  const { t, language } = useT()
   const [rows, setRows] = useState<Row[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -275,7 +276,7 @@ function PrescriptionsPage() {
               <tbody>
                 {paginatedRows.map((r) => (
                   <tr key={r.id} className="border-t border-slate-100 text-slate-700 hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-xs text-slate-500">{formatClinicDateTimeForLanguage(r.created_at, language)}</td>
                     <td className="px-4 py-3">
                       {r.patients ? `${r.patients.first_name} ${r.patients.last_name}` : `#${r.patient_id}`}
                       <Link

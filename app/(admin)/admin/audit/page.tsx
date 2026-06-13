@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 interface AuditRow {
   id: string
@@ -124,16 +125,17 @@ export default function AdminAuditPage() {
 
   const totalPages = Math.ceil(total / limit)
 
-  const formatTime = (ts: string) => {
-    const d = new Date(ts)
-    return d.toLocaleString(localeTag, {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
+  const formatTime = (ts: string) =>
+    formatClinicDateTimeForLanguage(ts, language, {
+      appendCt: true,
+      intl: {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      },
     })
-  }
 
   const badgeColor = (action: string) => ACTION_COLORS[action] ?? 'bg-slate-50 text-slate-600'
 

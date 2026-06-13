@@ -23,6 +23,7 @@ import {
 } from '@/lib/encounter-status'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useEffect, useCallback } from 'react'
+import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 
 type Appointment = FlowboardKanbanAppointment & {
@@ -132,15 +133,8 @@ export default function AdminFlowboardPage() {
   }
 
   const formatTime = (timeString: string | null) => {
-    if (!timeString) return '—'
-    const time = timeString.split(':')
-    if (time.length < 2 || !time[0] || !time[1]) return '—'
-    const hours = parseInt(time[0])
-    const minutes = time[1]
-    if (Number.isNaN(hours)) return '—'
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    const displayHours = hours % 12 || 12
-    return `${displayHours}:${minutes} ${ampm}`
+    const formatted = formatClinicTimeSlot(timeString)
+    return formatted || '—'
   }
 
   const locationOptions = useMemo(

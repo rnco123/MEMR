@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage, formatClinicChatTime } from '@/lib/datetime/clinic-timezone'
 
 
 interface User {
@@ -137,7 +138,7 @@ interface ChatProps {
 
 export function Chat({ isOpen, onClose }: ChatProps) {
   const { user } = useAuth()
-  const { t } = useT()
+  const { t, language } = useT()
   const supabase = createClient()
   const [activeView, setActiveView] = useState<'conversations' | 'new-chat'>('conversations')
   const [conversations, setConversations] = useState<Conversation[]>([])
@@ -383,60 +384,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     }
   }, [selectedConversation, user, supabase, fetchMessages, fetchConversations])
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString)
-    const now = new Date()
-    const diff = now.getTime() - date.getTime()
-    const minutes = Math.floor(diff / 60000)
-    const hours = Math.floor(minutes / 60)
-    const days = Math.floor(hours / 24)
-
-    // If same day, show time only
-    if (days === 0) {
-      const timeStr = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-      if (minutes < 1) return `Just now (${timeStr})`
-      if (minutes < 60) return `${timeStr} (${minutes}m ago)`
-      return timeStr
-    }
-
-    // If yesterday
-    if (days === 1) {
-      const timeStr = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-      return `Yesterday ${timeStr}`
-    }
-
-    // If within a week, show day and time
-    if (days < 7) {
-      const dayStr = date.toLocaleDateString('en-US', { weekday: 'short' })
-      const timeStr = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true
-      })
-      return `${dayStr} ${timeStr}`
-    }
-
-    // Otherwise show full date and time
-    const dateStr = date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
-    })
-    const timeStr = date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    })
-    return `${dateStr} ${timeStr}`
-  }
+  const formatTime = (dateString: string) => formatClinicChatTime(dateString, language)
 
   if (!isOpen) return null
 
@@ -670,7 +618,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                           downloadLabel={t('chat.download_attachment')}
                         />
                         <div className={`flex items-center gap-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          <span className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-slate-400'}`} title={new Date(message.created_at).toLocaleString()}>
+                          <span className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-slate-400'}`} title={formatClinicDateTimeForLanguage(message.created_at, language)}>
                             {formatTime(message.created_at)}
                           </span>
                           {isOwn && message.read_at && (

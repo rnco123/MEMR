@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 interface LocationRow {
   id: number
@@ -408,7 +409,7 @@ export default function AdminOverviewPage() {
                     </p>
                   </div>
                   <p className="text-[11px] text-slate-400 whitespace-nowrap">
-                    {new Date(e.created_at).toLocaleString(localeTag)}
+                    {formatClinicDateTimeForLanguage(e.created_at, language)}
                   </p>
                 </div>
               ))}
@@ -447,7 +448,7 @@ export default function AdminOverviewPage() {
                   <p className="text-xs text-slate-400 capitalize">{e.user_role || 'unknown'}</p>
                 </div>
                 <p className="text-xs text-slate-400 whitespace-nowrap">
-                  {new Date(e.created_at).toLocaleString()}
+                  {formatClinicDateTimeForLanguage(e.created_at, language)}
                 </p>
               </div>
             ))}

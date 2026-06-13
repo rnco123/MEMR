@@ -4,7 +4,7 @@ import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-
 import { isStaffAvatarId } from '@/lib/avatars/catalog'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { resolveDisplayName } from '@/lib/display-name'
-import { parseDoctorEin } from '@/lib/doctors/ein'
+import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { loadProfileForUser, updateProfileForUser } from '@/lib/profile/load-profile'
 import { UserRole } from '@/lib/roles'
 import { z } from 'zod'
@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic'
 const patchSchema = z.object({
   avatar_id: z.string().min(1).optional(),
   full_name: z.string().min(2).max(100).trim().optional(),
-  ein: z.union([z.string().max(20), z.null()]).optional(),
+  npi: z.union([z.string().max(20), z.null()]).optional(),
 })
 
 export async function GET() {
@@ -35,14 +35,14 @@ export async function GET() {
     const role = profile?.role ?? null
     const avatarId = profile?.avatar_id ?? null
 
-    let ein: string | null = null
+    let npi: string | null = null
     if (role === UserRole.DOCTOR) {
       const { data: doctorRow } = await supabase
         .from('doctors')
-        .select('ein')
+        .select('npi')
         .eq('user_id', user.id)
         .maybeSingle()
-      ein = (doctorRow?.ein as string | null)?.trim() || null
+      npi = (doctorRow?.npi as string | null)?.trim() || null
     }
 
     return NextResponse.json({
@@ -56,7 +56,7 @@ export async function GET() {
         userMetadata: user.user_metadata,
       }),
       role,
-      ein,
+      npi,
       avatar_id: avatarId,
       avatar_url: avatarId ? resolveStaffAvatarUrl(avatarId) : null,
       active: profile?.active !== false,
@@ -93,16 +93,16 @@ export async function PATCH(req: NextRequest) {
     if (validated.avatar_id !== undefined) updates.avatar_id = validated.avatar_id
     if (validated.full_name !== undefined) updates.full_name = validated.full_name
 
-    if (validated.ein !== undefined) {
+    if (validated.npi !== undefined) {
       const profileForRole = await loadProfileForUser(supabase, user.id, { email: user.email })
       if (profileForRole?.role !== UserRole.DOCTOR) {
-        throw new ValidationError('EIN can only be set for doctor accounts')
+        throw new ValidationError('NPI can only be set for doctor accounts')
       }
-      let parsedEin: string | null
+      let parsedNpi: string | null
       try {
-        parsedEin = parseDoctorEin(validated.ein)
+        parsedNpi = parseDoctorNpi(validated.npi)
       } catch (e) {
-        throw new ValidationError(e instanceof Error ? e.message : 'Invalid EIN')
+        throw new ValidationError(e instanceof Error ? e.message : 'Invalid NPI')
       }
 
       const doctorName =
@@ -119,23 +119,23 @@ export async function PATCH(req: NextRequest) {
         .maybeSingle()
 
       if (existingDoctor) {
-        const { error: einErr } = await supabase
+        const { error: npiErr } = await supabase
           .from('doctors')
-          .update({ ein: parsedEin })
+          .update({ npi: parsedNpi })
           .eq('user_id', user.id)
-        if (einErr) throw new ValidationError(einErr.message)
+        if (npiErr) throw new ValidationError(npiErr.message)
       } else {
-        const { error: einErr } = await supabase.from('doctors').insert({
+        const { error: npiErr } = await supabase.from('doctors').insert({
           user_id: user.id,
           full_name: doctorName,
           email: doctorEmail,
-          ein: parsedEin,
+          npi: parsedNpi,
         })
-        if (einErr) throw new ValidationError(einErr.message)
+        if (npiErr) throw new ValidationError(npiErr.message)
       }
     }
 
-    if (Object.keys(updates).length === 0 && validated.ein === undefined) {
+    if (Object.keys(updates).length === 0 && validated.npi === undefined) {
       throw new ValidationError('No fields to update')
     }
 
@@ -159,14 +159,14 @@ export async function PATCH(req: NextRequest) {
     const avatarId =
       profile?.avatar_id ?? (validated.avatar_id as string | undefined) ?? null
 
-    let ein: string | null = null
+    let npi: string | null = null
     if (role === UserRole.DOCTOR) {
       const { data: doctorRow } = await supabase
         .from('doctors')
-        .select('ein')
+        .select('npi')
         .eq('user_id', user.id)
         .maybeSingle()
-      ein = (doctorRow?.ein as string | null)?.trim() || null
+      npi = (doctorRow?.npi as string | null)?.trim() || null
     }
 
     return NextResponse.json({
@@ -180,7 +180,7 @@ export async function PATCH(req: NextRequest) {
         role,
         userMetadata: user.user_metadata,
       }),
-      ein,
+      npi,
       avatar_column_available,
     })
   } catch (err) {

@@ -10,8 +10,8 @@ describe('Role utilities', () => {
       expect(isValidRole('nurse')).toBe(true)
     })
 
-    test('validates staff role', () => {
-      expect(isValidRole('staff')).toBe(true)
+    test('rejects legacy staff role (use mapRoleToEnum instead)', () => {
+      expect(isValidRole('staff')).toBe(false)
     })
 
     test('rejects invalid role', () => {

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type OrderRow = {
   id: number
@@ -22,7 +23,7 @@ type OrderRow = {
 
 function OrdersPage() {
   const supabase = useMemo(() => createClient(), [])
-  const { t } = useT()
+  const { t, language } = useT()
   const [rows, setRows] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'all' | 'pending' | 'completed'>('pending')
@@ -234,7 +235,7 @@ function OrdersPage() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id} className="border-t border-slate-100 text-slate-700 hover:bg-slate-50 transition-colors">
-                    <td className="px-4 py-3 whitespace-nowrap text-slate-500 text-xs">{new Date(r.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-slate-500 text-xs">{formatClinicDateTimeForLanguage(r.created_at, language)}</td>
                     <td className="px-4 py-3">
                       {r.patients ? `${r.patients.first_name} ${r.patients.last_name}` : `#${r.patient_id}`}
                     </td>

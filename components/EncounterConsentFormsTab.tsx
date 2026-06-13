@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type FormRow = {
   id: number
@@ -21,7 +22,6 @@ type ApiOk = {
 
 export function EncounterConsentFormsTab({ encounterId }: { encounterId: number }) {
   const { t, language } = useT()
-  const localeTag = language === 'es' ? 'es-ES' : 'en-US'
   const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ApiOk | null>(null)
@@ -103,7 +103,7 @@ export function EncounterConsentFormsTab({ encounterId }: { encounterId: number 
             {f.updated_at && (
               <span className="text-xs text-slate-500">
                 {t('encounter_modal.forms_template_updated')}{' '}
-                {new Date(f.updated_at).toLocaleString(localeTag)}
+                {formatClinicDateTimeForLanguage(f.updated_at, language)}
               </span>
             )}
           </div>

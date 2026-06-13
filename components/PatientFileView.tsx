@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
 import { useT } from '@/lib/i18n'
+import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 
 const DOCUMENTS_VIEW_STORAGE_KEY = 'memr.patientDocumentsView'
 
@@ -609,27 +610,14 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
   }
 
   const formatTime = (timeString: string | null) => {
-    if (!timeString) return t('common.na')
-    const time = timeString.split(':')
-    if (time.length < 2 || !time[0] || !time[1]) return t('common.na')
-    const hours = parseInt(time[0], 10)
-    const minutes = time[1]
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    const displayHours = hours % 12 || 12
-    return `${displayHours}:${minutes} ${ampm}`
+    const formatted = formatClinicTimeSlot(timeString)
+    return formatted || t('common.na')
   }
 
   const formatDateTime = (dateString: string | null) => {
     if (!dateString) return t('common.na')
-    const d = new Date(dateString)
-    if (isNaN(d.getTime())) return t('common.na')
-    return d.toLocaleString(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    })
+    const formatted = formatClinicDateTimeForLanguage(dateString, language)
+    return formatted || t('common.na')
   }
 
   const formatFileSize = (bytes: number) => {
@@ -1639,7 +1627,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                         {f.updated_at && (
                                           <span className="text-xs text-slate-500">
                                             {t('patient_file.template_updated_at', {
-                                              date: new Date(f.updated_at).toLocaleString(locale),
+                                              date: formatClinicDateTimeForLanguage(f.updated_at, language),
                                             })}
                                           </span>
                                         )}

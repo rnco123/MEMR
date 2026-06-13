@@ -28,6 +28,7 @@ import {
   type FlowboardDisplayMode,
 } from '@/components/FlowboardViewToggle'
 import { UserRole } from '@/lib/roles'
+import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
@@ -224,16 +225,8 @@ function FlowboardPage() {
   }
 
   const formatTime = (timeString: string | null) => {
-    if (!timeString) return t('common.em_dash')
-    // Handle time format (HH:MM:SS or HH:MM)
-    const time = timeString.split(':')
-    if (time.length < 2 || !time[0] || !time[1]) return t('common.em_dash')
-    const hours = parseInt(time[0])
-    const minutes = time[1]
-    if (Number.isNaN(hours)) return t('common.em_dash')
-    const ampm = hours >= 12 ? 'PM' : 'AM'
-    const displayHours = hours % 12 || 12
-    return `${displayHours}:${minutes} ${ampm}`
+    const formatted = formatClinicTimeSlot(timeString)
+    return formatted || t('common.em_dash')
   }
 
   // Filter and sort appointments (search/filter on ALL records)
