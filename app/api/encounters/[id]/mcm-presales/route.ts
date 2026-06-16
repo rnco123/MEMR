@@ -10,6 +10,7 @@ import {
   ValidationError,
   NotFoundError,
 } from '@/lib/api-error-handler'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (!role || !ALLOWED_ROLES.has(role)) {
       throw new AuthorizationError('You are not allowed to sync pre-sales to MCM')
     }
+
+    await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown
     try {

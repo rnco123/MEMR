@@ -78,27 +78,12 @@ async function getUserFromCustomCookie(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    // M-04c: Use getUser() for verified auth.
     const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
     
-    // Try to get session first (works better with cookies)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    let user = session?.user
-    
-    if (!user) {
-      // Fallback to getUser if getSession fails
-      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
-      
-      if (!getUserResult && !authError) {
-        // Try parsing custom cookie format
-        user = (await getUserFromCustomCookie(request)) ?? undefined
-      } else if (!authError) {
-        user = getUserResult ?? undefined
-      }
-      
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { searchParams } = new URL(request.url)
@@ -209,27 +194,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // M-04c: Use getUser() for verified auth.
     const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
     
-    // Try to get session first (works better with cookies)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    
-    let user = session?.user
-    
-    if (!user) {
-      // Fallback to getUser if getSession fails
-      const { data: { user: getUserResult }, error: authError } = await supabase.auth.getUser()
-      
-      if (!getUserResult && !authError) {
-        // Try parsing custom cookie format
-        user = (await getUserFromCustomCookie(request)) ?? undefined
-      } else if (!authError) {
-        user = getUserResult ?? undefined
-      }
-      
-      if (!user) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-      }
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const contentType = request.headers.get('content-type') || ''

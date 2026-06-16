@@ -34,8 +34,8 @@ export const signupSchema = z.object({
       },
       { message: 'Password is too common. Please choose a stronger password.' }
     ),
-  role: z.enum(['doctor', 'nurse', 'admin'], {
-    errorMap: () => ({ message: 'Role must be doctor, nurse, or admin' }),
+  role: z.enum(['doctor', 'nurse'], {
+    errorMap: () => ({ message: 'Role must be doctor or nurse' }),
   }),
   pin: z
     .string()

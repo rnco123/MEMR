@@ -15,6 +15,7 @@ import {
   selectPrescriptionsForEncounter,
   updatePrescriptionRow,
 } from '@/lib/prescriptions/encounter-prescriptions'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +60,7 @@ export async function PATCH(
     if (authError || !user) throw new AuthenticationError()
 
     await requireClinicalUser(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown
     try {
@@ -127,6 +129,7 @@ export async function DELETE(
     if (authError || !user) throw new AuthenticationError()
 
     await requireClinicalUser(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId)
 
     const encounter = await loadEncounterForRx(supabase, encounterId)
     assertEncounterRxEditable(encounter)

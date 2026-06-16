@@ -24,11 +24,15 @@ export type SendEmailInput = {
   html: string
   text?: string
   replyTo?: string
+  /** Override RESEND_FROM_EMAIL for this message only (e.g. SOAP patient emails). */
+  fromEmail?: string
+  /** Override RESEND_FROM_NAME for this message only (e.g. SOAP patient emails). */
+  fromName?: string
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<{ id: string }> {
   const resend = getResendClient()
-  const from = formatFromAddress()
+  const from = formatFromAddress({ fromName: input.fromName, fromEmail: input.fromEmail })
 
   const { data, error } = await resend.emails.send({
     from,

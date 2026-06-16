@@ -32,6 +32,7 @@ import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
+import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -283,10 +284,31 @@ function FlowboardPage() {
 
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
 
+  const refreshAction = (
+    <button
+      onClick={refreshData}
+      disabled={loading || isRefreshing}
+      className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 disabled:opacity-50"
+      title={t('common.refresh')}
+    >
+      <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+    </button>
+  )
+
   return (
-    <div className="p-6 lg:p-8">
+    <div className="flex flex-col min-h-0">
+      {/* ---- Mobile app-header (phone only) ---- */}
+      <MobilePageHeader
+        title={t('flow.title')}
+        subtitle={`${filteredAppointments.length} patient${filteredAppointments.length === 1 ? '' : 's'}`}
+        actions={refreshAction}
+      />
+
+      {/* ---- Desktop header (unchanged) ---- */}
+      <div className="hidden lg:block p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 mb-1">{t('flow.title')}</h1>
@@ -631,8 +653,112 @@ function FlowboardPage() {
           </div>
         )}
       </div>
+      </div>{/* end desktop hidden lg:block */}
 
-      {/* Encounter Detail Modal */}
+      {/* ---- Mobile-only view (phone-sized screens) ---- */}
+      <div className="lg:hidden flex flex-col flex-1 overflow-hidden">
+        {/* Mobile search bar */}
+        <div className="px-4 py-3 bg-white border-b border-slate-100 flex gap-2">
+          <div className="relative flex-1">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
+              placeholder={t('flow.search_placeholder')}
+              className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+            />
+          </div>
+          <select
+            value={filterStatus}
+            onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
+            className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+          >
+            <option value="all">{t('common.all')}</option>
+            {ENCOUNTER_STATUSES.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Mobile card list */}
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          {loading ? (
+            <div className="flex items-center justify-center py-16">
+              <LoadingSpinner message={t('flow.loading')} />
+            </div>
+          ) : filteredAppointments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-14 h-14 bg-[#2E6EF3]/10 rounded-2xl flex items-center justify-center mb-3">
+                <svg className="w-7 h-7 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              </div>
+              <p className="font-semibold text-slate-900">{searchQuery || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}</p>
+              <p className="text-sm text-slate-500 mt-1">{searchQuery || filterStatus !== 'all' ? t('common.try_adjust_filters') : t('flow.no_active_message')}</p>
+            </div>
+          ) : (
+            filteredAppointments.map((appointment) => {
+              const statusInfo = getStatusInfo(appointment.encounter_status as EncounterStatus)
+              return (
+                <button
+                  key={appointment.id}
+                  type="button"
+                  onClick={() => void openEncounter(appointment)}
+                  className="w-full text-left flex rounded-2xl overflow-hidden border border-slate-200 bg-white active:scale-[0.98] transition-transform"
+                >
+                  <div
+                    className={`w-1.5 shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
+                    aria-hidden
+                  />
+                  <div className="flex-1 p-4 min-w-0">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-slate-900 truncate">
+                          {appointment.patient
+                            ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
+                            : t('flow.unknown_patient')}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">{t('common.dob')}: {formatDob(appointment.patient?.date_of_birth) ?? '—'}</p>
+                      </div>
+                      {appointment.encounter_status && (
+                        <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                          appointment.encounter_status === 'appointment_initiated' ? 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200' :
+                          appointment.encounter_status === 'provider_assigned' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                          appointment.encounter_status === 'vitals_assessed' ? 'bg-lime-50 text-lime-800 border-lime-200' :
+                          appointment.encounter_status === 'in_consultation' ? 'bg-yellow-50 text-yellow-800 border-yellow-200' :
+                          appointment.encounter_status === 'consultation_concluded' ? 'bg-red-50 text-red-800 border-red-200' :
+                          appointment.encounter_status === 'final_review' ? 'bg-teal-50 text-teal-800 border-teal-200' :
+                          'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        }`}>
+                          {statusInfo?.label ?? appointment.encounter_status}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        {formatTime(appointment.appointment_time)}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                        {formatDate(appointment.appointment_date)}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center pr-3 text-slate-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" /></svg>
+                  </div>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+
+      {/* Encounter Detail Modal (shared between mobile and desktop) */}
       {selectedEncounter && (
         <EncounterDetailModal
           encounterId={selectedEncounter.encounterId}

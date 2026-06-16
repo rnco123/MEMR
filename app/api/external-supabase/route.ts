@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
-import { createClient } from '@/lib/supabase/server'
 import { createExternalAdminClient } from '@/lib/supabase/external-admin'
-import { getExternalSupabaseAllowedTables } from '@/lib/supabase/external-keys'
-import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
+import { getExternalSupabaseAllowedTables, isExternalSupabaseWriteAllowed, filterPayloadToAllowedColumns, getExternalSupabaseAllowedColumns } from '@/lib/supabase/external-keys'
+import { handleApiError, ValidationError } from '@/lib/api-error-handler'
+import { requireAdminUser } from '@/lib/admin-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -36,23 +36,17 @@ const WriteSchema = z.object({
 
 const RequestSchema = z.union([ReadSchema, WriteSchema])
 
+/** Deny-by-default: empty allowlist blocks all tables (C-02a). */
 function isAllowedTable(table: string): boolean {
   const allowlist = getExternalSupabaseAllowedTables()
-  if (allowlist.length === 0) return true
+  if (allowlist.length === 0) return false
   return allowlist.includes(table)
 }
 
 export async function POST(request: Request) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      throw new AuthenticationError()
-    }
+    // Require admin authentication for all external-supabase operations (C-02b).
+    await requireAdminUser()
 
     let body: unknown
     try {
@@ -74,7 +68,12 @@ export async function POST(request: Request) {
     const external = createExternalAdminClient()
 
     if (input.mode === 'read') {
-      let query = external.from(input.table).select(input.columns).limit(input.limit)
+      const allowedCols = getExternalSupabaseAllowedColumns(input.table)
+      const columns =
+        allowedCols && input.columns === '*'
+          ? allowedCols.join(',')
+          : input.columns
+      let query = external.from(input.table).select(columns).limit(input.limit)
       for (const f of input.filters) {
         query = query.eq(f.column, f.value as never)
       }
@@ -87,18 +86,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true, mode: 'read', data: data ?? [] })
     }
 
-    // write mode
+    // write mode — disabled unless EXTERNAL_SUPABASE_ALLOW_WRITE=true (C-02d)
+    if (!isExternalSupabaseWriteAllowed()) {
+      throw new ValidationError('External Supabase write mode is disabled')
+    }
+
     const matchEntries = input.match
     switch (input.action) {
       case 'insert': {
         if (!input.payload) throw new ValidationError('payload is required for insert')
-        const { data, error } = await external.from(input.table).insert(input.payload).select()
+        const payload = filterPayloadToAllowedColumns(input.table, input.payload as Record<string, unknown>)
+        const { data, error } = await external.from(input.table).insert(payload).select()
         if (error) throw error
         return NextResponse.json({ ok: true, mode: 'write', action: 'insert', data: data ?? [] })
       }
       case 'upsert': {
         if (!input.payload) throw new ValidationError('payload is required for upsert')
-        const { data, error } = await external.from(input.table).upsert(input.payload).select()
+        const payload = filterPayloadToAllowedColumns(input.table, input.payload as Record<string, unknown>)
+        const { data, error } = await external.from(input.table).upsert(payload).select()
         if (error) throw error
         return NextResponse.json({ ok: true, mode: 'write', action: 'upsert', data: data ?? [] })
       }
@@ -109,7 +114,11 @@ export async function POST(request: Request) {
         if (matchEntries.length === 0) {
           throw new ValidationError('match filters are required for update')
         }
-        let query = external.from(input.table).update(input.payload)
+        const payload = filterPayloadToAllowedColumns(
+          input.table,
+          input.payload as Record<string, unknown>
+        ) as Record<string, unknown>
+        let query = external.from(input.table).update(payload)
         for (const f of matchEntries) {
           query = query.eq(f.column, f.value as never)
         }

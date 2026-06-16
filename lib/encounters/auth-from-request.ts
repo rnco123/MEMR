@@ -19,9 +19,11 @@ export async function getUserFromRequest(request: Request): Promise<{ id: string
 
   const supabaseServer = await createServerClient()
   const {
-    data: { session },
-  } = await supabaseServer.auth.getSession()
-  return session?.user ?? null
+    data: { user },
+    error,
+  } = await supabaseServer.auth.getUser()
+  if (error || !user) return null
+  return user
 }
 
 export function getSupabaseForRequest(request: Request) {

@@ -85,7 +85,8 @@ const nextConfig = {
               "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.daily.co https://*.sentry.io",
               "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-              "font-src 'self' https://fonts.gstatic.com",
+              // pdf.js (I-693 editor) embeds standard PDF fonts as data: WOFF2 URIs
+              "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: https: blob:",
               "connect-src 'self' https://*.supabase.co https://*.daily.co wss://*.daily.co https://*.sentry.io",
               "frame-src 'self' https://*.daily.co",

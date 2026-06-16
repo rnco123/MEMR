@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { requireClinicalRole } from '@/lib/locations/scope'
+import { guardPatientAccess } from '@/lib/encounters/guard'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Force dynamic rendering since we use cookies for authentication
@@ -13,7 +14,12 @@ export async function DELETE(
 ) {
   try {
     const supabase = await createClient()
+    const patientId = Number(params.id)
     const docId = params.docId
+
+    if (Number.isNaN(patientId)) {
+      return NextResponse.json({ error: 'Invalid patient ID' }, { status: 400 })
+    }
 
     // Verify user is authenticated
     const {
@@ -31,12 +37,15 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
+    await guardPatientAccess(user.id, patientId)
+
     const supabaseAdmin = createAdminClient()
 
     const { data: document, error: fetchError } = await supabaseAdmin
       .from('patient_documents')
-      .select('file_path')
+      .select('file_path, patient_id')
       .eq('id', docId)
+      .eq('patient_id', patientId)
       .single()
 
     if (fetchError || !document) {
@@ -49,6 +58,7 @@ export async function DELETE(
       .from('patient_documents')
       .delete()
       .eq('id', docId)
+      .eq('patient_id', patientId)
 
     if (deleteError) {
       console.error('Error deleting document:', deleteError)

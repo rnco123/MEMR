@@ -607,7 +607,6 @@ export function FinalReviewModal({
             <LoadingSpinner
               message="Generating suggestions from transcript…"
               variant="dark"
-              showPercentage={false}
             />
           </div>
         ) : suggestionsNoTranscript ? (
@@ -982,7 +981,7 @@ export function FinalReviewModal({
         <div className="flex-1 overflow-y-auto p-6">
           {loading ? (
             <div className="flex items-center justify-center min-h-[240px]">
-              <LoadingSpinner message="Loading review data..." variant="dark" showPercentage={false} />
+              <LoadingSpinner message="Loading review data..." variant="dark" />
             </div>
           ) : (
             <>

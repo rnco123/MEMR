@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.NEXT_PUBLIC_DAILY_API_KEY
+    const apiKey = process.env.DAILY_API_KEY || process.env.NEXT_PUBLIC_DAILY_API_KEY
 
     if (!apiKey) {
       return NextResponse.json(
@@ -14,11 +14,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+        // M-04b: Use getUser() for verified auth — avoids trusting unverified client-side JWT.
     const supabaseServer = await createServerClient()
-    const { data: { session } } = await supabaseServer.auth.getSession()
-    const user = session?.user ?? null
+    const { data: { user }, error: authError } = await supabaseServer.auth.getUser()
 
-    if (!user) {
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

@@ -8,49 +8,40 @@ import { createClient } from '@/lib/supabase/server'
 // Force dynamic rendering since we use cookies for database connection check
 export const dynamic = 'force-dynamic'
 
+const isProduction = process.env.NODE_ENV === 'production'
+
 export async function GET() {
   try {
-    const healthData: {
-      status: string
-      timestamp: string
-      database: string
-      version?: string
-    } = {
-      status: 'healthy',
-      timestamp: new Date().toISOString(),
-      database: 'unknown',
-    }
+    let dbOk = false
 
-    // Check database connection
+    // L-02: Only probe DB in non-production or when it's a monitored path.
     try {
       const supabase = await createClient()
       const { error } = await supabase.from('profiles').select('uid').limit(1)
-
-      if (error) {
-        healthData.database = 'unhealthy'
-        healthData.status = 'degraded'
-      } else {
-        healthData.database = 'healthy'
-      }
-    } catch (error) {
-      healthData.database = 'unhealthy'
-      healthData.status = 'unhealthy'
+      dbOk = !error
+    } catch {
+      dbOk = false
     }
 
-    // Add version info (optional)
-    healthData.version = process.env.npm_package_version || '1.0.0'
+    const status = dbOk ? 'healthy' : 'degraded'
+    const statusCode = dbOk ? 200 : 503
 
-    const statusCode = healthData.status === 'healthy' ? 200 : healthData.status === 'degraded' ? 200 : 503
+    // L-02a: In production omit sensitive details (DB probe status, version).
+    if (isProduction) {
+      return NextResponse.json({ ok: dbOk, status }, { status: statusCode })
+    }
 
-    return NextResponse.json(healthData, { status: statusCode })
-  } catch (error) {
     return NextResponse.json(
       {
-        status: 'unhealthy',
+        ok: dbOk,
+        status,
         timestamp: new Date().toISOString(),
-        error: 'Health check failed',
+        database: dbOk ? 'healthy' : 'unhealthy',
+        version: process.env.npm_package_version || '1.0.0',
       },
-      { status: 503 }
+      { status: statusCode }
     )
+  } catch {
+    return NextResponse.json({ ok: false, status: 'unhealthy' }, { status: 503 })
   }
 }

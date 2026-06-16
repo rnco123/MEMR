@@ -15,6 +15,7 @@ import {
   saveEncounterPatientInfo,
   type PatientInfoUpdatePayload,
 } from '@/lib/encounter/encounter-patient-info'
+import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,6 +57,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     assertPatientInfoViewerRole(roleInfo?.role)
 
     const admin = createAdminClient()
+    await assertEncounterAccess(admin, user.id, encounterId)
     const ctx = await loadEncounterPatientInfoContext(admin, encounterId)
 
     return NextResponse.json({
@@ -93,6 +95,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!parsed.success) throw parsed.error
 
     const admin = createAdminClient()
+    await assertEncounterAccess(admin, user.id, encounterId)
     const result = await saveEncounterPatientInfo(admin, {
       encounterId,
       userId: user.id,

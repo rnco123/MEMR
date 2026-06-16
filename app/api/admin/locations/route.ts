@@ -12,6 +12,7 @@ import {
 } from '@/lib/locations/admin-row'
 import { locationCreateSchema } from '@/lib/validation'
 import { syncLocationCreateToExternal } from '@/lib/locations/external-sync'
+import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
 
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest) {
       MAX_PAGE_SIZE,
       Math.max(1, Number(req.nextUrl.searchParams.get('pageSize') || '20'))
     )
-    const search = (req.nextUrl.searchParams.get('search') || '').trim()
+    const search = sanitizePatientSearchTerm((req.nextUrl.searchParams.get('search') || '').trim())
     const statusFilter = req.nextUrl.searchParams.get('status') || 'all'
     const sortBy = req.nextUrl.searchParams.get('sort') || 'title_asc'
     const tenantFilter = Number(req.nextUrl.searchParams.get('tenant_id') || '0')

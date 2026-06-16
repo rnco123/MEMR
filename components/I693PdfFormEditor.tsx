@@ -1298,8 +1298,11 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
           {(previewLoading || saving) && (
             <div className="flex items-center gap-2 px-3 py-1 text-xs text-slate-600 bg-white border border-slate-200 rounded-lg">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700" />
-              {mode === 'editor' ? 'Saving editor changes...' : 'Preparing preview...'}
+              <LoadingSpinner
+                compact
+                size="xs"
+                message={mode === 'editor' ? 'Saving editor changes...' : 'Preparing preview...'}
+              />
             </div>
           )}
 

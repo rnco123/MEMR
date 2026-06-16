@@ -44,12 +44,11 @@ async function getUserFromRequest(
     if (!error && user) return { user, token }
   }
 
+  // M-04e: Use getUser() for verified server-side auth.
   const supabaseServer = await createServerClient()
-  const {
-    data: { session },
-  } = await supabaseServer.auth.getSession()
-  const user = session?.user ?? null
-  return user ? { user, token: session?.access_token ?? undefined } : null
+  const { data: { user }, error: userErr } = await supabaseServer.auth.getUser()
+  if (userErr || !user) return null
+  return { user }
 }
 
 async function verifyTranscriptAccess(

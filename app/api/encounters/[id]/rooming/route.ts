@@ -7,6 +7,7 @@ import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isImmigrationEncounter } from '@/lib/i693/types'
 import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
@@ -78,6 +79,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (v.pharmacy_id !== undefined) {
       patch.pharmacy_id = v.pharmacy_id
     }
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
     const { data, error } = await admin

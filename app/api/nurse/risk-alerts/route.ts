@@ -8,6 +8,7 @@ import {
   formatVitalsForRisk,
 } from '@/lib/risk-alerts/build-clinical-context'
 import { analyzeClinicalRisk } from '@/lib/risk-alerts/openai-analyze'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -47,6 +48,8 @@ export async function POST(request: Request) {
     if (!Number.isFinite(appointmentId) || appointmentId <= 0) {
       return NextResponse.json({ error: 'appointmentId is required' }, { status: 400 })
     }
+
+    await guardEncounterAccess(user.id, encounterId)
 
     const admin = createAdminClient()
 

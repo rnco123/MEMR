@@ -125,7 +125,8 @@ export async function POST(request: NextRequest) {
         email: email,
       })
 
-      return NextResponse.json({ success: true, user: authData.user })
+      // Return minimal response — never expose the full Supabase user object (app_metadata leak).
+      return NextResponse.json({ success: true })
     }
 
     return handleApiError(new Error('Failed to create user'))

@@ -12,6 +12,7 @@ import {
   type FinalReviewSuggestions,
 } from '@/lib/final-review/from-transcript'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 const CLINICAL_ROLES = ['doctor', 'nurse', 'staff'] as const
@@ -163,6 +164,9 @@ export async function POST(
 
     const suggestions = validateFinalReviewSuggestions(parsed, catalogProducts)
     const generatedAt = new Date().toISOString()
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
     const { error: updateError } = await admin

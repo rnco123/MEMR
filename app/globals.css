@@ -17,6 +17,75 @@ body {
   .text-balance {
     text-wrap: balance;
   }
+
+  /* ---- Adaptive / mobile-app primitives ------------------------------- */
+
+  /* Full mobile viewport that accounts for browser chrome on phones. */
+  .min-h-screen-dvh {
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+  .h-screen-dvh {
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* iOS/Android safe-area helpers (notch + home indicator). */
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pl-safe {
+    padding-left: env(safe-area-inset-left);
+  }
+  .pr-safe {
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* App-like momentum scrolling that doesn't rubber-band the whole page. */
+  .scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Prevent text auto-zoom / selection jank on touch UI. */
+  .touch-pan-contain {
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+  }
+}
+
+/* Reusable lightweight mobile transitions (GPU-friendly, no layout thrash). */
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.animate-sheet-up {
+  animation: sheet-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up,
+  .animate-fade-in {
+    animation: none;
+  }
 }
 
 /* Animations */

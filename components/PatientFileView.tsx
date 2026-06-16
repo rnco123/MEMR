@@ -10,6 +10,7 @@ import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import { printPatientDocument } from '@/lib/patient-documents/print-document'
 
 const DOCUMENTS_VIEW_STORAGE_KEY = 'memr.patientDocumentsView'
 
@@ -854,6 +855,15 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     setDocumentToDelete(docId)
     setShowDeleteConfirm(true)
   }
+
+  const handlePrintDocument = useCallback((doc: PatientDocument) => {
+    if (!doc.file_url) return
+    printPatientDocument({
+      file_url: doc.file_url,
+      file_type: doc.file_type || 'application/pdf',
+      document_name: doc.document_name,
+    })
+  }, [])
 
   // Handle document deletion
   const handleDeleteDocument = async () => {
@@ -1795,6 +1805,21 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                   {t('common.view')}
                                 </button>
                               )}
+                              {hasFile && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handlePrintDocument(doc)
+                                  }}
+                                  className={`px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 ${isGrid ? 'flex-1 min-w-[100px]' : ''}`}
+                                >
+                                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                  </svg>
+                                  {t('common.print')}
+                                </button>
+                              )}
                               {doc.open_href && (
                                 <a
                                   href={doc.open_href}
@@ -2170,7 +2195,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 className="flex-1 h-11 px-4 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                               >
                                 {uploading && (
-                                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  <LoadingSpinner compact size="xs" message="" className="shrink-0" />
                                 )}
                                 {uploading ? t('patient_file.uploading') : t('patient_file.upload')}
                               </button>
@@ -2208,7 +2233,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
 
                           {/* Fixed Header - Always Visible */}
                           <div className="flex items-center justify-between p-3 border-b border-slate-200 flex-shrink-0 bg-white">
-                            <div className="flex-1 min-w-0 pr-12">
+                            <div className="flex-1 min-w-0 pr-3">
                               <h3 className="text-base font-semibold text-slate-900 truncate">{viewingDocument.document_name}</h3>
                               <p className="text-xs text-slate-500 mt-0.5 truncate">
                                 {viewingDocument.file_url
@@ -2216,6 +2241,18 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                   : t('patient_file.no_file_short')}
                               </p>
                             </div>
+                            {viewingDocument.file_url && (
+                              <button
+                                type="button"
+                                onClick={() => handlePrintDocument(viewingDocument)}
+                                className="mr-10 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                              >
+                                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                                </svg>
+                                {t('common.print')}
+                              </button>
+                            )}
                           </div>
 
                           {/* Scrollable Viewer Content */}
@@ -2238,13 +2275,11 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                               <div className="flex items-center justify-center relative min-h-[400px]">
                                 {imageLoading && (
                                   <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="flex flex-col items-center gap-3">
-                                      <div className="relative w-12 h-12">
-                                        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                                        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-400 animate-spin" />
-                                      </div>
-                                      <p className="text-slate-500 text-sm font-medium">{t('patient_file.loading_image')}</p>
-                                    </div>
+                                    <LoadingSpinner
+                                      message={t('patient_file.loading_image')}
+                                      variant="dark"
+                                      size="sm"
+                                    />
                                   </div>
                                 )}
                                 <img
@@ -2324,7 +2359,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                             >
                               {deleting ? (
                                 <>
-                                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                  <LoadingSpinner compact size="xs" message="" className="shrink-0" />
                                   {t('patient_file.deleting')}
                                 </>
                               ) : (

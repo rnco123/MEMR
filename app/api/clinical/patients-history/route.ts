@@ -8,6 +8,7 @@ import {
   parseLocationFilter,
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
+import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
     }
 
     const page = Math.max(1, Number(req.nextUrl.searchParams.get('page') || '1'))
-    const search = (req.nextUrl.searchParams.get('search') || '').trim()
+    const search = sanitizePatientSearchTerm((req.nextUrl.searchParams.get('search') || '').trim())
     const gender = req.nextUrl.searchParams.get('gender') || 'all'
     const sortBy = req.nextUrl.searchParams.get('sort') || 'name'
 

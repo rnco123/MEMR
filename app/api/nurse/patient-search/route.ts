@@ -61,8 +61,9 @@ export async function GET(req: NextRequest) {
       .limit(MAX_RESULTS)
 
     if (!scope.unrestricted) {
-      const ids = scope.locationIds.join(',')
-      query = query.or(`location_id.in.(${ids}),location_id.is.null`)
+          // M-07a: Only return patients explicitly assigned to the nurse's locations.
+          // Null-location patients are excluded for scoped users to prevent cross-clinic leakage.
+          query = query.in('location_id', scope.locationIds)
     }
 
     if (search) {
@@ -99,8 +100,8 @@ export async function GET(req: NextRequest) {
       .filter((p) => {
         if (scope.unrestricted) return true
         if (scope.locationIds.length === 0) return false
-        if (p.location_id == null) return true
-        return scope.locationIds.includes(p.location_id)
+            // M-07a: Require explicit location match; exclude patients without a location for scoped users.
+        return p.location_id != null && scope.locationIds.includes(p.location_id)
       })
       .map((p) => {
         const loc = p.locations as { title?: string } | null

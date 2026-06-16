@@ -5,8 +5,12 @@ import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { resolveAuthenticatedRole } from '@/lib/admin-auth'
 import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { z } from 'zod'
+import { createRateLimiter } from '@/lib/rate-limit'
 
 export const dynamic = 'force-dynamic'
+
+// M-08a: Dedicated stricter rate limit for login — 5 attempts per 15 min per IP.
+const loginRateLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 })
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -21,6 +25,19 @@ type PendingCookie = { name: string; value: string; options?: Parameters<NextRes
  */
 export async function POST(request: NextRequest) {
   try {
+    // M-08a: Enforce per-IP brute-force throttle on login.
+    const ip =
+      request.ip ||
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip') ||
+      'unknown'
+    if (!loginRateLimiter(ip)) {
+      return NextResponse.json(
+        { error: 'Too many login attempts. Please try again later.' },
+        { status: 429 }
+      )
+    }
+
     let body: unknown
     try {
       body = await request.json()

@@ -9,6 +9,7 @@ import {
   handleApiError,
 } from '@/lib/api-error-handler'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 const CLINICAL_ROLES = new Set(['doctor', 'nurse', 'staff'])
@@ -33,6 +34,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (!roleInfo?.role || !CLINICAL_ROLES.has(roleInfo.role)) {
       throw new AuthorizationError('Doctors and nurses only')
     }
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
 

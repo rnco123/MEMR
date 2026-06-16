@@ -4,6 +4,7 @@ import { pharmacyCreateSchema } from '@/lib/validation'
 import { countEncounterLinksByPharmacyIds } from '@/lib/pharmacies/usage'
 import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
       MAX_PAGE_SIZE,
       Math.max(1, Number(req.nextUrl.searchParams.get('pageSize') || '20'))
     )
-    const search = (req.nextUrl.searchParams.get('search') || '').trim()
+    const search = sanitizePatientSearchTerm((req.nextUrl.searchParams.get('search') || '').trim())
     const contactFilter = req.nextUrl.searchParams.get('contactFilter') || 'all'
     const sortBy = req.nextUrl.searchParams.get('sort') || 'updated_desc'
 

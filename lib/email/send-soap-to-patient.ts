@@ -11,6 +11,9 @@ import {
 } from '@/lib/soap/encounter-doctor-soap'
 import { sanitizeEmail } from '@/lib/sanitize'
 
+const SOAP_EMAIL_FROM_NAME = 'MyclinicMD Soap Service'
+const SOAP_EMAIL_FROM_EMAIL = 'emr@alerts.myclinicmd.com'
+
 function formatPatientName(row: { first_name?: string | null; last_name?: string | null }): string {
   return [row.first_name, row.last_name].filter(Boolean).join(' ').trim() || 'Patient'
 }
@@ -109,6 +112,8 @@ export async function sendSoapNoteToPatient(input: {
     subject,
     html,
     text,
+    fromEmail: SOAP_EMAIL_FROM_EMAIL,
+    fromName: SOAP_EMAIL_FROM_NAME,
     replyTo: input.senderEmail?.trim() || clinic.email?.trim() || undefined,
   })
 

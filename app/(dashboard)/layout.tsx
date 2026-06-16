@@ -3,7 +3,7 @@
 import { useAuth } from '@/lib/auth-context'
 import { usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { Chat } from '@/components/Chat'
 import { BrandLogo } from '@/components/BrandLogo'
 import { LanguageToggle } from '@/components/LanguageToggle'
@@ -11,11 +11,12 @@ import { useT } from '@/lib/i18n'
 import { AuditTracker } from '@/components/AuditTracker'
 import {
   AppSidebar,
-  SidebarMenuButton,
   type SidebarNavItem,
   type SidebarNavSection,
 } from '@/components/AppSidebar'
 import { UserAvatar } from '@/components/UserAvatar'
+import { MobileTabBar, type MobileTabItem } from '@/components/mobile/MobileTabBar'
+import { InstallPromptBanner } from '@/components/pwa/InstallPromptBanner'
 import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
 
@@ -30,11 +31,6 @@ export default function DashboardLayout({
   const { profile } = useUserProfile()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
-
-  useEffect(() => {
-    setMobileNavOpen(false)
-  }, [pathname])
 
   const profileIcon = (
     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -204,19 +200,47 @@ export default function DashboardLayout({
 
   const showSidebar = role === 'doctor' || role === 'nurse' || role === 'admin'
 
+  const chatMenuItem = menuItems.find((item) => item.href === '#')
+
+  const mobileTabItems: MobileTabItem[] = [
+    ...menuItems
+      .filter((item) => item.href !== '#')
+      .slice(0, 4)
+      .map((item) => ({
+        key: item.href,
+        label: item.name,
+        icon: item.icon,
+        href: item.href,
+        isActive: (p: string) =>
+          item.href === '/dashboard/patients-history'
+            ? p === item.href || p.startsWith('/patient-file/')
+            : p === item.href,
+      })),
+    ...(chatMenuItem
+      ? [
+          {
+            key: 'chat',
+            label: chatMenuItem.name,
+            icon: chatMenuItem.icon,
+            onClick: () => setIsChatOpen(true),
+          },
+        ]
+      : []),
+    {
+      key: '/dashboard/profile',
+      label: t('nav.profile'),
+      icon: profileIcon,
+      href: '/dashboard/profile',
+      isActive: (p: string) => p === '/dashboard/profile',
+    },
+  ]
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f5f7fb]">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shrink-0">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center gap-2 h-16 sm:h-20 min-h-[4rem]">
             <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-3">
-              {showSidebar && user && (
-                <SidebarMenuButton
-                  onClick={() => setMobileNavOpen(true)}
-                  className="lg:hidden"
-                  label={t('nav.sidebar.open')}
-                />
-              )}
               <Link href="/dashboard" className="flex min-w-0 items-center gap-2 sm:gap-3">
                 <BrandLogo variant="header" className="shadow-md !py-1" />
                 <div className="hidden md:flex flex-col min-w-0">
@@ -244,9 +268,14 @@ export default function DashboardLayout({
                 <button
                   onClick={handleSignOut}
                   disabled={isSigningOut}
-                  className="px-4 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={t('common.sign_out')}
+                  aria-label={t('common.sign_out')}
+                  className="inline-flex items-center gap-2 px-2.5 sm:px-4 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isSigningOut ? t('common.signing_out') : t('common.sign_out')}
+                  <svg className="h-5 w-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6-9H6a2 2 0 00-2 2v14a2 2 0 002 2h7" />
+                  </svg>
+                  <span className="hidden sm:inline">{isSigningOut ? t('common.signing_out') : t('common.sign_out')}</span>
                 </button>
               </div>
             )}
@@ -254,7 +283,7 @@ export default function DashboardLayout({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3">
+      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-3">
         {showSidebar && user && (
           <AppSidebar
             sections={sidebarSections}
@@ -264,8 +293,6 @@ export default function DashboardLayout({
             collapseLabel={t('nav.sidebar.collapse')}
             expandLabel={t('nav.sidebar.expand')}
             closeLabel={t('nav.sidebar.close')}
-            mobileOpen={mobileNavOpen}
-            onMobileClose={() => setMobileNavOpen(false)}
             homeHref="/dashboard"
             user={{
               name: displayName,
@@ -281,6 +308,9 @@ export default function DashboardLayout({
           {children}
         </main>
       </div>
+
+      {showSidebar && user && <MobileTabBar items={mobileTabItems} theme="blue" />}
+      <InstallPromptBanner />
 
       <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
       <AuditTracker />

@@ -14,6 +14,7 @@ import {
   loadEncounterSoapContext,
   saveDoctorSoapNote,
 } from '@/lib/soap/encounter-doctor-soap'
+import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,6 +38,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     assertSoapViewerRole(roleInfo?.role)
 
     const admin = createAdminClient()
+    await assertEncounterAccess(admin, user.id, encounterId)
     const ctx = await loadEncounterSoapContext(admin, encounterId)
 
     return NextResponse.json({
@@ -75,6 +77,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!parsed.success) throw parsed.error
 
     const admin = createAdminClient()
+    await assertEncounterAccess(admin, user.id, encounterId)
     const result = await saveDoctorSoapNote(admin, {
       encounterId,
       userId: user.id,

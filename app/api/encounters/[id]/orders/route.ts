@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { encounterOrderCreateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { getDoctorRowId } from '@/lib/clinical'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,6 +18,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       error: authError,
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
+
+    await guardEncounterAccess(user.id, encounterId)
 
     const { data, error } = await supabase
       .from('encounter_orders')
@@ -43,6 +46,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
+    await guardEncounterAccess(user.id, encounterId)
+
     let body: unknown
     try {
       body = await request.json()
@@ -62,10 +67,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (encErr) throw encErr
     if (!enc) throw new ValidationError('Encounter not found')
 
-    let orderedBy = parsed.data.ordered_by_doctor_id ?? null
-    if (orderedBy == null) {
-      orderedBy = await getDoctorRowId(supabase, user.id)
-    }
+    // H-08d: always derive prescriber from session — ignore client-supplied doctor id.
+    const orderedBy = await getDoctorRowId(supabase, user.id)
 
     const { data, error } = await supabase
       .from('encounter_orders')

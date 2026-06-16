@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicChatTime } from '@/lib/datetime/clinic-timezone'
+import { useUserProfile } from '@/lib/hooks/use-user-profile'
+import { resolveDisplayName } from '@/lib/display-name'
 
 
 interface User {
@@ -68,39 +70,70 @@ function isAttachmentOnlyContent(content: string | undefined, hasAttachments: bo
   return !t || t === ATTACHMENT_PLACEHOLDER
 }
 
+function ChatAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
+  const sizes = {
+    sm: 'h-10 w-10 text-sm',
+    md: 'h-12 w-12 text-base',
+    lg: 'h-14 w-14 text-lg',
+  }
+  return (
+    <div
+      className={`${sizes[size]} flex shrink-0 items-center justify-center rounded-full bg-violet-500 font-semibold text-white shadow-sm`}
+    >
+      {name.charAt(0).toUpperCase()}
+    </div>
+  )
+}
+
+function ChatWaveDivider() {
+  return (
+    <svg
+      className="block h-5 w-full text-[#F4F4F8]"
+      viewBox="0 0 1440 48"
+      preserveAspectRatio="none"
+      aria-hidden
+    >
+      <path
+        fill="currentColor"
+        d="M0,24 C240,44 480,4 720,24 C960,44 1200,4 1440,24 L1440,48 L0,48 Z"
+      />
+    </svg>
+  )
+}
+
 function ChatMessageAttachments({
   attachments,
   downloadLabel,
+  isOwn = false,
 }: {
   attachments: ChatAttachment[]
   downloadLabel: string
+  isOwn?: boolean
 }) {
   if (!attachments.length) return null
 
   return (
-    <div className="space-y-2 mt-1">
+    <div className="mt-1.5 space-y-2">
       {attachments.map((att) => {
         const isImage = att.file_type?.startsWith('image/')
         return (
-          <div key={att.id} className="rounded-lg overflow-hidden border border-slate-200/80 bg-white/90">
+          <div
+            key={att.id}
+            className={`overflow-hidden rounded-2xl shadow-sm ${
+              isOwn ? 'border border-violet-100 bg-violet-50 text-slate-800' : 'bg-violet-600/90 text-white'
+            }`}
+          >
             {isImage && att.file_url ? (
               <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="block">
                 <img
                   src={att.file_url}
                   alt={att.file_name}
-                  className="max-w-full max-h-48 object-contain bg-slate-50"
+                  className="max-h-48 max-w-full bg-violet-950/20 object-contain"
                 />
               </a>
             ) : null}
-            <div
-              className={`px-2.5 py-2 flex items-center gap-2 bg-white ${isImage ? 'border-t border-slate-100' : ''}`}
-            >
-              <svg
-                className="w-4 h-4 shrink-0 text-slate-400"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
+            <div className={`flex items-center gap-2 px-3 py-2.5 ${isImage ? (isOwn ? 'border-t border-violet-100' : 'border-t border-white/15') : ''}`}>
+              <svg className={`h-5 w-5 shrink-0 ${isOwn ? 'text-violet-500' : 'text-white/80'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -109,8 +142,8 @@ function ChatMessageAttachments({
                 />
               </svg>
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-medium truncate text-slate-800">{att.file_name}</p>
-                <p className="text-[10px] text-slate-500">{formatChatFileSize(att.file_size)}</p>
+                <p className="truncate text-sm font-medium">{att.file_name}</p>
+                <p className={`text-[11px] ${isOwn ? 'text-slate-500' : 'text-white/70'}`}>{formatChatFileSize(att.file_size)}</p>
               </div>
               {att.file_url && (
                 <a
@@ -118,9 +151,15 @@ function ChatMessageAttachments({
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(e) => e.stopPropagation()}
-                  className="text-[11px] font-semibold shrink-0 px-2 py-1 rounded bg-[#2E6EF3]/10 text-[#2E6EF3] hover:bg-[#2E6EF3]/20"
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                    isOwn ? 'bg-violet-100 text-violet-700 hover:bg-violet-200' : 'bg-white/15 hover:bg-white/25'
+                  }`}
+                  title={downloadLabel}
+                  aria-label={downloadLabel}
                 >
-                  {downloadLabel}
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5m0 0l5-5m-5 5V4" />
+                  </svg>
                 </a>
               )}
             </div>
@@ -139,8 +178,11 @@ interface ChatProps {
 export function Chat({ isOpen, onClose }: ChatProps) {
   const { user } = useAuth()
   const { t, language } = useT()
+  const { profile } = useUserProfile()
   const supabase = createClient()
   const [activeView, setActiveView] = useState<'conversations' | 'new-chat'>('conversations')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -386,343 +428,385 @@ export function Chat({ isOpen, onClose }: ChatProps) {
 
   const formatTime = (dateString: string) => formatClinicChatTime(dateString, language)
 
+  const displayName =
+    profile?.display_name ??
+    resolveDisplayName({
+      full_name: profile?.full_name,
+      email: profile?.email ?? user?.email,
+      userMetadata: user?.user_metadata,
+      fallback: 'User',
+    })
+
+  const normalizedSearch = searchQuery.trim().toLowerCase()
+  const filteredConversations = conversations.filter((conv) =>
+    !normalizedSearch || conv.other_participant.full_name.toLowerCase().includes(normalizedSearch)
+  )
+  const filteredUsers = users.filter((userItem) => {
+    if (userItem.uid === user?.id) return false
+    if (!normalizedSearch) return true
+    const name = (userItem.full_name || '').toLowerCase()
+    return name.includes(normalizedSearch) || userItem.role.toLowerCase().includes(normalizedSearch)
+  })
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden shadow-[0_24px_80px_rgba(15,23,42,0.18)]">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-200 bg-white">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                setSelectedConversation(null)
-                setActiveView('conversations')
-              }}
-              className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-              aria-label="Back"
-            >
-              <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">{t('chat.title')}</h2>
-              <p className="text-xs text-slate-500">{t('chat.one_on_one_hint')}</p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-slate-100 rounded-lg transition-colors"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar - Conversations List */}
-          {!selectedConversation && (
-            <div className="w-80 border-r border-slate-200 bg-white flex flex-col">
-              {/* Tabs */}
-              <div className="flex border-b border-slate-200">
-                <button
-                  onClick={() => setActiveView('conversations')}
-                  className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors ${
-                    activeView === 'conversations'
-                      ? 'text-[#2E6EF3] border-b-2 border-[#2E6EF3]'
-                      : 'text-slate-500 hover:text-slate-700 border-b-2 border-transparent'
-                  }`}
-                >
-                  {t('chat.tab_conversations')}
-                </button>
-                <button
-                  onClick={() => setActiveView('new-chat')}
-                  className={`flex-1 px-4 py-3 text-sm font-semibold transition-colors ${
-                    activeView === 'new-chat'
-                      ? 'text-[#2E6EF3] border-b-2 border-[#2E6EF3]'
-                      : 'text-slate-500 hover:text-slate-700 border-b-2 border-transparent'
-                  }`}
-                >
-                  {t('chat.tab_new')}
-                </button>
+    <div className="fixed inset-0 z-50 bg-[#F4F4F8] sm:flex sm:items-center sm:justify-center sm:bg-slate-900/45 sm:p-4 sm:backdrop-blur-sm">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-[#F4F4F8] sm:h-[min(90vh,820px)] sm:max-w-md sm:rounded-[2rem] sm:shadow-2xl">
+        {!selectedConversation ? (
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            {/* List screen header */}
+            <div className="shrink-0 bg-[#F4F4F8] px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm text-slate-500">{t('chat.hello')}</p>
+                  <h2 className="text-2xl font-bold text-slate-900">{displayName}</h2>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchOpen((open) => {
+                        if (open) setSearchQuery('')
+                        return !open
+                      })
+                    }}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                    aria-label={t('chat.search')}
+                    title={t('chat.search')}
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
+                    aria-label="Close"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
-              {/* Content */}
-              <div className="flex-1 overflow-y-auto">
-                {loading ? (
-                  <div className="flex items-center justify-center py-10">
-                    <LoadingSpinner message={t('common.loading')} />
+              {searchOpen && (
+                <div className="mb-3">
+                  <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('chat.search')}
+                    autoFocus
+                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-400/25"
+                  />
+                </div>
+              )}
+
+              <div className="flex rounded-2xl bg-white p-1 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setActiveView('conversations')}
+                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
+                    activeView === 'conversations'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t('chat.tab_all')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveView('new-chat')}
+                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
+                    activeView === 'new-chat'
+                      ? 'bg-violet-600 text-white shadow-sm'
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  {t('chat.tab_contacts')}
+                </button>
+              </div>
+            </div>
+
+            {/* List content */}
+            <div className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-24">
+              {loading ? (
+                <div className="flex items-center justify-center py-16">
+                  <LoadingSpinner message={t('common.loading')} />
+                </div>
+              ) : activeView === 'conversations' ? (
+                filteredConversations.length === 0 ? (
+                  <div className="rounded-3xl bg-white px-6 py-12 text-center shadow-sm">
+                    <p className="font-semibold text-slate-800">{t('chat.empty_conversations')}</p>
+                    <p className="mt-1 text-sm text-slate-500">{t('chat.start_new')}</p>
                   </div>
-                ) : activeView === 'conversations' ? (
-                  <div className="divide-y divide-slate-100">
-                    {conversations.length === 0 ? (
-                      <div className="p-8 text-center">
-                        <p className="text-slate-700 font-medium">{t('chat.empty_conversations')}</p>
-                        <p className="text-slate-500 text-sm mt-1">{t('chat.start_new')}</p>
-                      </div>
-                    ) : (
-                      conversations.map((conv) => (
+                ) : (
+                  <ul className="space-y-2">
+                    {filteredConversations.map((conv) => (
+                      <li key={conv.id}>
                         <button
-                          key={conv.id}
+                          type="button"
                           onClick={() => {
                             setSelectedConversation(conv)
                             fetchMessages(conv.id)
                           }}
-                          className="w-full p-4 text-left hover:bg-slate-50 transition-colors"
+                          className="flex w-full items-center gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm transition-transform active:scale-[0.99]"
                         >
-                          <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
-                              {conv.other_participant.full_name.charAt(0).toUpperCase()}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between mb-0.5">
-                                <p className="text-slate-900 font-semibold text-sm truncate">
-                                  {conv.other_participant.full_name}
-                                </p>
-                                <span className="text-xs text-slate-400 ml-2 shrink-0">
-                                  {formatTime(conv.last_message_at)}
-                                </span>
-                              </div>
-                              <p className="text-xs text-slate-500 capitalize">
-                                {conv.other_participant.role}
+                          <ChatAvatar name={conv.other_participant.full_name} />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="truncate font-semibold text-slate-900">
+                                {conv.other_participant.full_name}
                               </p>
+                              <span className="shrink-0 text-xs text-slate-400">
+                                {formatTime(conv.last_message_at)}
+                              </span>
                             </div>
+                            <p className="truncate text-sm capitalize text-slate-500">
+                              {conv.other_participant.role}
+                            </p>
                           </div>
                         </button>
-                      ))
-                    )}
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {users.length === 0 ? (
-                      <div className="p-8 text-center">
-                        <p className="text-slate-700 font-medium mb-1">{t('chat.no_users')}</p>
-                        <p className="text-xs text-slate-500 mb-4">
-                          {t('chat.no_users_hint')}
-                        </p>
-                        <button
-                          onClick={async () => {
-                            try {
-                              const response = await fetch('/api/chat/sync-profiles', {
-                                method: 'POST',
-                                credentials: 'include',
-                                headers: {
-                                  'Content-Type': 'application/json',
-                                }
-                              })
-                              const data = await response.json()
-                              if (response.ok) {
-                                alert(data.message || 'Profiles synced successfully!')
-                                fetchUsers()
-                              } else {
-                                alert(data.error || 'Failed to sync profiles')
-                              }
-                            } catch (error) {
-                              console.error('Error syncing profiles:', error)
-                              alert('Error syncing profiles: ' + (error instanceof Error ? error.message : 'Unknown error'))
-                            }
-                          }}
-                          className="px-4 py-2 bg-[#2E6EF3]/10 border border-[#2E6EF3]/20 text-[#2E6EF3] rounded-lg text-xs font-semibold hover:bg-[#2E6EF3]/15 transition-colors"
-                        >
-                          {t('chat.sync_profiles')}
-                        </button>
-                      </div>
-                    ) : (
-                      users
-                        .filter((userItem) => userItem.uid !== user?.id)
-                        .map((userItem) => (
-                        <button
-                          key={userItem.uid}
-                          onClick={() => startConversation(userItem.uid)}
-                          className="w-full p-4 text-left hover:bg-slate-50 transition-colors"
-                        >
-                          <div className="flex items-center gap-3">
-                            <div className="w-11 h-11 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0">
-                              {userItem.full_name?.charAt(0).toUpperCase() || 'U'}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-slate-900 font-semibold text-sm truncate">
-                                {userItem.full_name || t('chat.unknown')}
-                              </p>
-                              <p className="text-xs text-slate-500 capitalize">
-                                {userItem.role}
-                              </p>
-                            </div>
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Main Chat Area */}
-          {selectedConversation ? (
-            <div className="flex-1 flex flex-col bg-[#f9fbff]">
-              {/* Chat Header */}
-              <div className="p-4 border-b border-slate-200 bg-white">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold">
-                    {selectedConversation.other_participant.full_name.charAt(0).toUpperCase()}
-                  </div>
-                  <div>
-                    <p className="text-slate-900 font-semibold text-sm">
-                      {selectedConversation.other_participant.full_name}
-                    </p>
-                    <p className="text-xs text-slate-500 capitalize">
-                      {selectedConversation.other_participant.role}
-                    </p>
-                  </div>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : filteredUsers.length === 0 ? (
+                <div className="rounded-3xl bg-white px-6 py-12 text-center shadow-sm">
+                  <p className="font-semibold text-slate-800">{t('chat.no_users')}</p>
+                  <p className="mt-1 text-sm text-slate-500">{t('chat.no_users_hint')}</p>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/chat/sync-profiles', {
+                          method: 'POST',
+                          credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                        })
+                        const data = await response.json()
+                        if (response.ok) {
+                          alert(data.message || 'Profiles synced successfully!')
+                          fetchUsers()
+                        } else {
+                          alert(data.error || 'Failed to sync profiles')
+                        }
+                      } catch (error) {
+                        console.error('Error syncing profiles:', error)
+                        alert('Error syncing profiles: ' + (error instanceof Error ? error.message : 'Unknown error'))
+                      }
+                    }}
+                    className="mt-4 rounded-xl bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                  >
+                    {t('chat.sync_profiles')}
+                  </button>
                 </div>
-              </div>
+              ) : (
+                <ul className="space-y-2">
+                  {filteredUsers.map((userItem) => (
+                    <li key={userItem.uid}>
+                      <button
+                        type="button"
+                        onClick={() => startConversation(userItem.uid)}
+                        className="flex w-full items-center gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm transition-transform active:scale-[0.99]"
+                      >
+                        <ChatAvatar name={userItem.full_name || t('chat.unknown')} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-semibold text-slate-900">
+                            {userItem.full_name || t('chat.unknown')}
+                          </p>
+                          <p className="truncate text-sm capitalize text-slate-500">{userItem.role}</p>
+                        </div>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
 
-              {/* Messages */}
-              <div
-                ref={messagesContainerRef}
-                className="flex-1 overflow-y-auto p-4 space-y-3"
-              >
+            {/* FAB */}
+            <button
+              type="button"
+              onClick={() => setActiveView('new-chat')}
+              className="absolute bottom-6 right-5 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-600/35 transition-transform active:scale-95"
+              aria-label={t('chat.new_message')}
+              title={t('chat.new_message')}
+            >
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Conversation header */}
+            <div className="relative shrink-0 bg-violet-600 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
+              <div className="flex items-center gap-3 px-4 py-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedConversation(null)
+                    setActiveView('conversations')
+                  }}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 hover:bg-white/10"
+                  aria-label="Back"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <ChatAvatar name={selectedConversation.other_participant.full_name} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold">{selectedConversation.other_participant.full_name}</p>
+                  <p className="text-xs capitalize text-violet-200">{t('chat.online')}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/25 text-white/90 hover:bg-white/10"
+                  aria-label="Close"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <ChatWaveDivider />
+            </div>
+
+            {/* Messages */}
+            <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto bg-[#F4F4F8] px-4 py-4">
+              <div className="space-y-3">
                 {messages.map((message) => {
                   const isOwn = message.sender_id === user?.id
                   const attachments = message.attachments ?? []
                   const showText = !isAttachmentOnlyContent(message.content, attachments.length > 0)
                   return (
-                    <div
-                      key={message.id}
-                      className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div className={`max-w-[min(75%,320px)] rounded-2xl px-4 py-2.5 shadow-sm ${
-                        isOwn
-                          ? 'bg-[#2E6EF3] text-white rounded-tr-sm'
-                          : 'bg-white text-slate-800 border border-slate-200 rounded-tl-sm'
-                      }`}>
-                        {!isOwn && (
-                          <p className="text-xs font-semibold text-[#2E6EF3] mb-0.5">
-                            {message.sender.full_name}
-                          </p>
-                        )}
+                    <div key={message.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                      <div
+                        className={`max-w-[min(82%,320px)] rounded-[1.25rem] px-4 py-2.5 shadow-sm ${
+                          isOwn
+                            ? 'rounded-br-md bg-white text-slate-800'
+                            : 'rounded-bl-md bg-violet-500 text-white'
+                        }`}
+                      >
                         {showText && message.content?.trim() && (
                           <p className="text-sm leading-relaxed">{message.content}</p>
                         )}
                         {!showText && attachments.length > 0 && (
-                          <p className={`text-sm ${isOwn ? 'text-white/90' : 'text-slate-600'}`}>
+                          <p className={`text-sm ${isOwn ? 'text-slate-600' : 'text-white/90'}`}>
                             {t('chat.attachment_only')}
                           </p>
                         )}
                         <ChatMessageAttachments
                           attachments={attachments}
                           downloadLabel={t('chat.download_attachment')}
+                          isOwn={isOwn}
                         />
-                        <div className={`flex items-center gap-2 mt-1 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          <span className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-slate-400'}`} title={formatClinicDateTimeForLanguage(message.created_at, language)}>
+                        <div className={`mt-1 flex items-center gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                          <span
+                            className={`text-[10px] ${isOwn ? 'text-slate-400' : 'text-white/70'}`}
+                            title={formatClinicDateTimeForLanguage(message.created_at, language)}
+                          >
                             {formatTime(message.created_at)}
                           </span>
                           {isOwn && message.read_at && (
-                            <span className="text-[10px] text-white/70" title="Read">✓✓</span>
+                            <span className="text-[10px] text-violet-500" title="Read">
+                              ✓✓
+                            </span>
                           )}
                         </div>
                       </div>
                     </div>
                   )
                 })}
-                <div ref={messagesEndRef} />
               </div>
+              <div ref={messagesEndRef} />
+            </div>
 
-              {/* Message Input */}
-              <div className="p-3 border-t border-slate-200 bg-white">
-                {pendingFiles.length > 0 && (
-                  <div className="mb-2 flex flex-wrap gap-2">
-                    {pendingFiles.map((file, index) => (
-                      <div
-                        key={`${file.name}-${index}`}
-                        className="inline-flex items-center gap-2 max-w-full px-2.5 py-1.5 rounded-lg bg-slate-100 border border-slate-200 text-xs text-slate-700"
+            {/* Composer */}
+            <div className="shrink-0 bg-[#F4F4F8] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
+              {pendingFiles.length > 0 && (
+                <div className="mb-2 flex flex-wrap gap-2">
+                  {pendingFiles.map((file, index) => (
+                    <div
+                      key={`${file.name}-${index}`}
+                      className="inline-flex max-w-full items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm"
+                    >
+                      <span className="max-w-[180px] truncate">{file.name}</span>
+                      <span className="shrink-0 text-slate-400">({formatChatFileSize(file.size)})</span>
+                      <button
+                        type="button"
+                        onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                        className="shrink-0 text-slate-500 hover:text-red-600"
+                        aria-label={t('chat.remove_attachment')}
                       >
-                        <span className="truncate max-w-[180px]">{file.name}</span>
-                        <span className="text-slate-400 shrink-0">({formatChatFileSize(file.size)})</span>
-                        <button
-                          type="button"
-                          onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
-                          className="text-slate-500 hover:text-red-600 shrink-0"
-                          aria-label={t('chat.remove_attachment')}
-                        >
-                          ×
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <p className="text-[10px] text-slate-400 mb-2">{t('chat.attachments_hint')}</p>
-                <div className="flex gap-2 items-end">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept={CHAT_FILE_ACCEPT}
-                    multiple
-                    className="sr-only"
-                    onChange={(e) => {
-                      addPendingFiles(e.target.files)
-                      e.target.value = ''
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={sending}
-                    title={t('chat.attach_file')}
-                    className="h-11 w-11 shrink-0 inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-[#2E6EF3] transition-colors disabled:opacity-50"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                      />
-                    </svg>
-                  </button>
-                  <input
-                    type="text"
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        sendMessage()
-                      }
-                    }}
-                    placeholder={t('chat.placeholder')}
-                    className="flex-1 h-11 px-4 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-                    disabled={sending}
-                  />
-                  <button
-                    type="button"
-                    onClick={sendMessage}
-                    disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
-                    className="h-11 px-5 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {sending ? t('common.sending') : t('common.send')}
-                  </button>
+                        ×
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center bg-[#f9fbff]">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              )}
+              <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 shadow-md">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={CHAT_FILE_ACCEPT}
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => {
+                    addPendingFiles(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
+                <input
+                  type="text"
+                  value={messageText}
+                  onChange={(e) => setMessageText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendMessage()
+                    }
+                  }}
+                  placeholder={t('chat.placeholder')}
+                  className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                  disabled={sending}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={sending}
+                  title={t('chat.attach_file')}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 hover:text-violet-600 disabled:opacity-50"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                    />
                   </svg>
-                </div>
-                <p className="text-slate-700 font-medium">{t('chat.select_conv')}</p>
-                <p className="text-slate-500 text-sm mt-1">{t('chat.select_conv_hint')}</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={sendMessage}
+                  disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  aria-label={t('common.send')}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
               </div>
             </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
     </div>
   )

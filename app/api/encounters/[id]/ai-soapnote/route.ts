@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
@@ -41,6 +42,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (!Number.isFinite(encounterId) || encounterId <= 0) {
       return NextResponse.json({ error: 'Invalid encounter id' }, { status: 400 })
     }
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin.from('encounters').select('id').eq('id', encounterId).maybeSingle()

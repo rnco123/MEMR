@@ -9,6 +9,7 @@ import {
 } from '@/lib/icd-suggestions/format-subjective-for-icd'
 import { suggestIcdCodesFromSubjective } from '@/lib/icd-suggestions/suggest-icd-openai'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
@@ -33,6 +34,9 @@ async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
     if (!Number.isFinite(encounterId) || encounterId <= 0) {
       return NextResponse.json({ error: 'Invalid encounter id' }, { status: 400 })
     }
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
 

@@ -11,6 +11,7 @@ import * as Sentry from '@sentry/nextjs'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
+import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 
 interface Patient {
   id: number // bigint
@@ -131,7 +132,115 @@ function PatientsHistoryPage() {
   }
 
   return (
-    <div className="p-6 lg:p-8">
+    <div className="flex flex-col min-h-0">
+      {/* ── Mobile app header ── */}
+      <MobilePageHeader
+        title={t('patients.title')}
+        subtitle={totalPatientCount !== null ? `${totalPatientCount} ${t('patients.total_patients')}` : undefined}
+        actions={
+          <button
+            onClick={handleRefresh}
+            disabled={loading}
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 disabled:opacity-50"
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        }
+      />
+
+      {/* ── Mobile search bar ── */}
+      <div className="lg:hidden px-4 py-3 bg-white border-b border-slate-100 flex gap-2">
+        <div className="relative flex-1">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder={t('patients.search_placeholder')}
+            className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+          />
+        </div>
+        <select
+          value={filterGender}
+          onChange={(e) => setFilterGender(e.target.value as typeof filterGender)}
+          className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+        >
+          <option value="all">{t('common.all')}</option>
+          <option value="Male">{t('common.male')}</option>
+          <option value="Female">{t('common.female')}</option>
+        </select>
+      </div>
+
+      {/* ── Mobile patient list ── */}
+      <div className="lg:hidden flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-2.5 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        {loading && patients.length === 0 ? (
+          <div className="flex items-center justify-center py-16">
+            <LoadingSpinner message={t('patients.loading')} />
+          </div>
+        ) : patients.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-16 text-center">
+            <div className="w-14 h-14 bg-[#2E6EF3]/10 rounded-2xl flex items-center justify-center mb-3">
+              <svg className="w-7 h-7 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </div>
+            <p className="font-semibold text-slate-900">{searchQuery ? t('common.no_results') : t('patients.no_patients')}</p>
+          </div>
+        ) : (
+          <>
+            {patients.map((patient) => (
+              <Link
+                key={patient.id}
+                href={`/patient-file/${patient.id.toString()}`}
+                className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl p-4 active:scale-[0.98] transition-transform"
+              >
+                <div className="w-11 h-11 shrink-0 bg-[#2E6EF3] rounded-xl flex items-center justify-center text-white font-semibold text-sm">
+                  {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-slate-900 truncate">{patient.first_name} {patient.last_name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {patient.gender && `${patient.gender === 'Male' ? t('common.male') : patient.gender === 'Female' ? t('common.female') : patient.gender} · `}
+                    {calculateAge(patient.date_of_birth)} {t('patients.years_short')}
+                    {patient.encounter_count ? ` · ${patient.encounter_count} visits` : ''}
+                  </p>
+                  {patient.phone && <p className="text-xs text-slate-400 mt-0.5">{patient.phone}</p>}
+                </div>
+                <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
+            ))}
+            {/* Mobile pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between pt-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 disabled:opacity-40"
+                >
+                  {t('common.previous')}
+                </button>
+                <span className="text-sm text-slate-500">{t('common.page_x_of_y', { page, total: totalPages })}</span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-600 disabled:opacity-40"
+                >
+                  {t('common.next')}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ── Desktop view (unchanged) ── */}
+      <div className="hidden lg:block p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-6">
@@ -380,6 +489,7 @@ function PatientsHistoryPage() {
         )}
         </>
       </div>
+      </div>{/* end hidden lg:block */}
     </div>
   )
 }

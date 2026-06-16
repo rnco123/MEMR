@@ -58,3 +58,43 @@ export function getExternalSupabaseAllowedTables(): string[] {
     .map((item) => item.trim())
     .filter(Boolean)
 }
+
+/** Write mode disabled unless explicitly enabled (C-02d). */
+export function isExternalSupabaseWriteAllowed(): boolean {
+  return process.env.EXTERNAL_SUPABASE_ALLOW_WRITE === 'true'
+}
+
+/**
+ * Per-table column allowlist from env, e.g.:
+ * EXTERNAL_SUPABASE_COLUMNS_patients=id,first_name,last_name
+ */
+export function getExternalSupabaseAllowedColumns(table: string): string[] | null {
+  const envKey = `EXTERNAL_SUPABASE_COLUMNS_${table.replace(/[^a-zA-Z0-9_]/g, '')}`
+  const raw = process.env[envKey]
+  if (!raw) return null
+  const cols = raw
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean)
+  return cols.length > 0 ? cols : null
+}
+
+export function filterPayloadToAllowedColumns(
+  table: string,
+  payload: Record<string, unknown> | Record<string, unknown>[]
+): Record<string, unknown> | Record<string, unknown>[] {
+  const allowed = getExternalSupabaseAllowedColumns(table)
+  if (!allowed) return payload
+
+  const allowSet = new Set(allowed)
+  const filterOne = (row: Record<string, unknown>) => {
+    const out: Record<string, unknown> = {}
+    for (const key of Object.keys(row)) {
+      if (allowSet.has(key)) out[key] = row[key]
+    }
+    return out
+  }
+
+  if (Array.isArray(payload)) return payload.map(filterOne)
+  return filterOne(payload)
+}

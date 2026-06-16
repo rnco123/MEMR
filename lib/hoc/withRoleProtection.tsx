@@ -52,12 +52,7 @@ export function withRoleProtection<P extends object>(
       return (
         <div className="flex min-h-screen flex-col items-center justify-center bg-[#f5f7fb] px-4">
           <div className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-8 shadow-lg shadow-slate-200/60">
-            <LoadingSpinner
-              message={t('auth.verifying_access')}
-              variant="light"
-              showPercentage={false}
-              size="md"
-            />
+            <LoadingSpinner message={t('auth.verifying_access')} />
           </div>
         </div>
       )

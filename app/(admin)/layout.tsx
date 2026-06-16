@@ -15,9 +15,11 @@ import {
   type SidebarNavSection,
 } from '@/components/AppSidebar'
 import { UserAvatar } from '@/components/UserAvatar'
+import { MobileTabBar, type MobileTabItem } from '@/components/mobile/MobileTabBar'
 import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
 import { AuditTracker } from '@/components/AuditTracker'
+import { LoadingSpinner } from '@/components/LoadingSpinner'
 
 const adminNavItems = [
   {
@@ -169,8 +171,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   if (loading || !user || role !== 'admin') {
     return (
-      <div className="min-h-screen bg-[#f6f2ff] flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-[#f6f2ff] flex items-center justify-center px-4">
+        <div className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-8 shadow-lg shadow-slate-200/60">
+          <LoadingSpinner message={t('auth.verifying_access')} />
+        </div>
       </div>
     )
   }
@@ -180,6 +184,30 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setIsSigningOut(true)
     try { await signOut() } finally { setIsSigningOut(false) }
   }
+
+  const mobileTabHrefs = ['/admin', '/admin/flowboard', '/admin/patients-history', '/admin/i-693']
+  const mobileTabItems: MobileTabItem[] = [
+    ...adminNav
+      .filter((item) => mobileTabHrefs.includes(item.href))
+      .map((item) => ({
+        key: item.href,
+        label: item.name,
+        icon: item.icon,
+        href: item.href,
+        isActive: item.isActive,
+      })),
+    {
+      key: '/admin/profile',
+      label: t('nav.profile'),
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      href: '/admin/profile',
+      isActive: (p: string) => p === '/admin/profile',
+    },
+  ]
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#f6f2ff]">
@@ -226,16 +254,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <button
                 onClick={handleSignOut}
                 disabled={isSigningOut}
-                className="px-2 sm:px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-xs sm:text-sm font-medium disabled:opacity-50"
+                title={t('common.sign_out')}
+                aria-label={t('common.sign_out')}
+                className="inline-flex items-center gap-2 px-2 sm:px-3 py-1.5 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-xs sm:text-sm font-medium disabled:opacity-50"
               >
-                {isSigningOut ? t('common.signing_out') : t('common.sign_out')}
+                <svg className="h-5 w-5 sm:hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6-9H6a2 2 0 00-2 2v14a2 2 0 002 2h7" />
+                </svg>
+                <span className="hidden sm:inline">{isSigningOut ? t('common.signing_out') : t('common.sign_out')}</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3">
+      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-3">
         <AppSidebar
           sections={adminSidebarSections}
           pathname={pathname}
@@ -260,6 +293,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           {children}
         </main>
       </div>
+
+      <MobileTabBar items={mobileTabItems} theme="purple" />
 
       <Chat isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
       <AuditTracker />

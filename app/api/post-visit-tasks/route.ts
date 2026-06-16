@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { postVisitTaskCreateSchema } from '@/lib/validation'
-import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
+import { handleApiError, AuthenticationError, ValidationError, AuthorizationError } from '@/lib/api-error-handler'
+import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchUserRole } from '@/lib/fetch-user-role'
+import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
+import { guardEncounterAccess, guardPatientAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,10 +18,20 @@ export async function GET(request: Request) {
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
+    const roleInfo = await fetchUserRole(supabase, user.id)
+    const clinicalRole = resolveClinicalApiRole(roleInfo?.role)
+    if (!clinicalRole) throw new AuthorizationError()
+
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status')
 
-    let q = supabase.from('post_visit_tasks').select('*').order('due_at', { ascending: true, nullsFirst: false })
+    const admin = createAdminClient()
+    const scope = await getLocationScopeForUser(admin, user.id, clinicalRole)
+
+    let q = admin
+      .from('post_visit_tasks')
+      .select('*, patients(location_id)')
+      .order('due_at', { ascending: true, nullsFirst: false })
 
     if (status && status !== 'all') {
       q = q.eq('status', status)
@@ -25,7 +39,15 @@ export async function GET(request: Request) {
 
     const { data, error } = await q
     if (error) throw error
-    return NextResponse.json({ data: data ?? [] })
+
+    const filtered = (data ?? []).filter((row) => {
+      if (scope.unrestricted) return true
+      const patient = row.patients as { location_id?: number | null } | null
+      const loc = patient?.location_id
+      return loc != null && scope.locationIds.includes(loc)
+    })
+
+    return NextResponse.json({ data: filtered })
   } catch (e) {
     return handleApiError(e)
   }
@@ -52,7 +74,9 @@ export async function POST(request: Request) {
 
     const v = parsed.data
     if (v.encounter_id != null) {
-      const { data: enc } = await supabase
+      await guardEncounterAccess(user.id, v.encounter_id)
+      const admin = createAdminClient()
+      const { data: enc } = await admin
         .from('encounters')
         .select('patient_id')
         .eq('id', v.encounter_id)
@@ -61,6 +85,8 @@ export async function POST(request: Request) {
       if (Number(enc.patient_id) !== v.patient_id) {
         throw new ValidationError('Patient does not match encounter')
       }
+    } else {
+      await guardPatientAccess(user.id, v.patient_id)
     }
 
     const { data, error } = await supabase

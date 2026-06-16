@@ -13,6 +13,7 @@ import { isImmigrationEncounter } from '@/lib/i693/types'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
@@ -30,6 +31,9 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const roleInfo = await fetchUserRole(supabase, user.id)
     if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
     const role = roleInfo!.role!.trim().toLowerCase()
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin

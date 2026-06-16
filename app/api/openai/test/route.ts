@@ -1,13 +1,25 @@
 import { NextResponse } from 'next/server'
 import { config } from '@/lib/config'
+import { createClient } from '@/lib/supabase/server'
 
 export const dynamic = 'force-dynamic'
 
 /**
  * Minimal OpenAI connectivity check (server-only key).
- * GET https://api.openai.com/v1/models — validates auth without running chat.
+ * Requires authentication — never returns error details to unauthenticated callers (H-11).
  */
 export async function GET() {
+  // Auth gate — reject unauthenticated callers.
+  const supabase = await createClient()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const key = (process.env.OPENAI_API_KEY || config.openai.apiKey || '').trim()
   if (!key) {
     return NextResponse.json(
@@ -25,11 +37,10 @@ export async function GET() {
     })
 
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
+      // Do not expose upstream error body (H-11c).
       return NextResponse.json({
         connected: false,
         error: `OpenAI HTTP ${res.status}`,
-        detail: text.slice(0, 300),
       })
     }
 

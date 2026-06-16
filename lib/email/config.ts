@@ -12,9 +12,10 @@ export function isResendConfigured(): boolean {
   return Boolean(emailConfig.resendApiKey && emailConfig.fromEmail)
 }
 
-export function formatFromAddress(): string {
-  const { fromEmail, fromName } = emailConfig
-  if (!fromEmail) return ''
-  if (!fromName) return fromEmail
-  return `${fromName} <${fromEmail}>`
+export function formatFromAddress(options?: { fromName?: string; fromEmail?: string }): string {
+  const email = options?.fromEmail?.trim() || emailConfig.fromEmail
+  if (!email) return ''
+  const name = options?.fromName?.trim() || emailConfig.fromName
+  if (!name) return email
+  return `${name} <${email}>`
 }

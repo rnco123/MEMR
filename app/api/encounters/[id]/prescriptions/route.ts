@@ -15,6 +15,7 @@ import {
   resolvePrescriberDoctorId,
   selectPrescriptionsForEncounter,
 } from '@/lib/prescriptions/encounter-prescriptions'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     await requireClinicalUser(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId)
     await loadEncounterForRx(supabase, encounterId)
 
     const data = await selectPrescriptionsForEncounter(supabase, encounterId)
@@ -65,6 +67,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     await requireClinicalUser(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown
     try {

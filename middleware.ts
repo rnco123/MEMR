@@ -27,6 +27,11 @@ function getRequiredRolesForPath(pathname: string): UserRole[] | null {
     return null
   }
 
+  // Admin-only pages — enforce at middleware layer (M-02a).
+  if (p.startsWith('/admin')) {
+    return [UserRole.ADMIN]
+  }
+
   if (p.startsWith('/dashboard/flowboard')) {
     return [UserRole.ADMIN, UserRole.DOCTOR]
   }
@@ -112,7 +117,8 @@ export async function middleware(request: NextRequest) {
     if (
       pathname === '/api/auth/test-login' ||
       pathname === '/api/daily/test' ||
-      pathname === '/api/test-db-connection'
+      pathname === '/api/test-db-connection' ||
+      pathname === '/api/openai/test'
     ) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
@@ -220,23 +226,17 @@ export async function middleware(request: NextRequest) {
     effectiveUser = resolved ?? null
   }
 
-  // Fetch role from profiles table (matches existing schema)
+  // Fetch role from profiles table — authoritative source (H-03).
+  // Never trust user_metadata.role for authorization decisions.
   let userRole: UserRole | null = null
   if (isAuthenticated && effectiveUser) {
-    // Try to get role from user metadata first (for test mode)
-    const metadataRole = mapRoleToEnum(effectiveUser.user_metadata?.role)
-    if (metadataRole) {
-      userRole = metadataRole
-    } else {
-      // Must match client auth-context: metadata → profiles id/uid/email
-      const profile = await fetchProfileFields(supabase, effectiveUser.id, 'role', {
-        email: effectiveUser.email,
-      })
-      if (profile?.role && typeof profile.role === 'string') {
-        const mappedRole = mapRoleToEnum(profile.role)
-        if (mappedRole) {
-          userRole = mappedRole
-        }
+    const profile = await fetchProfileFields(supabase, effectiveUser.id, 'role', {
+      email: effectiveUser.email,
+    })
+    if (profile?.role && typeof profile.role === 'string') {
+      const mappedRole = mapRoleToEnum(profile.role)
+      if (mappedRole) {
+        userRole = mappedRole
       }
     }
   }

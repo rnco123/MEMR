@@ -5,6 +5,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { canJoinTelemedicine } from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { config } from '@/lib/config'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { fetchUserRole } from '@/lib/fetch-user-role'
+import { resolveClinicalApiRole } from '@/lib/locations/scope'
+import { UserRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,15 +24,16 @@ async function getUserFromRequest(request: Request): Promise<{ user: { id: strin
     if (!error && user) return { user }
   }
 
+  // M-04b: Use getUser() for verified server-side auth.
   const supabaseServer = await createServerClient()
-  const { data: { session } } = await supabaseServer.auth.getSession()
-  const user = session?.user ?? null
-  return user ? { user } : null
+  const { data: { user }, error } = await supabaseServer.auth.getUser()
+  if (error || !user) return null
+  return { user }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.NEXT_PUBLIC_DAILY_API_KEY
+    const apiKey = process.env.DAILY_API_KEY || process.env.NEXT_PUBLIC_DAILY_API_KEY
 
     if (!apiKey) {
       return NextResponse.json(
@@ -44,8 +49,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const supabase = createAdminClient()
-
     let body
     try {
       body = await request.json().catch(() => ({}))
@@ -54,76 +57,58 @@ export async function POST(request: NextRequest) {
     }
     const { roomName, encounterId } = body
 
-    // For telemedicine: encounterId is required to join encounter-specific room
-    if (encounterId != null) {
-      const encounterIdNum = Number(encounterId)
-      if (isNaN(encounterIdNum)) {
-        return NextResponse.json(
-          { error: 'Invalid encounter ID' },
-          { status: 400 }
-        )
-      }
-
-      // Get user role from profiles (id = auth user id in production; fallback uid)
-      let profile: { role?: string } | null = null
-      const byId = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle()
-      if (byId.data) profile = byId.data
-      if (!profile) {
-        const byUid = await supabase.from('profiles').select('role').eq('uid', user.id).maybeSingle()
-        if (byUid.data) profile = byUid.data
-      }
-
-      const role = (profile?.role as string) ?? null
-      const isDoctor = role === 'doctor'
-      const isNurse = role === 'nurse' || role === 'staff'
-
-      if (!isDoctor && !isNurse) {
-        return NextResponse.json(
-          { error: 'Only doctors and nurses can join telemedicine' },
-          { status: 403 }
-        )
-      }
-
-      // Fetch encounter
-      const { data: encounter, error: encounterError } = await supabase
-        .from('encounters')
-        .select('id, status, doctor_id')
-        .eq('id', encounterIdNum)
-        .single()
-
-      if (encounterError || !encounter) {
-        return NextResponse.json(
-          { error: 'Encounter not found' },
-          { status: 404 }
-        )
-      }
-
-      if (!canJoinTelemedicine(encounter.status)) {
-        return NextResponse.json(
-          { error: 'Vitals must be assessed before joining telemedicine' },
-          { status: 403 }
-        )
-      }
-
-      if (isDoctor) {
-        // Doctor must be assigned to this encounter
-        const { data: doctorData } = await supabase
-          .from('doctors')
-          .select('id')
-          .eq('user_id', user.id)
-          .single()
-
-        if (!doctorData || encounter.doctor_id !== doctorData.id) {
-          return NextResponse.json(
-            { error: 'You are not assigned to this encounter' },
-            { status: 403 }
-          )
-        }
-      }
+    // L-04: Telemedicine requires a specific encounter; nurses cannot join arbitrary rooms.
+    if (encounterId == null) {
+      return NextResponse.json(
+        { error: 'encounterId is required for telemedicine' },
+        { status: 400 }
+      )
     }
 
-    const roomNameToUse =
-      encounterId != null ? `encounter-${encounterId}` : roomName
+    const encounterIdNum = Number(encounterId)
+    if (Number.isNaN(encounterIdNum)) {
+      return NextResponse.json(
+        { error: 'Invalid encounter ID' },
+        { status: 400 }
+      )
+    }
+
+    const roleInfo = await fetchUserRole(await createServerClient(), user.id)
+    const clinicalRole = resolveClinicalApiRole(roleInfo?.role)
+    if (clinicalRole !== UserRole.DOCTOR && clinicalRole !== UserRole.NURSE) {
+      return NextResponse.json(
+        { error: 'Only doctors and nurses can join telemedicine' },
+        { status: 403 }
+      )
+    }
+
+    await guardEncounterAccess(user.id, encounterIdNum, {
+      requireDoctorAssignment: clinicalRole === UserRole.DOCTOR,
+    })
+
+    const supabase = createAdminClient()
+
+    const { data: encounter, error: encounterError } = await supabase
+      .from('encounters')
+      .select('id, status')
+      .eq('id', encounterIdNum)
+      .single()
+
+    if (encounterError || !encounter) {
+      return NextResponse.json(
+        { error: 'Encounter not found' },
+        { status: 404 }
+      )
+    }
+
+    if (!canJoinTelemedicine(encounter.status)) {
+      return NextResponse.json(
+        { error: 'Vitals must be assessed before joining telemedicine' },
+        { status: 403 }
+      )
+    }
+
+    const roomNameToUse = `encounter-${encounterId}`
 
     const roomConfig: any = {
       privacy: 'public',

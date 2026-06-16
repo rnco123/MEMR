@@ -5,6 +5,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getI693BasePath } from '@/lib/i693/paths'
 import { listImmigrationDocumentsForPatient } from '@/lib/patient-documents/immigration-docs'
 import { requireClinicalRole } from '@/lib/locations/scope'
+import { guardPatientAccess } from '@/lib/encounters/guard'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -30,9 +31,10 @@ export async function GET(
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      console.error('Warning: auth.getUser() failed in documents GET, continuing with Supabase RLS:', userError)
-      // We rely on Supabase RLS to enforce data access; do not return 401 here.
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    await guardPatientAccess(user.id, patientId)
 
     // Fetch documents
     const { data: documents, error } = await supabase
@@ -146,6 +148,8 @@ export async function POST(
     } catch {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+
+    await guardPatientAccess(user.id, patientId)
 
     const formData = await request.formData()
     const file = formData.get('file') as File

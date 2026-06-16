@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { encounterOrderUpdateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
+import { guardOrderAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,6 +17,8 @@ export async function PATCH(request: Request, { params }: { params: { orderId: s
       error: authError,
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
+
+    await guardOrderAccess(user.id, orderId)
 
     let body: unknown
     try {

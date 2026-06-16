@@ -4,6 +4,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { getI693EditorFields } from '@/lib/i693/get-editor-fields'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,6 +24,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (!isI693ApiRole((await fetchUserRole(supabase, user.id))?.role)) {
       throw new AuthorizationError()
     }
+
+    await guardEncounterAccess(user.id, encounterId)
 
     const { pdfMode, fields } = await getI693EditorFields()
     return NextResponse.json({

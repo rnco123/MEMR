@@ -4,8 +4,9 @@ import type { User } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseWithAccessToken, hasServiceRoleKey } from '@/lib/supabase/user-jwt-client'
 import { config } from '@/lib/config'
-import { fetchProfileFields } from '@/lib/fetch-user-role'
+import { fetchProfileFields, fetchUserRole } from '@/lib/fetch-user-role'
 import { UserRole, mapRoleToEnum } from '@/lib/roles'
+import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,11 +23,11 @@ async function getAuthFromRequest(request: Request): Promise<{ user: User; acces
     if (!error && user) return { user, accessToken: token }
   }
 
+  // M-04d: Use getUser() for verified server-side auth.
   const supabaseServer = await import('@/lib/supabase/server').then((m) => m.createClient())
-  const { data: { session } } = await supabaseServer.auth.getSession()
-  const user = session?.user ?? null
-  if (!user) return null
-  return { user, accessToken: session?.access_token ?? null }
+  const { data: { user }, error: userErr } = await supabaseServer.auth.getUser()
+  if (userErr || !user) return null
+  return { user, accessToken: null }
 }
 
 export async function GET(request: Request) {
@@ -56,9 +57,47 @@ export async function GET(request: Request) {
     )
   }
 
-  // Use doctor_id param if provided (must be valid UUID), otherwise use current user for doctor's own dashboard
+  // L-03: Resolve role — nurses/staff can only query their own availability or within shared location.
   const isValidUuid = (s: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s)
-  const userIdToLookup = doctorUserId && isValidUuid(doctorUserId) ? doctorUserId : user.id
+
+  const roleInfo = await fetchUserRole(supabase, user.id)
+  const clinicalRole = resolveClinicalApiRole(roleInfo?.role)
+  if (!clinicalRole) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
+  const scope = await getLocationScopeForUser(supabase, user.id, clinicalRole)
+
+  const doctorUserIdParam = doctorUserId && isValidUuid(doctorUserId) ? doctorUserId : null
+  const userIdToLookup = doctorUserIdParam ?? user.id
+
+  if (userIdToLookup !== user.id) {
+    if (clinicalRole === UserRole.DOCTOR) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+    if (clinicalRole === UserRole.NURSE) {
+      const { data: targetDoctor } = await supabase
+        .from('doctors')
+        .select('id, location_id')
+        .eq('user_id', userIdToLookup)
+        .maybeSingle()
+
+      if (!targetDoctor) {
+        return NextResponse.json({
+          data: { doctor_id: null, is_available: false, updated_at: null },
+        })
+      }
+
+      const loc = targetDoctor.location_id as number | null
+      if (
+        !scope.unrestricted &&
+        loc != null &&
+        !scope.locationIds.includes(loc)
+      ) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+  }
 
   if (userIdToLookup) {
     // First, get the doctor record by user_id
@@ -96,10 +135,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ data })
   }
 
-  // Get all available doctors (for nurse virtual waiting room)
+  // Get available doctors scoped to caller's locations (for nurse virtual waiting room)
   const { data, error } = await supabase
     .from('doctor_availability')
-    .select('doctor_id, is_available, updated_at')
+    .select('doctor_id, is_available, updated_at, doctors(location_id)')
     .eq('is_available', true)
 
   if (error) {
@@ -109,7 +148,16 @@ export async function GET(request: Request) {
     )
   }
 
-  return NextResponse.json({ data: data || [] })
+  const filtered = (data ?? []).filter((row) => {
+    if (scope.unrestricted) return true
+    const doc = Array.isArray(row.doctors) ? row.doctors[0] : row.doctors
+    const loc = (doc as { location_id?: number | null } | null)?.location_id
+    return loc != null && scope.locationIds.includes(loc)
+  })
+
+  const sanitized = filtered.map(({ doctors: _d, ...rest }) => rest)
+
+  return NextResponse.json({ data: sanitized })
 }
 
 export async function POST(request: Request) {
@@ -167,14 +215,10 @@ export async function POST(request: Request) {
     .eq('user_id', user.id)
     .maybeSingle()
 
-  const metaRole = mapRoleToEnum(user.user_metadata?.role as string | undefined)
   const profileRole = mapRoleToEnum(
     profile?.role != null ? String(profile.role) : undefined
   )
-  const isDoctor =
-    metaRole === UserRole.DOCTOR ||
-    profileRole === UserRole.DOCTOR ||
-    !!existingDoctorCheck
+  const isDoctor = profileRole === UserRole.DOCTOR || !!existingDoctorCheck
 
   if (!isDoctor) {
     return NextResponse.json(

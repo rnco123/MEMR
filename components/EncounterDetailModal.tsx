@@ -595,14 +595,16 @@ export function EncounterDetailModal({
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-[2px] p-4">
-      <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-6xl h-[90vh] flex flex-col overflow-hidden shadow-xl shadow-slate-300/40">
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-slate-900/40 backdrop-blur-[2px] lg:p-4">
+      <div className="bg-white border border-slate-200 rounded-t-2xl lg:rounded-2xl w-full lg:max-w-6xl h-[94dvh] lg:h-[90vh] flex flex-col overflow-hidden shadow-xl shadow-slate-300/40">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-[#f9fbff] flex-shrink-0">
-          <div className="flex items-center gap-4 flex-wrap">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight">{t('encounter_modal.title')}</h2>
+        <div className="flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 border-b border-slate-100 bg-[#f9fbff] flex-shrink-0">
+          {/* Mobile drag handle */}
+          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-200 lg:hidden" aria-hidden />
+          <div className="flex items-center gap-2 lg:gap-4 flex-wrap mt-1 lg:mt-0">
+            <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight">{t('encounter_modal.title')}</h2>
             {encounter?.encounter_code && (
-              <span className="text-sm text-[#2E6EF3] font-mono font-medium">#{encounter.encounter_code}</span>
+              <span className="text-xs lg:text-sm text-[#2E6EF3] font-mono font-medium">#{encounter.encounter_code}</span>
             )}
             {encounter?.status && (
               <span

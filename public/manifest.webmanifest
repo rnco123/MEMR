@@ -1,0 +1,51 @@
+{
+  "name": "MyclinicMD",
+  "short_name": "MyclinicMD",
+  "description": "MyclinicMD — Electronic Medical Records & Telemedicine",
+  "id": "/",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#f5f7fb",
+  "theme_color": "#2E6EF3",
+  "categories": ["medical", "health", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/maskable-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/myclinic-md-logo.png",
+      "sizes": "611x350",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Virtual waiting room",
+      "short_name": "Flowboard",
+      "url": "/dashboard/flowboard"
+    },
+    {
+      "name": "Patients History",
+      "short_name": "Patients",
+      "url": "/dashboard/patients-history"
+    },
+    {
+      "name": "My profile",
+      "short_name": "Profile",
+      "url": "/dashboard/profile"
+    }
+  ]
+}

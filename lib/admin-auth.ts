@@ -5,17 +5,26 @@ import { AuthenticationError, AuthorizationError } from '@/lib/api-error-handler
 import { fetchProfileFields } from '@/lib/fetch-user-role'
 import { mapRoleToEnum, UserRole } from '@/lib/roles'
 
-/** Resolve role for the current session (metadata → profiles id/uid/email). */
+/**
+ * Resolve role for the current session.
+ *
+ * Security: always prefer `profiles.role` from the database (H-03).
+ * `user_metadata.role` is display-only and must never be used for authorization
+ * decisions — a user can supply arbitrary metadata at signup.
+ */
 export async function resolveAuthenticatedRole(
   supabase: SupabaseClient,
   user: User
 ): Promise<UserRole | null> {
-  const metadataRole = mapRoleToEnum(user.user_metadata?.role)
-  if (metadataRole) return metadataRole
-
+  // Primary: database profile row (authoritative source of truth).
   const profile = await fetchProfileFields(supabase, user.id, 'role', { email: user.email })
   const dbRole = typeof profile?.role === 'string' ? profile.role : null
-  return mapRoleToEnum(dbRole)
+  const resolvedDbRole = mapRoleToEnum(dbRole)
+  if (resolvedDbRole) return resolvedDbRole
+
+  // Fallback only when no profile exists yet (new user in onboarding).
+  // Do NOT use metadata as a privilege escalation path.
+  return null
 }
 
 /** Ensures the current session belongs to an admin (above location restrictions). */

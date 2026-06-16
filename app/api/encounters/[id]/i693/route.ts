@@ -18,6 +18,7 @@ import { parseI693Annotations, resolveStoredI693Annotations } from '@/lib/i693/a
 import type { I693Annotation } from '@/lib/i693/annotations'
 import { syncI693PdfToPatientFileAfterSave } from '@/lib/i693/save-patient-document'
 
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 function missingAnnotationsColumn(error: unknown): boolean {
@@ -71,6 +72,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
     const role = await requireStaff(supabase, user.id)
+
+    await guardEncounterAccess(user.id, encounterId)
+
 
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin
