@@ -34,7 +34,8 @@ function isStaticAsset(url) {
     url.pathname.startsWith('/_next/static/') ||
     url.pathname.startsWith('/icons/') ||
     url.pathname === '/manifest.webmanifest' ||
-    /\.(?:css|js|woff2?|ttf|otf|png|jpg|jpeg|gif|svg|webp|avif|ico)$/.test(url.pathname)
+    url.pathname.startsWith('/lottie/') ||
+    /\.(?:css|js|woff2?|ttf|otf|png|jpg|jpeg|gif|svg|webp|avif|ico|json|webmanifest)$/.test(url.pathname)
   )
 }
 

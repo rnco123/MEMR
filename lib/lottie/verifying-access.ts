@@ -7,7 +7,12 @@ export function loadVerifyingAccessAnimation(): Promise<object | null> {
   if (loading) return loading
 
   loading = fetch('/lottie/verifying-access.json')
-    .then((res) => (res.ok ? res.json() : null))
+    .then(async (res) => {
+      if (!res.ok) return null
+      const data = await res.json().catch(() => null)
+      if (!data || typeof data !== 'object' || !('v' in data)) return null
+      return data as object
+    })
     .then((data) => {
       cached = data
       return data

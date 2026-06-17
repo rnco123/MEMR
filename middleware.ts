@@ -307,6 +307,6 @@ export const config = {
      * Skip: _next/*, favicon, static assets.
      * Only run middleware for page/API routes.
      */
-    '/((?!_next|favicon\\.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js)$).*)',
+    '/((?!_next|favicon\\.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|json|webmanifest)$).*)',
   ],
 }

@@ -164,7 +164,7 @@ const MEMR_DAILY_THEME = {
   },
 } as const
 
-/** Hide Daily top leave/fullscreen — MEMR header provides navigation; bottom tray keeps mic/cam/leave. */
+/** Hide Daily top chrome that overlaps MEMR header; bottom tray keeps People/Chat/mic controls. */
 const MEMR_DAILY_HIDE_TOP_CONTROLS_CSS = `
   [class*="LeaveButton"],
   [class*="FullscreenButton"],
@@ -174,6 +174,19 @@ const MEMR_DAILY_HIDE_TOP_CONTROLS_CSS = `
     display: none !important;
     visibility: hidden !important;
     pointer-events: none !important;
+  }
+  @media (max-width: 1023px) {
+    [class*="Sidebar"] [role="tablist"],
+    [class*="SidePanel"] [role="tablist"],
+    [class*="SidebarHeader"],
+    [class*="sidebar-header"],
+    [data-testid="sidebar-tab-list"] {
+      display: none !important;
+      visibility: hidden !important;
+      pointer-events: none !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
   }
 `
 
@@ -683,6 +696,7 @@ function VideoPage() {
         },
         showLeaveButton: false,
         showFullscreenButton: false,
+        showParticipantsBar: false,
         userName: userNameRef.current || undefined,
         theme: MEMR_DAILY_THEME,
         cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS,
@@ -1560,12 +1574,12 @@ function VideoPage() {
           {isConnected && dailyJoinUrl && (
             <div
               ref={dailyFrameContainerRef}
-              className="absolute inset-0 z-0 h-full w-full pb-[env(safe-area-inset-bottom)] [&_iframe]:!absolute [&_iframe]:!inset-0 [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
+              className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 lg:inset-0 lg:top-0 h-auto lg:h-full w-full pb-[env(safe-area-inset-bottom)] [&_iframe]:!absolute [&_iframe]:!inset-0 [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
             />
           )}
 
-          {/* MEMR header — pointer events only on buttons so Daily tray stays clickable */}
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          {/* MEMR header — sits above Daily iframe on mobile (iframe starts below this row) */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:z-10">
             <div className="mx-auto grid w-full max-w-3xl grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 lg:grid-cols-[2.75rem_minmax(0,1fr)_auto]">
               <button
                 type="button"
