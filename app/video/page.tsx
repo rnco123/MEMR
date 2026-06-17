@@ -8,7 +8,7 @@ import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { UserRole } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
-import { getStatusInfo } from '@/lib/encounter-status'
+import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
@@ -148,6 +148,49 @@ function isFinalTranscriptionSegment(rawResponse: Record<string, unknown> | unde
   return true
 }
 
+/** Global theme (not light/dark pair) — ignores OS dark mode so Prebuilt stays on-brand. */
+const MEMR_DAILY_THEME = {
+  colors: {
+    accent: '#2E6EF3',
+    accentText: '#FFFFFF',
+    background: '#FFFFFF',
+    backgroundAccent: '#EEF4FF',
+    baseText: '#1e293b',
+    border: '#e2e8f0',
+    mainAreaBg: '#EEF4FF',
+    mainAreaBgAccent: '#DCE8FD',
+    mainAreaText: '#1e293b',
+    supportiveText: '#64748b',
+  },
+} as const
+
+/** Hide Daily top leave/fullscreen — MEMR header provides navigation; bottom tray keeps mic/cam/leave. */
+const MEMR_DAILY_HIDE_TOP_CONTROLS_CSS = `
+  [class*="LeaveButton"],
+  [class*="FullscreenButton"],
+  [class*="TopBar"],
+  [data-testid="leave-button"],
+  [data-testid="fullscreen-button"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+`
+
+async function destroyDailyCallInstance(call: DailyCall | null | undefined) {
+  if (!call || call.isDestroyed()) return
+  await call.destroy().catch(() => {})
+}
+
+async function destroyOrphanDailyFrame(
+  Daily: typeof import('@daily-co/daily-js').default
+) {
+  const global = Daily.getCallInstance()
+  if (global && !global.isDestroyed()) {
+    await global.destroy().catch(() => {})
+  }
+}
+
 function VideoPage() {
   const { user, loading: authLoading, role } = useAuth()
   const router = useRouter()
@@ -191,6 +234,56 @@ function VideoPage() {
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null)
   const [showSummaryPanel, setShowSummaryPanel] = useState(false)
+  const [callStartedAt, setCallStartedAt] = useState<number | null>(null)
+  const [callElapsed, setCallElapsed] = useState('00:00')
+
+  useEffect(() => {
+    if (isConnected && callStartedAt == null) setCallStartedAt(Date.now())
+    if (!isConnected) {
+      setCallStartedAt(null)
+      setCallElapsed('00:00')
+    }
+  }, [isConnected, callStartedAt])
+
+  useEffect(() => {
+    if (!callStartedAt) return
+    const id = window.setInterval(() => {
+      const sec = Math.floor((Date.now() - callStartedAt) / 1000)
+      const m = Math.floor(sec / 60)
+      const s = sec % 60
+      setCallElapsed(`${m}:${String(s).padStart(2, '0')}`)
+    }, 1000)
+    return () => window.clearInterval(id)
+  }, [callStartedAt])
+
+  const goToWaitingRoom = useCallback(async () => {
+    const dest =
+      role === 'nurse'
+        ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
+        : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+    skipLeaveCleanupRef.current = true
+    const call = dailyCallRef.current
+    if (call?.meetingState() === 'joined-meeting') {
+      await call.leave().catch(() => {})
+    }
+    dailyCallRef.current = null
+    setDailyJoinUrl(null)
+    setIsConnected(false)
+    window.setTimeout(() => router.push(dest), 0)
+  }, [role, encounterId, router])
+
+  const patientDisplayName = patient
+    ? `${patient.first_name} ${patient.last_name}`.trim()
+    : 'Telemedicine Session'
+
+  const appointmentPillLabel = appointment?.appointment_date
+    ? `${formatDate(appointment.appointment_date)}${appointment.appointment_time ? ` · ${String(appointment.appointment_time).slice(0, 5)}` : ''}`
+    : encounter?.encounter_code
+      ? `#${encounter.encounter_code}`
+      : 'Video visit'
+
+  const floatingCircleBtn =
+    'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-white text-slate-700 shadow-lg shadow-slate-900/10 border border-slate-200 hover:bg-slate-50 active:scale-95 transition-transform'
 
   type TranscriptReviewLine = {
     id: number
@@ -207,6 +300,11 @@ function VideoPage() {
   const transcriptReviewOnCloseRef = useRef<(() => void) | null>(null)
 
   const dailyCallRef = useRef<DailyCall | null>(null)
+  const dailyTeardownRef = useRef<Promise<void>>(Promise.resolve())
+  const dailySetupGenerationRef = useRef(0)
+  const leaveInProgressRef = useRef(false)
+  const skipLeaveCleanupRef = useRef(false)
+  const runEndCallCleanupRef = useRef<() => Promise<void>>(async () => {})
   const dailyFrameContainerRef = useRef<HTMLDivElement | null>(null)
   const roleRef = useRef(role)
   const userNameRef = useRef(userName)
@@ -502,7 +600,12 @@ function VideoPage() {
           .eq('id', encounterIdNum)
           .maybeSingle()
 
-        if (!error && data?.status === 'consultation_concluded') {
+        if (
+          !error &&
+          (data?.status === 'final_review' ||
+            data?.status === 'completed' ||
+            data?.status === 'consultation_concluded')
+        ) {
           setSessionEnded(true)
           setEndMessage(
             `Doctor has concluded the consultation. Returning to virtual waiting room...`
@@ -537,9 +640,12 @@ function VideoPage() {
   useEffect(() => {
     if (!dailyJoinUrl || !isConnected) {
       const existing = dailyCallRef.current
+      dailyCallRef.current = null
       if (existing) {
-        dailyCallRef.current = null
-        void existing.destroy()
+        skipLeaveCleanupRef.current = true
+        dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
+          destroyDailyCallInstance(existing)
+        )
       }
       return
     }
@@ -547,17 +653,24 @@ function VideoPage() {
     const container = dailyFrameContainerRef.current
     if (!container) return
 
+    const setupGeneration = ++dailySetupGenerationRef.current
     let cancelled = false
+    skipLeaveCleanupRef.current = false
+    leaveInProgressRef.current = false
 
     const setup = async () => {
-      const { default: Daily } = await import('@daily-co/daily-js')
-      if (cancelled) return
+      await dailyTeardownRef.current
+      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
 
-      const prev = dailyCallRef.current
-      if (prev) {
-        dailyCallRef.current = null
-        await prev.destroy().catch(() => {})
-      }
+      const { default: Daily } = await import('@daily-co/daily-js')
+      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
+
+      await destroyDailyCallInstance(dailyCallRef.current)
+      dailyCallRef.current = null
+      await destroyOrphanDailyFrame(Daily)
+      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
+
+      container.replaceChildren()
 
       const call = Daily.createFrame(container, {
         iframeStyle: {
@@ -569,11 +682,18 @@ function VideoPage() {
           left: '0',
         },
         showLeaveButton: false,
+        showFullscreenButton: false,
         userName: userNameRef.current || undefined,
+        theme: MEMR_DAILY_THEME,
+        cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS,
+        dailyConfig: {
+          alwaysIncludeMicInPermissionPrompt: true,
+          alwaysIncludeCamInPermissionPrompt: true,
+        },
       })
 
-      if (cancelled) {
-        void call.destroy()
+      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) {
+        await destroyDailyCallInstance(call)
         return
       }
 
@@ -633,19 +753,33 @@ function VideoPage() {
       }
 
       call.on('joined-meeting', onJoinedMeeting)
+      call.on('left-meeting', () => {
+        if (cancelled || skipLeaveCleanupRef.current) return
+        void runEndCallCleanupRef.current()
+      })
       call.on('participant-joined', onParticipant)
       call.on('participant-updated', onParticipant)
       call.on('transcription-message', onTranscriptionMessage)
       call.on('app-message', onAppMessage)
       call.on('transcription-error', (ev) => console.warn('Daily transcription-error:', ev))
+      call.on('camera-error', (ev) => console.warn('Daily camera-error:', ev))
 
       try {
-        await call.join({ url: dailyJoinUrl })
+        await call.setTheme(MEMR_DAILY_THEME)
+        call.loadCss({ cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS })
+        try {
+          await call.startCamera({ startAudioOff: true, startVideoOff: true })
+        } catch (camErr) {
+          console.warn('Daily startCamera:', camErr)
+        }
+        await call.join({ url: dailyJoinUrl, theme: MEMR_DAILY_THEME })
       } catch (e) {
         console.error('Daily join failed:', e)
-        if (!cancelled) {
+        if (!cancelled && setupGeneration === dailySetupGenerationRef.current) {
           dailyCallRef.current = null
-          void call.destroy()
+          dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
+            destroyDailyCallInstance(call)
+          )
           setDailyJoinUrl(null)
           setIsConnected(false)
           setError(e instanceof Error ? e.message : 'Failed to join video call')
@@ -657,9 +791,14 @@ function VideoPage() {
 
     return () => {
       cancelled = true
+      skipLeaveCleanupRef.current = true
       const c = dailyCallRef.current
       dailyCallRef.current = null
-      if (c) void c.destroy()
+      dailyTeardownRef.current = dailyTeardownRef.current.then(async () => {
+        await destroyDailyCallInstance(c)
+        const { default: Daily } = await import('@daily-co/daily-js')
+        await destroyOrphanDailyFrame(Daily)
+      })
     }
   }, [dailyJoinUrl, isConnected, addTranscriptEntry])
 
@@ -838,39 +977,9 @@ function VideoPage() {
     setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
     setShowConnectionModal(false)
     setError(null)
+    skipLeaveCleanupRef.current = false
+    leaveInProgressRef.current = false
     setIsConnected(true)
-  }
-
-  const handleEndCall = async () => {
-    setDailyJoinUrl(null)
-    setIsConnected(false)
-    if (role === 'doctor' && encounterId && doctorId) {
-      await handleEndConsultation()
-      return
-    }
-    const encounterIdNum = encounterId ? Number(encounterId) : NaN
-    if (!encounterId || Number.isNaN(encounterIdNum)) {
-      router.push('/dashboard')
-      return
-    }
-    const items = [...transcriptBufferRef.current]
-    const ids = await flushTranscript(encounterIdNum)
-    const dest =
-      role === 'nurse'
-        ? `/dashboard/nurse-flowboard?encounter=${encounterId}`
-        : `/dashboard/flowboard?encounter=${encounterId}`
-    const go = () => router.push(dest)
-    if (items.length > 0 && ids && ids.length === items.length) {
-      await fetchAndOpenTranscriptReview(encounterIdNum, items, ids, {
-        showAiSummary: false,
-        onClose: go,
-      })
-    } else {
-      if (items.length > 0) {
-        alert('Transcript could not be saved.')
-      }
-      go()
-    }
   }
 
   const validateDoctorSoap = (): boolean => {
@@ -949,11 +1058,11 @@ function VideoPage() {
 
       setDoctorSoap({ ...soapForm })
 
-      // Move encounter to consultation_concluded
+      // Move encounter to final review (doctor wrap-up; nurse final review skipped)
       const { error: encounterError } = await supabase
         .from('encounters')
         .update({
-          status: 'consultation_concluded',
+          status: 'final_review',
           updated_at: new Date().toISOString(),
         })
         .eq('id', encounterIdNum)
@@ -964,7 +1073,7 @@ function VideoPage() {
         const profileId = await getProfileId(supabase, user.id)
         await insertStatusTimeline(supabase, {
           encounterId: encounterIdNum,
-          status: 'consultation_concluded',
+          status: 'final_review',
           profileId,
         })
       }
@@ -982,7 +1091,10 @@ function VideoPage() {
         } catch (endRoomError) {
           console.error('Failed to end Daily.co room:', endRoomError)
         }
-        router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
+        window.setTimeout(
+          () => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard'),
+          0
+        )
       }
 
       if (inlineItems.length > 0 && transcriptIds && transcriptIds.length === inlineItems.length) {
@@ -1003,6 +1115,51 @@ function VideoPage() {
       setSavingSoap(false)
     }
   }
+
+  const runEndCallCleanup = useCallback(async () => {
+    if (leaveInProgressRef.current) return
+    leaveInProgressRef.current = true
+    setDailyJoinUrl(null)
+    setIsConnected(false)
+    if (role === 'doctor' && encounterId && doctorId) {
+      await handleEndConsultation()
+      return
+    }
+    const encounterIdNum = encounterId ? Number(encounterId) : NaN
+    if (!encounterId || Number.isNaN(encounterIdNum)) {
+      window.setTimeout(() => router.push('/dashboard'), 0)
+      return
+    }
+    const items = [...transcriptBufferRef.current]
+    const ids = await flushTranscript(encounterIdNum)
+    const dest =
+      role === 'nurse'
+        ? `/dashboard/nurse-flowboard?encounter=${encounterId}`
+        : `/dashboard/flowboard?encounter=${encounterId}`
+    const go = () => window.setTimeout(() => router.push(dest), 0)
+    if (items.length > 0 && ids && ids.length === items.length) {
+      await fetchAndOpenTranscriptReview(encounterIdNum, items, ids, {
+        showAiSummary: false,
+        onClose: go,
+      })
+    } else {
+      if (items.length > 0) {
+        alert('Transcript could not be saved.')
+      }
+      go()
+    }
+  }, [role, encounterId, doctorId, router])
+
+  runEndCallCleanupRef.current = runEndCallCleanup
+
+  const handleEndCall = useCallback(async () => {
+    const call = dailyCallRef.current
+    if (call?.meetingState() === 'joined-meeting') {
+      await call.leave().catch(() => {})
+      return
+    }
+    await runEndCallCleanup()
+  }, [runEndCallCleanup])
 
   const getAiSectionText = (section: 'subjective' | 'objective' | 'assessment' | 'plan'): string => {
     if (!soapNotes) return ''
@@ -1032,8 +1189,8 @@ function VideoPage() {
 
   if (!encounterId && !authLoading && user) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-24">
-        <div className="text-red-500 mb-4 text-center max-w-md">
+      <div className="flex min-h-[100dvh] flex-col items-center justify-center p-6 sm:p-12">
+        <div className="text-red-500 mb-4 text-center max-w-md px-4">
           Encounter ID is required. Please join from the virtual waiting room.
         </div>
         <button
@@ -1074,7 +1231,7 @@ function VideoPage() {
   const roleLabel = role === 'doctor' ? 'Doctor' : role === 'nurse' ? 'Nurse' : 'Staff'
 
   return (
-    <div className="flex flex-col h-[100dvh] overflow-hidden bg-black">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#EEF4FF]">
       {/* Connection Modal */}
       <TelemedicineConnectionModal
         isOpen={showConnectionModal && !isLoading && !!roomToken}
@@ -1376,153 +1533,150 @@ function VideoPage() {
         </div>
       )}
 
-      {/* Top fixed header */}
-      <header className="sticky top-0 z-50 flex-shrink-0 min-h-14 bg-gray-900/95 backdrop-blur-sm border-b border-gray-800 flex flex-wrap items-center gap-2 px-2 sm:px-4 py-2 sm:py-0 sm:h-14 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <button
-          onClick={() => {
-            const dest =
-              role === 'nurse'
-                ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
-                : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
-            router.push(dest)
-          }}
-          className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium transition-colors shrink-0"
-        >
-          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          <span className="hidden sm:inline">Back to virtual waiting room</span>
-          <span className="sm:hidden">Back</span>
-        </button>
-        <span className="text-gray-400 text-xs sm:text-sm font-medium truncate min-w-0 flex-1 sm:flex-none sm:max-w-[12rem] md:max-w-none">
-          {patient ? `${patient.first_name} ${patient.last_name}` : 'Telemedicine Session'}
-        </span>
-
-        {/* Patient link: copy room URL for sharing with patient */}
-        {roomUrl && (
-          <button
-            title="Copy patient join link"
-            onClick={() => {
-              navigator.clipboard.writeText(roomUrl).then(() => alert('Patient link copied!')).catch(() => {})
-            }}
-            className="flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-lg bg-teal-700 hover:bg-teal-600 text-white text-xs font-medium transition-colors shrink-0"
-          >
-            <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-            </svg>
-            <span className="hidden sm:inline">Copy Patient Link</span>
-          </button>
-        )}
-
+      <div className="relative flex flex-1 min-h-0 overflow-hidden lg:flex-row">
         <button
           type="button"
-          onClick={() => setMobileDetailsOpen(true)}
-          className="lg:hidden flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 text-white text-xs font-medium transition-colors shrink-0"
-        >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-          </svg>
-          Details
-        </button>
+          aria-label="Close patient details"
+          aria-hidden={!mobileDetailsOpen}
+          tabIndex={mobileDetailsOpen ? 0 : -1}
+          className={`lg:hidden fixed inset-0 z-30 bg-slate-900/40 backdrop-blur-[2px] transition-opacity duration-300 ease-in-out ${
+            mobileDetailsOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+          onClick={() => setMobileDetailsOpen(false)}
+        />
 
-        {transcriptCount > 0 && (
-          <span className="text-xs text-gray-500 hidden md:block">
-            {transcriptCount} transcript {transcriptCount === 1 ? 'entry' : 'entries'}
-          </span>
-        )}
-
-        {isConnected && (
-          <button
-            onClick={handleEndCall}
-            className="sm:ml-auto px-3 sm:px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-medium flex items-center gap-1.5 shrink-0"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            End Call
-          </button>
-        )}
-      </header>
-
-      <div className="relative flex flex-1 min-h-0 overflow-hidden lg:flex-row">
-        {/* Mobile backdrop for patient details sheet */}
-        {mobileDetailsOpen && (
-          <button
-            type="button"
-            aria-label="Close patient details"
-            className="lg:hidden fixed inset-0 z-30 bg-black/60 backdrop-blur-[1px]"
-            onClick={() => setMobileDetailsOpen(false)}
-          />
-        )}
-
-        {/* Video: Daily.co frame */}
-        <div className="flex-1 bg-black flex items-center justify-center relative min-h-0 w-full min-w-0">
+        {/* Video — Daily.co full bleed with floating controls */}
+        <div className="relative flex-1 min-h-0 w-full min-w-0 bg-[#EEF4FF]">
           {isLoading && (
-            <div className="flex flex-col items-center justify-center h-full px-4">
+            <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-[#EEF4FF] px-4">
               <LoadingSpinner message="Loading video call..." />
             </div>
           )}
           {!isLoading && !isConnected && !showConnectionModal && (
-            <div className="flex flex-col items-center justify-center h-full text-white px-4 text-center">
-              <p className="text-base sm:text-lg mb-4">Preparing video call...</p>
+            <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-[#EEF4FF] px-4 text-center">
+              <p className="text-base sm:text-lg text-slate-700">Preparing video call...</p>
             </div>
           )}
           {isConnected && dailyJoinUrl && (
             <div
               ref={dailyFrameContainerRef}
-              className="absolute inset-0 w-full h-full touch-none"
+              className="absolute inset-0 z-0 h-full w-full pb-[env(safe-area-inset-bottom)] [&_iframe]:!absolute [&_iframe]:!inset-0 [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
             />
           )}
+
+          {/* MEMR header — pointer events only on buttons so Daily tray stays clickable */}
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+            <div className="mx-auto grid w-full max-w-3xl grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 lg:grid-cols-[2.75rem_minmax(0,1fr)_auto]">
+              <button
+                type="button"
+                onClick={() => void goToWaitingRoom()}
+                className={`${floatingCircleBtn} pointer-events-auto`}
+                aria-label="Back to virtual waiting room"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <div className="min-w-0 justify-self-center px-1">
+                <div className="mx-auto w-full max-w-xs rounded-full border border-slate-200 bg-white px-4 py-2 text-center shadow-lg shadow-slate-900/10">
+                  <p className="truncate text-sm font-semibold text-slate-900">{patientDisplayName}</p>
+                  <p className="truncate text-[11px] text-slate-500">
+                    {isConnected ? (
+                      <span className="inline-flex items-center justify-center gap-1.5">
+                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" aria-hidden />
+                        {callElapsed}
+                        <span aria-hidden>·</span>
+                        {appointmentPillLabel}
+                      </span>
+                    ) : (
+                      appointmentPillLabel
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMobileDetailsOpen(true)}
+                  className={`${floatingCircleBtn} pointer-events-auto lg:hidden ${mobileDetailsOpen ? 'ring-2 ring-[#2E6EF3] text-[#2E6EF3]' : ''}`}
+                  aria-label="Open patient details"
+                  aria-expanded={mobileDetailsOpen}
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </button>
+
+                {isConnected && (
+                  <button
+                    type="button"
+                    onClick={() => void handleEndCall()}
+                    className="pointer-events-auto hidden h-11 w-11 shrink-0 items-center justify-center rounded-full bg-red-500 text-white shadow-lg shadow-red-900/25 hover:bg-red-600 active:scale-95 transition-transform lg:flex"
+                    aria-label="End call"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.077a1 1 0 00-1.11.717l-1.08 3.247a11.042 11.042 0 01-5.516-5.517l3.247-1.08a1 1 0 00.717-1.11l-1.077-4.493A1 1 0 0017 8.72V5a2 2 0 00-2-2H5z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
         </div>
 
-        {/* Patient details — desktop sidebar / mobile bottom sheet */}
+        {/* Patient details — full-screen mobile drawer / desktop sidebar */}
         <aside
-          className={`bg-gray-900 border-gray-800 text-white flex flex-col overflow-hidden w-full max-w-md
-            fixed inset-x-0 bottom-0 z-40 max-h-[min(85dvh,720px)] rounded-t-2xl border-t shadow-2xl
-            transition-transform duration-300 ease-out
-            ${mobileDetailsOpen ? 'translate-y-0' : 'translate-y-full pointer-events-none'}
-            lg:pointer-events-auto lg:static lg:inset-auto lg:translate-y-0 lg:rounded-none lg:border-t-0 lg:border-l lg:max-h-none lg:shadow-none lg:flex-shrink-0`}
+          className={`flex min-h-0 w-full flex-col overflow-hidden bg-[#f5f7fb] text-slate-900
+            fixed inset-0 z-40
+            transition-transform duration-300 ease-in-out will-change-transform
+            ${mobileDetailsOpen ? 'translate-x-0' : 'translate-x-full pointer-events-none'}
+            lg:pointer-events-auto lg:static lg:inset-auto lg:w-[22rem] lg:min-w-[22rem] lg:max-w-[22rem] lg:flex-shrink-0 lg:translate-x-0 lg:border-l lg:border-slate-200 lg:shadow-none xl:w-[24rem] xl:min-w-[24rem] xl:max-w-[24rem]`}
         >
-          <div className="lg:hidden flex justify-center pt-2 pb-1 flex-shrink-0">
-            <div className="w-10 h-1 rounded-full bg-gray-600" aria-hidden />
-          </div>
-          <div className="px-4 py-3 border-b border-gray-800 flex-shrink-0">
+          <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-base font-semibold">Patient Details</h2>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">Patient details</h2>
+                {encounter && (
+                  <p className="mt-0.5 truncate text-xs text-slate-500">
+                    {getStatusInfo(encounter.status as EncounterStatus)?.label || encounter.status}
+                    {encounter.encounter_code && ` · ${encounter.encounter_code}`}
+                  </p>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {isConnected && (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
                     Live
                   </span>
                 )}
                 <button
                   type="button"
                   onClick={() => setMobileDetailsOpen(false)}
-                  className="lg:hidden p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-white/10"
+                  className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden"
                   aria-label="Close patient details"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
               </div>
             </div>
-            {encounter && (
-              <span className="text-xs text-gray-500 block mt-0.5">
-                {getStatusInfo(encounter.status as any)?.label || encounter.status}
-                {encounter.encounter_code && ` · ${encounter.encounter_code}`}
-              </span>
-            )}
           </div>
           {!detailsLoading && (
-            <div className="flex border-b border-gray-800 flex-shrink-0 overflow-x-auto">
+            <div className="grid shrink-0 grid-cols-4 border-b border-slate-200 bg-white">
               {(['patient', 'intake', 'vitals', 'soap'] as const).map((tab) => (
                 <button
                   key={tab}
+                  type="button"
                   onClick={() => setDetailsTab(tab)}
-                  className={`flex-shrink-0 px-3 py-2.5 text-xs font-medium capitalize transition-colors min-h-[44px] ${
-                    detailsTab === tab ? 'text-white border-b-2 border-blue-500 bg-white/5' : 'text-gray-400 hover:text-white'
+                  className={`min-h-[44px] px-1 py-2.5 text-center text-xs font-semibold capitalize transition-colors ${
+                    detailsTab === tab
+                      ? 'border-b-2 border-[#2E6EF3] bg-[#EEF4FF] text-[#2E6EF3]'
+                      : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
                   {tab === 'soap' ? 'SOAP' : tab}
@@ -1530,50 +1684,50 @@ function VideoPage() {
               ))}
             </div>
           )}
-          <div className="flex-1 overflow-auto overscroll-contain p-4 text-sm pb-[max(1rem,env(safe-area-inset-bottom))]">
+          <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-4 text-sm pb-[max(1rem,env(safe-area-inset-bottom))]">
             {detailsLoading ? (
               <LoadingSpinner message="Loading details..." size="sm" />
             ) : (
               <>
                 {detailsTab === 'patient' && (
                   <div className="space-y-4">
-                    <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                      <p className="text-blue-300 font-semibold mb-3">Patient information</p>
+                    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <p className="mb-3 font-semibold text-[#2E6EF3]">Patient information</p>
                       {patient ? (
-                        <div className="space-y-2.5 text-gray-300 text-sm">
+                        <div className="space-y-2.5 text-sm text-slate-600">
                           <div>
-                            <p className="text-gray-500 text-xs uppercase tracking-wide">Name</p>
-                            <p className="text-white font-medium">
+                            <p className="text-xs uppercase tracking-wide text-slate-400">Name</p>
+                            <p className="font-medium text-slate-900">
                               {patient.first_name} {patient.last_name}
                             </p>
                           </div>
-                          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                          <div className="grid grid-cols-1 gap-2.5">
                             <div>
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Patient code</p>
-                              <p className="font-mono text-gray-200">{patient.patient_code || '—'}</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Patient code</p>
+                              <p className="font-mono text-slate-800">{patient.patient_code || '—'}</p>
                             </div>
                             <div>
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Age</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Age</p>
                               <p>{calculateAge(patient.date_of_birth)}</p>
                             </div>
                             <div>
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Date of birth</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Date of birth</p>
                               <p>{formatDate(patient.date_of_birth)}</p>
                             </div>
                             <div>
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Gender</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Gender</p>
                               <p>{patient.gender || '—'}</p>
                             </div>
                             <div className="sm:col-span-2">
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Email</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Email</p>
                               <p className="break-all">{patient.email || '—'}</p>
                             </div>
                             <div>
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Phone</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Phone</p>
                               <p>{patient.phone || '—'}</p>
                             </div>
                             <div className="sm:col-span-2">
-                              <p className="text-gray-500 text-xs uppercase tracking-wide">Address</p>
+                              <p className="text-xs uppercase tracking-wide text-slate-400">Address</p>
                               <p>
                                 {[patient.street_address, patient.state, patient.zip_code].filter(Boolean).length > 0
                                   ? [patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')
@@ -1583,7 +1737,7 @@ function VideoPage() {
                           </div>
                         </div>
                       ) : (
-                        <p className="text-gray-400 text-sm">
+                        <p className="text-sm text-slate-500">
                           Could not load patient demographics (check patient link on encounter/appointment or access
                           permissions).
                         </p>
@@ -1598,19 +1752,19 @@ function VideoPage() {
                     )}
 
                     {appointment && (
-                      <div className="rounded-xl border border-gray-700 bg-gray-800/50 p-4">
-                        <p className="text-blue-300 font-semibold mb-3">Appointment</p>
-                        <div className="space-y-2 text-gray-300 text-sm">
+                      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                        <p className="mb-3 font-semibold text-[#2E6EF3]">Appointment</p>
+                        <div className="space-y-2 text-sm text-slate-600">
                           <p>
-                            <span className="text-gray-500">Date: </span>
+                            <span className="text-slate-400">Date: </span>
                             {formatDate(appointment.appointment_date)}
                           </p>
                           <p>
-                            <span className="text-gray-500">Time: </span>
+                            <span className="text-slate-400">Time: </span>
                             {appointment.appointment_time || '—'}
                           </p>
                           <p>
-                            <span className="text-gray-500">Type: </span>
+                            <span className="text-slate-400">Type: </span>
                             {appointment.onsite_type || '—'}
                           </p>
                         </div>
@@ -1619,7 +1773,7 @@ function VideoPage() {
                   </div>
                 )}
                 {detailsTab === 'intake' && (
-                  <div className="space-y-1 text-gray-300">
+                  <div className="space-y-1 text-slate-600">
                     {intake ? (
                       <>
                         <p>Chief Complaint: {intake.chief_complaint || 'N/A'}</p>
@@ -1639,12 +1793,12 @@ function VideoPage() {
                         <p>Tobacco: {intake.tobacco_use ? 'Yes' : 'No'} | Alcohol: {intake.alcohol_use ? 'Yes' : 'No'} | Drugs: {intake.drug_use ? 'Yes' : 'No'}</p>
                       </>
                     ) : (
-                      <p className="text-gray-400">Intake not available</p>
+                      <p className="text-slate-500">Intake not available</p>
                     )}
                   </div>
                 )}
                 {detailsTab === 'vitals' && (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-gray-300">
+                  <div className="grid grid-cols-1 gap-2 text-slate-600">
                     {vitals ? (
                       <>
                         <p>BP: {vitals.bp_systolic && vitals.bp_diastolic ? `${vitals.bp_systolic}/${vitals.bp_diastolic}` : 'N/A'}</p>
@@ -1658,7 +1812,7 @@ function VideoPage() {
                         {vitals.notes && <p className="col-span-2">Notes: {vitals.notes}</p>}
                       </>
                     ) : (
-                      <p className="text-gray-400 col-span-2">Not recorded</p>
+                      <p className="col-span-2 text-slate-500">Not recorded</p>
                     )}
                   </div>
                 )}
@@ -1667,7 +1821,7 @@ function VideoPage() {
                     {role === 'doctor' && doctorId ? (
                       <>
                         <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
-                          <p className="text-cyan-200 text-xs flex-1 min-w-[12rem]">
+                          <p className="mb-2 flex-1 min-w-[12rem] text-xs text-slate-500">
                             Add your SOAP note. Placeholders show AI suggestions.
                           </p>
                           <button
@@ -1675,57 +1829,57 @@ function VideoPage() {
                             onClick={handleCopyAllFromAi}
                             disabled={!soapNotes}
                             title={soapNotes ? 'Copy AI suggestions into all fields so you can edit and save' : 'AI SOAP not loaded yet'}
-                            className="shrink-0 py-1 px-2.5 rounded-md text-xs font-medium bg-cyan-900/50 text-cyan-200 border border-cyan-700/50 hover:bg-cyan-800/60 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                            className="shrink-0 rounded-lg border border-[#2E6EF3]/20 bg-[#EEF4FF] px-2.5 py-1 text-xs font-medium text-[#2E6EF3] hover:bg-[#DCE8FD] disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                           >
                             Copy from AI
                           </button>
                         </div>
                         <div>
-                          <label className="text-cyan-200 text-xs font-medium block mb-1">Subjective</label>
+                          <label className="mb-1 block text-xs font-medium text-[#2E6EF3]">Subjective</label>
                           <textarea
                             value={soapForm.subjective_text ?? ''}
                             onChange={(e) => setSoapForm((f) => ({ ...f, subjective_text: e.target.value }))}
                             placeholder={aiPlaceholder('subjective')}
                             rows={3}
-                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="min-h-[5rem] w-full rounded-xl border border-slate-200 bg-white p-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#2E6EF3] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/20 sm:text-sm"
                           />
                         </div>
                         <div>
-                          <label className="text-cyan-200 text-xs font-medium block mb-1">Objective</label>
+                          <label className="mb-1 block text-xs font-medium text-[#2E6EF3]">Objective</label>
                           <textarea
                             value={soapForm.objective_text ?? ''}
                             onChange={(e) => setSoapForm((f) => ({ ...f, objective_text: e.target.value }))}
                             placeholder={aiPlaceholder('objective')}
                             rows={3}
-                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="min-h-[5rem] w-full rounded-xl border border-slate-200 bg-white p-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#2E6EF3] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/20 sm:text-sm"
                           />
                         </div>
                         <div>
-                          <label className="text-cyan-200 text-xs font-medium block mb-1">Assessment</label>
+                          <label className="mb-1 block text-xs font-medium text-[#2E6EF3]">Assessment</label>
                           <textarea
                             value={soapForm.assessment_text ?? ''}
                             onChange={(e) => setSoapForm((f) => ({ ...f, assessment_text: e.target.value }))}
                             placeholder={aiPlaceholder('assessment')}
                             rows={3}
-                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="min-h-[5rem] w-full rounded-xl border border-slate-200 bg-white p-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#2E6EF3] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/20 sm:text-sm"
                           />
                         </div>
                         <div>
-                          <label className="text-cyan-200 text-xs font-medium block mb-1">Plan</label>
+                          <label className="mb-1 block text-xs font-medium text-[#2E6EF3]">Plan</label>
                           <textarea
                             value={soapForm.plan_text ?? ''}
                             onChange={(e) => setSoapForm((f) => ({ ...f, plan_text: e.target.value }))}
                             placeholder={aiPlaceholder('plan')}
                             rows={3}
-                            className="w-full bg-white/5 border border-white/10 rounded p-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                            className="min-h-[5rem] w-full rounded-xl border border-slate-200 bg-white p-2 text-base text-slate-900 placeholder:text-slate-400 focus:border-[#2E6EF3] focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/20 sm:text-sm"
                           />
                         </div>
-                        <div className="flex flex-col sm:flex-row gap-2 pt-2">
+                        <div className="flex flex-col gap-2 pt-2 sm:flex-row">
                           <button
                             type="button"
                             onClick={handleSaveDoctorSoap}
                             disabled={savingSoap}
-                            className="flex-1 py-2 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 rounded-xl bg-[#2E6EF3] py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-[#256ae8] disabled:opacity-50"
                           >
                             {savingSoap ? 'Saving...' : 'Save SOAP Note'}
                           </button>
@@ -1733,43 +1887,43 @@ function VideoPage() {
                             type="button"
                             onClick={handleEndConsultation}
                             disabled={savingSoap}
-                            className="flex-1 py-2 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+                            className="flex-1 rounded-xl bg-emerald-600 py-2 px-4 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
                           >
                             {savingSoap ? 'Ending...' : 'End Consultation'}
                           </button>
                         </div>
                       </>
                     ) : (
-                      <div className="space-y-3 text-gray-300">
+                      <div className="space-y-3 text-slate-600">
                         {(doctorSoap || soapNotes) ? (
                           <>
                             <div>
-                              <p className="text-cyan-200 text-xs font-medium mb-1">Subjective</p>
-                              <p className="bg-white/5 p-2 rounded text-xs">
+                              <p className="mb-1 text-xs font-medium text-[#2E6EF3]">Subjective</p>
+                              <p className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700">
                                 {(doctorSoap?.subjective_text && doctorSoap.subjective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.subjective_text, 'subjective') || 'Will be updated.')) || 'Not available yet'}
                               </p>
                             </div>
                             <div>
-                              <p className="text-cyan-200 text-xs font-medium mb-1">Objective</p>
-                              <p className="bg-white/5 p-2 rounded text-xs">
+                              <p className="mb-1 text-xs font-medium text-[#2E6EF3]">Objective</p>
+                              <p className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700">
                                 {(doctorSoap?.objective_text && doctorSoap.objective_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.objective_text, 'objective') || 'Will be updated.')) || 'Not available yet'}
                               </p>
                             </div>
                             <div>
-                              <p className="text-cyan-200 text-xs font-medium mb-1">Assessment</p>
-                              <p className="bg-white/5 p-2 rounded text-xs">
+                              <p className="mb-1 text-xs font-medium text-[#2E6EF3]">Assessment</p>
+                              <p className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700">
                                 {(doctorSoap?.assessment_text && doctorSoap.assessment_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.assessment_text, 'assessment') || 'Will be updated.')) || 'Not available yet'}
                               </p>
                             </div>
                             <div>
-                              <p className="text-cyan-200 text-xs font-medium mb-1">Plan</p>
-                              <p className="bg-white/5 p-2 rounded text-xs">
+                              <p className="mb-1 text-xs font-medium text-[#2E6EF3]">Plan</p>
+                              <p className="rounded-xl border border-slate-200 bg-white p-2 text-xs text-slate-700">
                                 {(doctorSoap?.plan_text && doctorSoap.plan_text.trim()) || (soapNotes && (cleanSoapSection(soapNotes.plan_text, 'plan') || 'Will be updated.')) || 'Not available yet'}
                               </p>
                             </div>
                           </>
                         ) : (
-                          <p className="text-gray-400">SOAP notes not available yet</p>
+                          <p className="text-slate-500">SOAP notes not available yet</p>
                         )}
                       </div>
                     )}
@@ -1778,45 +1932,28 @@ function VideoPage() {
               </>
             )}
           </div>
-          <div className="px-4 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
+          <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 border-t border-slate-200 bg-white px-4 py-3">
             <button
-              onClick={() => {
-                const dest = role === 'nurse'
-                  ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
-                  : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
-                router.push(dest)
-              }}
-              className="text-sm text-blue-400 hover:text-blue-300"
+              type="button"
+              onClick={goToWaitingRoom}
+              className="min-w-0 truncate text-sm font-medium text-[#2E6EF3] hover:text-[#256ae8]"
             >
-              ← Back to virtual waiting room
+              ← Back to waiting room
             </button>
             {roomUrl && (
               <button
+                type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(roomUrl).catch(() => {})
                 }}
                 title="Copy patient join link"
-                className="text-xs text-teal-400 hover:text-teal-300"
+                className="shrink-0 text-xs font-medium text-teal-600 hover:text-teal-700"
               >
                 Copy patient link
               </button>
             )}
           </div>
         </aside>
-
-        {/* Mobile FAB — open patient details while on call */}
-        {!mobileDetailsOpen && isConnected && (
-          <button
-            type="button"
-            onClick={() => setMobileDetailsOpen(true)}
-            className="lg:hidden fixed right-4 z-20 flex items-center gap-2 px-4 py-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium shadow-lg shadow-black/40 bottom-[max(1rem,env(safe-area-inset-bottom))]"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
-            Patient
-          </button>
-        )}
       </div>
     </div>
   )

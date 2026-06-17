@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
-import { UnderDevelopmentModal } from '@/components/UnderDevelopmentModal'
 import {
   canJoinTelemedicine,
   getStatusInfo,
@@ -143,7 +142,6 @@ function NurseFlowboardPage() {
   } | null>(null)
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
-  const [showFinalReviewDevNotice, setShowFinalReviewDevNotice] = useState(false)
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
@@ -735,18 +733,6 @@ function NurseFlowboardPage() {
                     {t('flow.vitals')}
                   </button>
                 )}
-                {appointment.encounter_status === 'consultation_concluded' && appointment.encounter_id && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowFinalReviewDevNotice(true)
-                    }}
-                    className="px-2 py-1 bg-cyan-600 text-white rounded-lg text-[10px] font-semibold hover:bg-cyan-700 transition-colors"
-                  >
-                    {t('flow.final_review')}
-                  </button>
-                )}
               </>
             )}
           />
@@ -908,18 +894,6 @@ function NurseFlowboardPage() {
                         {t('flow.vitals')}
                       </button>
                     )}
-                    {appointment.encounter_status === 'consultation_concluded' &&
-                      appointment.encounter_id && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setShowFinalReviewDevNotice(true)
-                        }}
-                        className="px-3 py-1.5 bg-cyan-600 text-white rounded-lg text-xs font-semibold hover:bg-cyan-700 transition-colors"
-                      >
-                        {t('flow.final_review')}
-                      </button>
-                    )}
                     {availableDoctors.length === 0 && !appointment.assigned_doctor && (
                       <span className="text-red-500 text-xs font-medium">{t('flow.no_providers')}</span>
                     )}
@@ -1007,12 +981,6 @@ function NurseFlowboardPage() {
           canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
         )}
-
-        <UnderDevelopmentModal
-          isOpen={showFinalReviewDevNotice}
-          onClose={() => setShowFinalReviewDevNotice(false)}
-        />
-
         {role === UserRole.NURSE && (
           <NurseAddEncounterModal
             isOpen={showAddVisitModal}

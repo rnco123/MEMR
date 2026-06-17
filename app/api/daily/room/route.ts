@@ -116,6 +116,7 @@ export async function POST(request: NextRequest) {
         enable_screenshare: true,
         enable_chat: true,
         enable_knocking: true,
+        enable_prejoin_ui: false,
         start_video_off: true,
         start_audio_off: true,
         enable_transcription: true,
@@ -186,7 +187,10 @@ export async function POST(request: NextRequest) {
         (roomData.config && roomData.config.properties) ||
         roomData.properties ||
         {}
-      if (existingProps.enable_transcription !== true) {
+      const needsConfigPatch =
+        existingProps.enable_transcription !== true ||
+        existingProps.enable_prejoin_ui !== false
+      if (needsConfigPatch) {
         const patchRes = await fetch(
           `https://api.daily.co/v1/rooms/${encodeURIComponent(roomNameToUse)}`,
           {
@@ -201,6 +205,7 @@ export async function POST(request: NextRequest) {
                 enable_screenshare: true,
                 enable_chat: true,
                 enable_knocking: true,
+                enable_prejoin_ui: false,
                 start_video_off: true,
                 start_audio_off: true,
                 enable_transcription: true,

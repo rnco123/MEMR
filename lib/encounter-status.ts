@@ -60,7 +60,7 @@ export const ENCOUNTER_STATUSES: {
   {
     value: 'final_review',
     label: 'Final Review',
-    description: "During the nurse's post-visit check and wrap-up",
+    description: "Doctor's post-visit wrap-up before completion",
     step: 6,
     color: 'bg-teal-400',
     icon: '📝',

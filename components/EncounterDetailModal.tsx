@@ -21,6 +21,7 @@ import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
 import { EncounterSoapPanel } from './EncounterSoapPanel'
 import { EncounterPatientInfoPanel } from './EncounterPatientInfoPanel'
 import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-doctor-soap'
+import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 
 function patientAgeFromDob(dob: string | null): number | null {
@@ -175,6 +176,8 @@ interface EncounterDetailModalProps {
   onJoinTelemedicine?: () => void
   /** Show Join Telemedicine button only when vitals_assessed or later (doctor + nurse can join) */
   canJoinTelemedicine?: boolean
+  /** Called after the doctor completes the encounter so the parent can refresh flowboard data. */
+  onEncounterStatusChange?: (status: string) => void
 }
 
 export function EncounterDetailModal({
@@ -185,6 +188,7 @@ export function EncounterDetailModal({
   onClose,
   onJoinTelemedicine,
   canJoinTelemedicine = false,
+  onEncounterStatusChange,
 }: EncounterDetailModalProps) {
   const { t, language } = useT()
   const { role } = useAuth()
@@ -219,6 +223,7 @@ export function EncounterDetailModal({
   const [icdLoading, setIcdLoading] = useState(false)
   const [icdMessage, setIcdMessage] = useState<string | null>(null)
   const [modalTab, setModalTab] = useState<'details' | 'forms'>('details')
+  const [completingEncounter, setCompletingEncounter] = useState(false)
 
   const showI693Form = useMemo(() => {
     if (!encounter) return false
@@ -440,8 +445,36 @@ export function EncounterDetailModal({
   const canEditSoap = useMemo(() => {
     if (!encounter) return false
     if (!canEditSoapByRole(role)) return false
-    return canEditEncounterSoap(encounter.status)
+    return canEditEncounterSoap(encounter.status, role)
   }, [encounter, role])
+
+  const canCompleteEncounter = useMemo(() => {
+    if (!encounter) return false
+    return (role === 'doctor' || role === 'admin') && canDoctorCompleteEncounter(encounter.status)
+  }, [encounter, role])
+
+  const handleCompleteEncounter = useCallback(async () => {
+    if (!canCompleteEncounter || completingEncounter) return
+    if (!window.confirm(t('encounter_modal.complete_confirm'))) return
+
+    setCompletingEncounter(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/complete`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || t('encounter_modal.complete_failed'))
+
+      setEncounter((prev) => (prev ? { ...prev, status: 'completed' } : prev))
+      onEncounterStatusChange?.('completed')
+    } catch (error) {
+      console.error('Error completing encounter:', error)
+      alert(error instanceof Error ? error.message : t('encounter_modal.complete_failed'))
+    } finally {
+      setCompletingEncounter(false)
+    }
+  }, [canCompleteEncounter, completingEncounter, encounterId, onEncounterStatusChange, t])
 
   const canEditPatientInfo = canEditSoap
 
@@ -662,6 +695,16 @@ export function EncounterDetailModal({
               >
                 {t('i693.open_form')}
               </Link>
+            )}
+            {canCompleteEncounter && (
+              <button
+                type="button"
+                onClick={() => void handleCompleteEncounter()}
+                disabled={completingEncounter}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {completingEncounter ? t('encounter_modal.completing') : t('encounter_modal.complete_encounter')}
+              </button>
             )}
             {onJoinTelemedicine && canJoinTelemedicine && (
               <button

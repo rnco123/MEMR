@@ -39,8 +39,11 @@ export function canEditPatientInfoByRole(role: string | null | undefined): boole
   return canEditSoapByRole(role)
 }
 
-export function canEditEncounterPatientInfo(status: string | null | undefined): boolean {
-  return canEditEncounterSoap(status)
+export function canEditEncounterPatientInfo(
+  status: string | null | undefined,
+  role?: string | null
+): boolean {
+  return canEditEncounterSoap(status, role)
 }
 
 export function assertPatientInfoViewerRole(role: string | null | undefined): void {
@@ -141,7 +144,11 @@ export async function loadPatientForEncounterViaAppointment(
   }
 }
 
-export async function loadEncounterPatientInfoContext(admin: SupabaseClient, encounterId: number) {
+export async function loadEncounterPatientInfoContext(
+  admin: SupabaseClient,
+  encounterId: number,
+  role?: string | null
+) {
   const { patient, encounterStatus } = await loadPatientForEncounterViaAppointment(admin, encounterId)
 
   const { data: lastAudit, error: auditErr } = await admin
@@ -157,7 +164,7 @@ export async function loadEncounterPatientInfoContext(admin: SupabaseClient, enc
   return {
     patient,
     last_audit: (lastAudit as PatientInfoAuditSummary) ?? null,
-    editable: canEditEncounterPatientInfo(encounterStatus),
+    editable: canEditEncounterPatientInfo(encounterStatus, role),
   }
 }
 
@@ -171,7 +178,7 @@ export async function saveEncounterPatientInfo(
     payload: PatientInfoUpdatePayload
   }
 ) {
-  const ctx = await loadEncounterPatientInfoContext(admin, args.encounterId)
+  const ctx = await loadEncounterPatientInfoContext(admin, args.encounterId, args.role)
   if (!ctx.editable) {
     throw new ValidationError('Patient information cannot be changed after the encounter is completed')
   }

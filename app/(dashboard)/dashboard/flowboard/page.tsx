@@ -770,6 +770,17 @@ function FlowboardPage() {
             router.push(`/video?encounter=${selectedEncounter.encounterId}`)
           }}
           canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
+          onEncounterStatusChange={(status) => {
+            setSelectedEncounter((prev) => (prev ? { ...prev, encounterStatus: status } : prev))
+            setAppointments((prev) =>
+              prev.map((appt) =>
+                appt.encounter_id === selectedEncounter.encounterId
+                  ? { ...appt, encounter_status: status }
+                  : appt
+              )
+            )
+            void fetchAssignedAppointments(false)
+          }}
         />
       )}
     </div>

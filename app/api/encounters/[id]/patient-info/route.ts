@@ -58,7 +58,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId)
-    const ctx = await loadEncounterPatientInfoContext(admin, encounterId)
+    const ctx = await loadEncounterPatientInfoContext(admin, encounterId, roleInfo?.role)
 
     return NextResponse.json({
       patient: ctx.patient,

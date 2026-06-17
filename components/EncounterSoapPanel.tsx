@@ -295,8 +295,10 @@ export function EncounterSoapPanel({
             {lastAudit ? (
               <p className="text-xs text-violet-700 mt-2 font-medium">{formatAudit(lastAudit)}</p>
             ) : null}
-            {isCompleted ? (
+            {isCompleted && !editable ? (
               <p className="text-xs text-amber-700 mt-2 font-medium">{t('encounter_modal.soap_locked_completed')}</p>
+            ) : isCompleted && editable ? (
+              <p className="text-xs text-emerald-700 mt-2">{t('encounter_modal.soap_editable_doctor_after_completed')}</p>
             ) : editable ? (
               <p className="text-xs text-emerald-700 mt-2">{t('encounter_modal.soap_editable_until_completed')}</p>
             ) : null}

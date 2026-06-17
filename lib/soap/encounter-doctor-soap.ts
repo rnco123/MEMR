@@ -22,10 +22,20 @@ export type SoapAuditSummary = {
 const SOAP_EDITABLE_UNTIL = 'completed'
 const SOAP_EDITOR_ROLES = new Set(['doctor', 'nurse', 'staff'])
 
-/** Doctor/nurse SOAP edits are allowed for every encounter status except completed. */
-export function canEditEncounterSoap(status: string | null | undefined): boolean {
+/**
+ * SOAP edit rules:
+ * - Before completed: doctor, nurse, and staff may edit.
+ * - After completed: only the doctor may edit.
+ */
+export function canEditEncounterSoap(
+  status: string | null | undefined,
+  role?: string | null
+): boolean {
   if (!status) return false
-  return status !== SOAP_EDITABLE_UNTIL
+  if (status === SOAP_EDITABLE_UNTIL) {
+    return role === 'doctor'
+  }
+  return true
 }
 
 export function canEditSoapByRole(role: string | null | undefined): boolean {
@@ -64,7 +74,8 @@ export async function resolveEncounterDoctorId(
 export async function loadEncounterSoapContext(
   admin: SupabaseClient,
   encounterId: number,
-  appointmentId?: number | null
+  appointmentId?: number | null,
+  role?: string | null
 ) {
   const { data: encounter, error: encErr } = await admin
     .from('encounters')
@@ -122,7 +133,7 @@ export async function loadEncounterSoapContext(
     ai_soap: aiSoap,
     doctor_soap: doctorSoap,
     last_audit: (lastAudit as SoapAuditSummary) ?? null,
-    editable: canEditEncounterSoap(encounter.status as string),
+    editable: canEditEncounterSoap(encounter.status as string, role),
   }
 }
 
@@ -146,8 +157,8 @@ export async function saveDoctorSoapNote(
     seededFromAi: boolean
   }
 ) {
-  const ctx = await loadEncounterSoapContext(admin, args.encounterId)
-  if (!ctx.editable) {
+  const ctx = await loadEncounterSoapContext(admin, args.encounterId, undefined, args.role)
+  if (!canEditEncounterSoap(ctx.encounter.status as string, args.role)) {
     throw new ValidationError('SOAP notes cannot be changed after the encounter is completed')
   }
 

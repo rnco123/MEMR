@@ -39,7 +39,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId)
-    const ctx = await loadEncounterSoapContext(admin, encounterId)
+    const ctx = await loadEncounterSoapContext(admin, encounterId, undefined, roleInfo?.role)
 
     return NextResponse.json({
       ai_soap: ctx.ai_soap,

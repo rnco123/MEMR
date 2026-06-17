@@ -14,6 +14,7 @@ export type StatusTimelineStatus =
   | 'in_consultation'
   | 'consultation_concluded'
   | 'final_review'
+  | 'completed'
 
 /**
  * Get the profile id (UUID) for the current auth user.
