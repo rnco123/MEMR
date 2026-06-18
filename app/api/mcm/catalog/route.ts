@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createExternalAdminClient } from '@/lib/supabase/external-admin'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import {
-  fetchExternalCategories,
-  fetchExternalProducts,
-  fetchExternalProductsByIds,
-} from '@/lib/mcm/external-catalog'
+  fetchMcmCategories,
+  fetchMcmProducts,
+  fetchMcmProductsByIds,
+} from '@/lib/mcm/catalog'
 import {
   handleApiError,
   AuthenticationError,
@@ -19,12 +19,11 @@ export const dynamic = 'force-dynamic'
 const ALLOWED_ROLES = new Set(['doctor', 'nurse', 'staff'])
 
 /**
- * MCM product/category catalog — always read from the secondary Supabase project
- * (`EXTERNAL_SUPABASE_URL` + service role via `createExternalAdminClient`).
+ * Pre-sales product/category catalog from the primary Supabase project.
  *
  * Query params:
  * - `category_id` — filter products (optional)
- * - `product_ids` — comma-separated MCM product IDs (for resolving EMR pre_sales labels)
+ * - `product_ids` — comma-separated product IDs (for resolving pre_sales labels)
  */
 export async function GET(request: Request) {
   try {
@@ -38,7 +37,7 @@ export async function GET(request: Request) {
     const roleInfo = await fetchUserRole(supabase, user.id)
     const role = roleInfo?.role?.toLowerCase()
     if (!role || !ALLOWED_ROLES.has(role)) {
-      throw new AuthorizationError('You are not allowed to read MCM catalog')
+      throw new AuthorizationError('You are not allowed to read the product catalog')
     }
 
     const url = new URL(request.url)
@@ -47,41 +46,30 @@ export async function GET(request: Request) {
       categoryIdParam && Number.isFinite(Number(categoryIdParam)) ? Number(categoryIdParam) : null
 
     const productIdsParam = url.searchParams.get('product_ids')
-    let external
-    try {
-      external = createExternalAdminClient()
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            'MCM catalog is not configured. Set EXTERNAL_SUPABASE_URL and EXTERNAL_SUPABASE_SECRET_KEY (or EXTERNAL_SUPABASE_SERVICE_ROLE_KEY).',
-        },
-        { status: 503 }
-      )
-    }
+    const admin = createAdminClient()
 
     if (productIdsParam) {
       const ids = productIdsParam
         .split(',')
         .map((s) => Number(s.trim()))
         .filter((n) => Number.isFinite(n) && n > 0)
-      const products = await fetchExternalProductsByIds(external, ids)
+      const products = await fetchMcmProductsByIds(admin, ids)
       return NextResponse.json({
         success: true,
         categories: [],
         products,
-        source: 'external_supabase',
+        source: 'primary_supabase',
       })
     }
 
-    const categories = await fetchExternalCategories(external)
-    const products = await fetchExternalProducts(external, categoryId)
+    const categories = await fetchMcmCategories(admin)
+    const products = await fetchMcmProducts(admin, categoryId)
 
     return NextResponse.json({
       success: true,
       categories,
       products,
-      source: 'external_supabase',
+      source: 'primary_supabase',
     })
   } catch (e) {
     if (e instanceof ValidationError) return handleApiError(e)

@@ -143,11 +143,6 @@ interface Encounter {
   risk_rationale?: string | null
   risk_factors?: string[] | null
   risk_assessed_at?: string | null
-  mcm_encounter_id?: number | null
-  mcm_sync_status?: 'not_copied' | 'copy_in_progress' | 'copied' | 'copy_failed' | string | null
-  mcm_sync_last_attempt_at?: string | null
-  mcm_synced_at?: string | null
-  mcm_sync_error?: string | null
 }
 
 interface Appointment {

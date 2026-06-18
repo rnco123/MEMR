@@ -117,7 +117,7 @@ interface CategoryMemr {
   category_name: string
 }
 
-/** Product row from MCM catalog API (`/api/mcm/catalog` reads EXTERNAL_SUPABASE `products` or `product_memr`). */
+/** Product row from GET /api/mcm/catalog (primary DB `products` or `product_memr`). */
 interface ProductRow {
   product_id: number
   product_name: string
@@ -129,13 +129,6 @@ interface PreSalesProduct {
   product_id: number
   product_name: string
   quantity: number
-}
-
-interface EncounterSyncInfo {
-  mcm_encounter_id: number | null
-  mcm_sync_status: 'not_copied' | 'copy_in_progress' | 'copied' | 'copy_failed' | string
-  mcm_sync_error: string | null
-  mcm_synced_at: string | null
 }
 
 interface FinalReviewModalProps {
@@ -184,14 +177,13 @@ export function FinalReviewModal({
   const [saving, setSaving] = useState(false)
   const [stepTransitionLoading, setStepTransitionLoading] = useState(false)
   const [mcmCatalogLoading, setMcmCatalogLoading] = useState(false)
-  const [encounterSync, setEncounterSync] = useState<EncounterSyncInfo | null>(null)
   const [transcriptSuggestions, setTranscriptSuggestions] = useState<FinalReviewSuggestions | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const [suggestionsNoTranscript, setSuggestionsNoTranscript] = useState(false)
   const [followupReason, setFollowupReason] = useState('')
 
-  // Categories/products for dropdowns: loaded from EXTERNAL_SUPABASE via GET /api/mcm/catalog
+  // Categories/products for dropdowns: loaded via GET /api/mcm/catalog
   const [categories, setCategories] = useState<CategoryMemr[]>([])
   const [categoriesError, setCategoriesError] = useState<string | null>(null)
   const [products, setProducts] = useState<ProductRow[]>([])
@@ -315,12 +307,6 @@ export function FinalReviewModal({
             setTranscriptSuggestions(cached)
           }
 
-          setEncounterSync({
-            mcm_encounter_id: encounterData.mcm_encounter_id ?? null,
-            mcm_sync_status: encounterData.mcm_sync_status ?? 'not_copied',
-            mcm_sync_error: encounterData.mcm_sync_error ?? null,
-            mcm_synced_at: encounterData.mcm_synced_at ?? null,
-          })
           setEncounterDoctorId(
             typeof encounterData.doctor_id === 'number' ? encounterData.doctor_id : null
           )
@@ -328,7 +314,6 @@ export function FinalReviewModal({
             typeof encounterData.pharmacy_id === 'number' ? encounterData.pharmacy_id : null
           )
         } else {
-          setEncounterSync(null)
           setEncounterDoctorId(null)
           setEncounterPharmacyId(null)
         }
@@ -634,12 +619,11 @@ export function FinalReviewModal({
   const reviewStepIndex = REVIEW_STEP_KEYS.indexOf(activeStep)
   const isLastReviewStep = activeStep === 'final_summary'
 
-  /** Save pending lines to EMR `pre_sales` with `encounter_id` = this EMR encounter. MCM `pre_sales` uses `mcm_encounter_id` only inside `/api/encounters/:id/mcm-presales`. If encounter is copied to MCM, sync there after EMR insert; on MCM failure roll back EMR rows so Next can be retried without duplicates. */
+  /** Save pending lines to EMR `pre_sales` for this encounter. */
   const persistPendingPreSales = useCallback(async (): Promise<boolean> => {
     const pending = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
     if (pending.length === 0) return true
 
-    const itemsPayload = pending.map((p) => ({ product_id: p.product_id, quantity: p.quantity }))
     const rows = pending.map((p) => ({
       encounter_id: encounterId,
       product_id: p.product_id,
@@ -659,41 +643,7 @@ export function FinalReviewModal({
       return false
     }
 
-    const insertedIds = (inserted ?? []).map((r) => r.id).filter((id): id is number => id != null)
-
-    if (encounterSync?.mcm_sync_status === 'copied') {
-      try {
-        const mcmRes = await fetch(`/api/encounters/${encounterId}/mcm-presales`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ items: itemsPayload }),
-        })
-        const mcmJson = await mcmRes.json().catch(() => ({}))
-        if (!mcmRes.ok) {
-          if (insertedIds.length > 0) {
-            await supabase.from('pre_sales').delete().in('id', insertedIds)
-          }
-          toast.error(
-            typeof mcmJson.error === 'string' ? mcmJson.error : 'Pre-sales were not synced to MCM — try again'
-          )
-          return false
-        }
-        const syncedCount = Number(mcmJson.synced_count || 0)
-        if (syncedCount > 0) {
-          toast.success(`Synced ${syncedCount} pre-sale item(s) to MCM`)
-        }
-      } catch (e) {
-        console.error(e)
-        if (insertedIds.length > 0) {
-          await supabase.from('pre_sales').delete().in('id', insertedIds)
-        }
-        toast.error('Could not reach MCM — pre-sales not saved. Try again.')
-        return false
-      }
-    } else {
-      toast.success('Pre-sales saved for this encounter')
-    }
+    toast.success('Pre-sales saved for this encounter')
 
     const mergedNew = (inserted ?? []).map((row, i) => ({
       id: `db-${row.id}`,
@@ -705,7 +655,7 @@ export function FinalReviewModal({
     setPreSalesProducts((prev) => [...prev.filter((p) => String(p.id).startsWith('db-')), ...mergedNew])
 
     return true
-  }, [preSalesProducts, encounterId, encounterSync?.mcm_sync_status, supabase])
+  }, [preSalesProducts, encounterId, supabase])
 
   /** Persist session-only Rx lines to EMR `prescriptions` using encounter pharmacy_id + assigned doctor. */
   const persistPendingPrescriptions = useCallback(async (): Promise<boolean> => {
@@ -843,10 +793,12 @@ export function FinalReviewModal({
       }
 
       const newProducts = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
-      if (newProducts.length > 0 && encounterSync?.mcm_sync_status !== 'copied') {
-        alert('Copy encounter to MCM first (status must be copied) before syncing pre-sales.')
-        setSaving(false)
-        return
+      if (newProducts.length > 0) {
+        const okPreSales = await persistPendingPreSales()
+        if (!okPreSales) {
+          setSaving(false)
+          return
+        }
       }
 
       // Update encounter status to final_review
@@ -869,44 +821,6 @@ export function FinalReviewModal({
         status: 'final_review',
         profileId,
       })
-
-      // Insert new pre_sales rows locally (only those added in this session, not already saved — e.g. skipped Pre-Sales Next)
-      for (const p of newProducts) {
-        if (String(p.id).startsWith('db-')) continue
-        const { error: insertErr } = await supabase.from('pre_sales').insert({
-          encounter_id: encounterId,
-          product_id: p.product_id,
-          product_quantity: p.quantity,
-          product_quantity_taken: 0,
-          status: 'initiated',
-        })
-        if (insertErr) {
-          console.error('Error inserting pre_sales:', insertErr)
-        }
-      }
-
-      if (newProducts.length > 0) {
-        const mcmRes = await fetch(`/api/encounters/${encounterId}/mcm-presales`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({
-            items: newProducts.map((p) => ({ product_id: p.product_id, quantity: p.quantity })),
-          }),
-        })
-        const mcmJson = await mcmRes.json().catch(() => ({}))
-        if (!mcmRes.ok) {
-          alert(mcmJson.error || 'Pre-sales saved locally, but failed to sync to MCM.')
-          setSaving(false)
-          return
-        }
-        const syncedCount = Number(mcmJson.synced_count || 0)
-        toast.success(
-          syncedCount > 0
-            ? `Synced ${syncedCount} pre-sale item(s) to MCM`
-            : 'Pre-sales synced to MCM'
-        )
-      }
 
       if (onComplete) {
         onComplete()
@@ -1279,45 +1193,12 @@ export function FinalReviewModal({
                     }
                   )}
 
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-4">
-                    <p className="text-sm text-blue-200 mb-2">MCM Encounter Mapping</p>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span
-                        className={`px-2.5 py-1 rounded-lg border text-xs font-medium uppercase tracking-wide ${
-                          encounterSync?.mcm_sync_status === 'copied'
-                            ? 'bg-green-500/20 text-green-300 border-green-500/50'
-                            : encounterSync?.mcm_sync_status === 'copy_failed'
-                            ? 'bg-red-500/20 text-red-300 border-red-500/50'
-                            : encounterSync?.mcm_sync_status === 'copy_in_progress'
-                            ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
-                            : 'bg-white/10 text-blue-200 border-white/20'
-                        }`}
-                      >
-                        {(encounterSync?.mcm_sync_status || 'not_copied').replaceAll('_', ' ')}
-                      </span>
-                      {encounterSync?.mcm_encounter_id && (
-                        <span className="text-xs text-green-300">
-                          MCM Encounter ID: {encounterSync.mcm_encounter_id}
-                        </span>
-                      )}
-                    </div>
-                    {encounterSync?.mcm_sync_error && (
-                      <p className="text-xs text-red-300 mt-2">{encounterSync.mcm_sync_error}</p>
-                    )}
-                    {encounterSync?.mcm_sync_status !== 'copied' && (
-                      <p className="text-xs text-amber-300 mt-2">
-                        Pre-sales sync to MCM is blocked until encounter is copied.
-                      </p>
-                    )}
-                  </div>
-
                   {/* Add Product Form */}
                   <div className="bg-white/5 border border-white/10 rounded-xl p-6">
                     <h3 className="text-xl font-bold text-white mb-4">Add Product to Pre-Sales</h3>
                     <p className="text-blue-200/80 text-sm mb-4">
-                      One encounter can have multiple products. Categories and products come from the MCM catalog
-                      (secondary Supabase). New rows save to EMR pre_sales and, once the encounter is copied to MCM, sync to
-                      MCM pre_sales via the existing API.
+                      One encounter can have multiple products. Categories and products come from the clinic
+                      catalog. New rows save to this encounter&apos;s pre-sales list.
                     </p>
                     {mcmCatalogLoading && (
                       <p className="text-cyan-300/90 text-xs mb-3">Loading MCM categories and products…</p>
@@ -1478,7 +1359,7 @@ export function FinalReviewModal({
                       Prescriptions use this encounter&apos;s{' '}
                       <span className="text-cyan-300">pharmacy_id</span> (same row as the patient&apos;s encounter).
                       Stored in EMR <span className="text-gray-400">public.prescriptions</span> with{' '}
-                      <span className="text-cyan-300">pharmacy_id</span>, not the external MCM DB.
+                      <span className="text-cyan-300">pharmacy_id</span>.
                     </p>
                     {pharmacy ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
@@ -1822,12 +1703,7 @@ export function FinalReviewModal({
               <button
                 type="button"
                 onClick={handleCompleteReview}
-                disabled={
-                  saving ||
-                  stepTransitionLoading ||
-                  (preSalesProducts.some((p) => !String(p.id).startsWith('db-')) &&
-                    encounterSync?.mcm_sync_status !== 'copied')
-                }
+                disabled={saving || stepTransitionLoading}
                 className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 text-white rounded-lg font-medium transition-colors"
               >
                 {saving ? 'Completing...' : 'Complete Final Review'}

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-/** Canonical shape returned to the Final Review UI (matches MCM `products` / `pre_sales.product_id`). */
+/** Canonical shape returned to the Final Review UI (matches `products` / `product_memr`). */
 export type McmCategoryRow = { category_id: number; category_name: string }
 
 export type McmProductRow = {
@@ -10,11 +10,8 @@ export type McmProductRow = {
   archived?: boolean | null
 }
 
-/**
- * Reads categories from the secondary Supabase (EXTERNAL_SUPABASE_URL).
- * Tries MCM-style `categories` first, then MEMR-local naming `category_memr`.
- */
-export async function fetchExternalCategories(client: SupabaseClient): Promise<McmCategoryRow[]> {
+/** Reads categories from primary DB — tries MCM-style `categories`, then `category_memr`. */
+export async function fetchMcmCategories(client: SupabaseClient): Promise<McmCategoryRow[]> {
   const primary = await client
     .from('categories')
     .select('category_id, category_name')
@@ -34,10 +31,8 @@ export async function fetchExternalCategories(client: SupabaseClient): Promise<M
   }))
 }
 
-/**
- * Reads products from external DB. Tries `products` (MCM), then `product_memr`.
- */
-export async function fetchExternalProducts(
+/** Reads products from primary DB — tries `products`, then `product_memr`. */
+export async function fetchMcmProducts(
   client: SupabaseClient,
   categoryId: number | null
 ): Promise<McmProductRow[]> {
@@ -73,8 +68,7 @@ export async function fetchExternalProducts(
   }))
 }
 
-/** Resolve display names for EMR `pre_sales.product_id` values that reference MCM catalog IDs. */
-export async function fetchExternalProductsByIds(
+export async function fetchMcmProductsByIds(
   client: SupabaseClient,
   ids: number[]
 ): Promise<McmProductRow[]> {

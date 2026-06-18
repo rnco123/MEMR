@@ -11,7 +11,6 @@ import {
   normalizeAdminLocationRow,
 } from '@/lib/locations/admin-row'
 import { locationUpdateSchema } from '@/lib/validation'
-import { syncLocationUpdateToExternal } from '@/lib/locations/external-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -136,33 +135,10 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     })
 
     const normalized = normalizeAdminLocationRow(data as Record<string, unknown>)
-    const externalSync = await syncLocationUpdateToExternal(admin, {
-      id: normalized.id,
-      title: normalized.title,
-      tenant_id: normalized.tenant_id,
-      location_code: normalized.location_code,
-      address: normalized.address,
-      phone: normalized.phone,
-      email: normalized.email,
-      opening_hours: normalized.opening_hours,
-      google_map_url: normalized.google_map_url,
-      is_active: normalized.is_active,
-      external_location_id:
-        (data as Record<string, unknown>).external_location_id != null
-          ? Number((data as Record<string, unknown>).external_location_id)
-          : (existing as Record<string, unknown>).external_location_id != null
-            ? Number((existing as Record<string, unknown>).external_location_id)
-            : null,
-    })
-
-    if (externalSync && !externalSync.ok) {
-      console.error('[locations] external sync failed on update:', externalSync.error)
-    }
 
     return NextResponse.json({
       success: true,
       data: normalized,
-      external_sync: externalSync,
     })
   } catch (e) {
     return handleApiError(e)

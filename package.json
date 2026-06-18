@@ -25,8 +25,7 @@
         "test:i693-acroform": "tsx scripts/test-i693-acroform-fill.mjs",
         "audit:i693-registry": "tsx scripts/audit-i693-registry.mjs",
         "generate:i693-pdf-registry": "tsx scripts/generate-i693-pdf-field-registry.mjs",
-        "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs",
-        "db:sync-external": "node scripts/sync-external-supabase.cjs"
+        "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs"
     },
     "dependencies": {
         "@ai-sdk/openai": "^3.0.67",

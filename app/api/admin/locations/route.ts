@@ -11,7 +11,6 @@ import {
   normalizeAdminLocationRow,
 } from '@/lib/locations/admin-row'
 import { locationCreateSchema } from '@/lib/validation'
-import { syncLocationCreateToExternal } from '@/lib/locations/external-sync'
 import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
@@ -152,33 +151,10 @@ export async function POST(request: Request) {
     })
 
     const normalized = normalizeAdminLocationRow(data as Record<string, unknown>)
-    const externalSync = await syncLocationCreateToExternal(admin, {
-      id: normalized.id,
-      title: normalized.title,
-      tenant_id: normalized.tenant_id,
-      location_code: normalized.location_code,
-      address: normalized.address,
-      phone: normalized.phone,
-      email: normalized.email,
-      opening_hours: normalized.opening_hours,
-      google_map_url: normalized.google_map_url,
-      is_active: normalized.is_active,
-    })
-
-    if (externalSync && !externalSync.ok) {
-      console.error('[locations] external sync failed on create:', externalSync.error)
-    }
-
-    const { data: linked } = await admin
-      .from('locations')
-      .select(LOCATION_ADMIN_SELECT)
-      .eq('id', normalized.id)
-      .maybeSingle()
 
     return NextResponse.json({
       success: true,
-      data: normalizeAdminLocationRow((linked ?? data) as Record<string, unknown>),
-      external_sync: externalSync,
+      data: normalized,
     })
   } catch (e) {
     return handleApiError(e)

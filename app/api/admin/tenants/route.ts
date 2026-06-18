@@ -5,7 +5,6 @@ import { requireAdminUser } from '@/lib/admin-auth'
 import { logAuditEvent } from '@/lib/audit-server'
 import { tenantCreateSchema } from '@/lib/validation'
 import type { TenantRow } from '@/lib/tenants/types'
-import { syncTenantToExternal } from '@/lib/locations/external-sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -79,20 +78,9 @@ export async function POST(request: Request) {
       actor_id: user.id,
     })
 
-    const externalSync = await syncTenantToExternal({
-      name: data.name,
-      tenant_code: data.tenant_code,
-      is_active: data.is_active,
-    })
-
-    if (externalSync && !externalSync.ok) {
-      console.error('[tenants] external sync failed on create:', externalSync.error)
-    }
-
     return NextResponse.json({
       success: true,
       data: data as TenantRow,
-      external_sync: externalSync,
     })
   } catch (e) {
     return handleApiError(e)

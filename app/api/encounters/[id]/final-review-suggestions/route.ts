@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createExternalAdminClient } from '@/lib/supabase/external-admin'
 import { getUserFromRequest, getSupabaseForRequest } from '@/lib/encounters/auth-from-request'
-import { fetchExternalProducts } from '@/lib/mcm/external-catalog'
+import { fetchMcmProducts } from '@/lib/mcm/catalog'
 import {
   buildFinalReviewSystemPrompt,
   buildFinalReviewUserContent,
@@ -93,20 +92,8 @@ export async function POST(
       )
     }
 
-    let external
-    try {
-      external = createExternalAdminClient()
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            'MCM catalog is not configured. Set EXTERNAL_SUPABASE_URL and EXTERNAL_SUPABASE_SECRET_KEY.',
-        },
-        { status: 503 }
-      )
-    }
-
-    const catalogProducts = await fetchExternalProducts(external, null)
+    const admin = createAdminClient()
+    const catalogProducts = await fetchMcmProducts(admin, null)
     const visitDate = encounter.created_at
       ? new Date(encounter.created_at as string).toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10)
@@ -168,7 +155,6 @@ export async function POST(
     await guardEncounterAccess(user.id, encounterId)
 
 
-    const admin = createAdminClient()
     const { error: updateError } = await admin
       .from('encounters')
       .update({

@@ -23,10 +23,6 @@ interface EncounterRooming {
   ready_for_doctor_at?: string | null
   ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
-  mcm_encounter_id?: number | null
-  mcm_sync_status?: 'not_copied' | 'copy_in_progress' | 'copied' | 'copy_failed' | string | null
-  mcm_sync_error?: string | null
-  mcm_synced_at?: string | null
 }
 
 interface Props {
@@ -50,7 +46,6 @@ const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
 export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Props) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
-  const [syncingToMcm, setSyncingToMcm] = useState(false)
   const [findings, setFindings] = useState(encounter.ma_exam_findings ?? '')
 
   const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
@@ -81,34 +76,6 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
     else delete next[key]
     void patchRooming({ consent_ack: next })
   }
-
-  const syncEncounterToMcm = async () => {
-    setSyncingToMcm(true)
-    try {
-      const res = await fetch(`/api/encounters/${encounterId}/mcm-sync`, {
-        method: 'POST',
-        credentials: 'include',
-      })
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.toast_mcm_failed'))
-      toast.success(t('encounter_modal.toast_mcm_copied', { id: json.mcm_encounter_id }))
-      onUpdated()
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('encounter_modal.toast_mcm_failed'))
-    } finally {
-      setSyncingToMcm(false)
-    }
-  }
-
-  const mcmStatus = encounter.mcm_sync_status || 'not_copied'
-  const mcmStatusClass =
-    mcmStatus === 'copied'
-      ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-      : mcmStatus === 'copy_failed'
-        ? 'bg-red-50 text-red-800 border-red-200'
-        : mcmStatus === 'copy_in_progress'
-          ? 'bg-amber-50 text-amber-900 border-amber-200'
-          : 'bg-slate-50 text-slate-700 border-slate-200'
 
   const workflowRows = [
     {
@@ -153,35 +120,6 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
             <span className="text-sm text-slate-800">{t(row.labelKey)}</span>
           </label>
         ))}
-      </div>
-
-      <div className="rounded-xl border border-slate-200 bg-[#f9fbff] p-4">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <p className="text-sm text-slate-500 mb-1">{t('encounter_modal.rooming_mcm_status')}</p>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={`px-2.5 py-1 rounded-lg border text-xs font-medium uppercase tracking-wide ${mcmStatusClass}`}>
-                {mcmStatus.replaceAll('_', ' ')}
-              </span>
-              {encounter.mcm_encounter_id && (
-                <span className="text-xs text-emerald-800 font-medium">
-                  {t('encounter_modal.rooming_mcm_encounter_id')} {encounter.mcm_encounter_id}
-                </span>
-              )}
-            </div>
-            {encounter.mcm_sync_error && (
-              <p className="text-xs text-red-700 mt-2">{encounter.mcm_sync_error}</p>
-            )}
-          </div>
-          <button
-            type="button"
-            disabled={syncingToMcm || saving}
-            onClick={syncEncounterToMcm}
-            className="px-4 py-2 bg-[#2E6EF3] hover:bg-[#256ae8] text-white rounded-xl text-sm font-semibold disabled:opacity-50 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
-          >
-            {syncingToMcm ? t('encounter_modal.rooming_copying') : t('encounter_modal.rooming_copy_mcm')}
-          </button>
-        </div>
       </div>
 
       <div>
