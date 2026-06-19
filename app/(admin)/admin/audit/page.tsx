@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useT } from '@/lib/i18n'
+import { getRoleI18nKey } from '@/lib/roles'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 interface AuditRow {
@@ -60,7 +61,7 @@ const ACTION_COLORS: Record<string, string> = {
   page_view: 'bg-slate-50 text-slate-500',
 }
 
-const ROLE_OPTIONS = ['doctor', 'nurse', 'admin'] as const
+const ROLE_OPTIONS = ['doctor', 'fnp', 'pa', 'nurse', 'admin'] as const
 
 export default function AdminAuditPage() {
   const { t, language } = useT()
@@ -139,12 +140,7 @@ export default function AdminAuditPage() {
 
   const badgeColor = (action: string) => ACTION_COLORS[action] ?? 'bg-slate-50 text-slate-600'
 
-  const roleLabel = (role: string) => {
-    if (role === 'doctor') return t('admin.role_doctor')
-    if (role === 'nurse') return t('admin.role_nurse')
-    if (role === 'admin') return t('admin.role_admin')
-    return role
-  }
+  const roleLabel = (role: string) => t(getRoleI18nKey(role))
 
   return (
     <div className="max-w-7xl">

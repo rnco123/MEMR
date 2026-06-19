@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { config } from '@/lib/config'
+import { isPhysicianRole, CLINICAL_STAFF_ROLE_VALUES } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -63,11 +64,11 @@ async function verifyTranscriptAccess(
     .maybeSingle()
 
   const role = profile?.role as string | null
-  if (!role || !['doctor', 'nurse', 'staff'].includes(role)) {
+  if (!role || !(CLINICAL_STAFF_ROLE_VALUES as readonly string[]).includes(role)) {
     return { ok: false, status: 403, message: 'Not authorized' }
   }
 
-  if (role === 'doctor') {
+  if (isPhysicianRole(role)) {
     const { data: enc } = await supabase
       .from('encounters')
       .select('id')

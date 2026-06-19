@@ -1,23 +1,18 @@
 'use client'
 
 import { useAuth } from '@/lib/auth-context'
-import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { LoginScreen } from '@/components/auth/LoginScreen'
+import { PostAuthRedirectScreen } from '@/components/auth/PostAuthRedirectScreen'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { BrandLogo } from '@/components/BrandLogo'
-import { LoginScreen } from '@/components/auth/LoginScreen'
+import { useDelayedRoleRedirect } from '@/lib/hooks/use-delayed-role-redirect'
 import { useT } from '@/lib/i18n'
 
 export default function Home() {
   const { user, role, loading, signOut } = useAuth()
-  const router = useRouter()
   const { t } = useT()
 
-  useEffect(() => {
-    if (!loading && user && role) {
-      router.push(role === 'admin' ? '/admin' : '/dashboard')
-    }
-  }, [user, role, loading, router])
+  useDelayedRoleRedirect(role, !loading && !!user && !!role)
 
   if (loading) {
     return (
@@ -30,13 +25,7 @@ export default function Home() {
   }
 
   if (user && role) {
-    return (
-      <main className="min-h-[100dvh] bg-[#f5f7fb] flex items-center justify-center px-4">
-        <div className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-8 shadow-lg shadow-slate-200/60">
-          <LoadingSpinner message={t('auth.redirecting')} />
-        </div>
-      </main>
-    )
+    return <PostAuthRedirectScreen />
   }
 
   if (user && !role) {

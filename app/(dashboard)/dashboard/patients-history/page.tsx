@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { UserRole } from '@/lib/roles'
+import { FULL_CLINICAL_DASHBOARD_ROLES, isPhysicianRole } from '@/lib/roles'
 import * as Sentry from '@sentry/nextjs'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -91,7 +91,7 @@ function PatientsHistoryPage() {
 
   // Fetch when page, search, filters, or sort change
   useEffect(() => {
-    if (!user || (role !== 'doctor' && role !== 'nurse')) return
+    if (!user || (!isPhysicianRole(role) && role !== 'nurse')) return
     const searchOrFilterChanged = debouncedSearch !== prevSearchRef.current || filterGender !== prevFilterRef.current
     if (searchOrFilterChanged) {
       prevSearchRef.current = debouncedSearch
@@ -495,6 +495,6 @@ function PatientsHistoryPage() {
 }
 
 export default withRoleProtection(PatientsHistoryPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...FULL_CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/dashboard',
 })

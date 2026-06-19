@@ -16,10 +16,11 @@ import {
   selectPrescriptionsForEncounter,
 } from '@/lib/prescriptions/encounter-prescriptions'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const CLINICAL_ROLES = new Set(['doctor', 'nurse', 'staff'])
+const CLINICAL_ROLES = CLINICAL_STAFF_ROLE_SET
 
 function parseEncounterId(raw: string | undefined): number {
   const id = Number(raw)

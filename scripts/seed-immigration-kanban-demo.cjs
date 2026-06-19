@@ -52,7 +52,7 @@ const DEMOS = [
   { n: 5, first: 'Elena', last: 'Petrov', tier: 'ready_review', i693: 'ai_filled' },
   { n: 6, first: 'Frank', last: 'Nguyen', tier: 'ready_review', i693: 'draft' },
   { n: 7, first: 'Grace', last: 'Williams', tier: 'completed', i693: 'reviewed' },
-  { n: 8, first: 'Hassan', last: 'Ali', tier: 'completed', i693: 'exported' },
+  { n: 8, first: 'Hassan', last: 'Ali', tier: 'doctor_reviewed', i693: 'exported' },
   { n: 9, first: 'Iris', last: 'Johnson', tier: 'delivered', i693: 'exported' },
   { n: 10, first: 'James', last: 'Park', tier: 'delivered', i693: 'exported' },
 ]
@@ -140,7 +140,7 @@ function formForTier(tier, first, last) {
   if (tier === 'ready_review') {
     return { applicant, ...labs, vaccinations: vaccines, civil_surgeon: civilUnsigned }
   }
-  if (tier === 'completed' || tier === 'delivered') {
+  if (tier === 'doctor_reviewed' || tier === 'completed' || tier === 'delivered') {
     return { applicant, ...labs, vaccinations: vaccines, civil_surgeon: civilSigned }
   }
   return { applicant }
@@ -313,22 +313,24 @@ async function upsertImmigrationCase(encounterId, patientId, demo) {
     intake_only: 'incomplete',
     labs_partial: 'incomplete',
     ready_review: 'ready_review',
+    doctor_reviewed: 'doctor_reviewed',
     completed: 'completed',
     delivered: 'delivered',
   }
   const colorMap = {
     incomplete: 'red',
     ready_review: 'yellow',
+    doctor_reviewed: 'purple',
     completed: 'green',
     delivered: 'blue',
   }
   const status = statusMap[demo.tier]
   const status_color = colorMap[status]
   const is_delivered = demo.tier === 'delivered'
-  const is_md_signed = demo.tier === 'completed' || demo.tier === 'delivered'
+  const is_md_signed = ['doctor_reviewed', 'completed', 'delivered'].includes(demo.tier)
   const is_intake_complete = demo.tier !== 'no_intake'
-  const is_lab_complete = ['ready_review', 'completed', 'delivered'].includes(demo.tier)
-  const is_vaccine_complete = ['ready_review', 'completed', 'delivered'].includes(demo.tier)
+  const is_lab_complete = ['ready_review', 'doctor_reviewed', 'completed', 'delivered'].includes(demo.tier)
+  const is_vaccine_complete = ['ready_review', 'doctor_reviewed', 'completed', 'delivered'].includes(demo.tier)
 
   const missing = []
   if (!is_intake_complete) missing.push('intake')

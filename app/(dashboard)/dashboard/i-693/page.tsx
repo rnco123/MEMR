@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { UserRole } from '@/lib/roles'
+import { FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { I693PdfFormEditor } from '@/components/I693PdfFormEditor'
 import { I693WorkflowBoard } from '@/components/I693WorkflowBoard'
@@ -174,5 +174,5 @@ function I693Page() {
 }
 
 export default withRoleProtection(I693Page, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...FULL_CLINICAL_DASHBOARD_ROLES],
 })

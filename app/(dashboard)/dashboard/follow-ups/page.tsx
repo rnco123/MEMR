@@ -1,7 +1,7 @@
 'use client'
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { UserRole } from '@/lib/roles'
+import { FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -263,6 +263,6 @@ function FollowUpsPage() {
 }
 
 export default withRoleProtection(FollowUpsPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...FULL_CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/dashboard',
 })

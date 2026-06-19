@@ -1,19 +1,18 @@
 'use client'
 
-import { useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { useRouter } from 'next/navigation'
 import { LoginScreen } from '@/components/auth/LoginScreen'
+import { PostAuthRedirectScreen } from '@/components/auth/PostAuthRedirectScreen'
+import { useDelayedRoleRedirect } from '@/lib/hooks/use-delayed-role-redirect'
 
 export default function LoginPage() {
-  const { user, role } = useAuth()
-  const router = useRouter()
+  const { user, role, loading } = useAuth()
 
-  useEffect(() => {
-    if (user && role) {
-      router.push(role === 'admin' ? '/admin' : '/dashboard')
-    }
-  }, [user, role, router])
+  useDelayedRoleRedirect(role, !loading && !!user && !!role)
+
+  if (user && role) {
+    return <PostAuthRedirectScreen />
+  }
 
   return <LoginScreen />
 }

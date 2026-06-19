@@ -9,10 +9,11 @@ import {
 } from '@/lib/risk-alerts/build-clinical-context'
 import { analyzeClinicalRisk } from '@/lib/risk-alerts/openai-analyze'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
+const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
 
 export async function POST(request: Request) {
   try {

@@ -11,10 +11,10 @@ import {
   type FinalReviewSuggestions,
 } from '@/lib/final-review/from-transcript'
 
+import { isClinicalStaffRole } from '@/lib/roles'
+
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
-
-const CLINICAL_ROLES = ['doctor', 'nurse', 'staff'] as const
 
 export async function POST(
   request: NextRequest,
@@ -48,7 +48,7 @@ export async function POST(
       .maybeSingle()
 
     const role = profile?.role as string | null
-    if (!role || !CLINICAL_ROLES.includes(role as (typeof CLINICAL_ROLES)[number])) {
+    if (!isClinicalStaffRole(role)) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
 

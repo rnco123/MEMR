@@ -493,7 +493,7 @@ function NurseFlowboardPage() {
                   setPage(1)
                 }}
                 placeholder={t('flow.search_placeholder_nurse')}
-                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
+                className="w-full pl-10 pr-4 h-9 bg-[#f9fbff] border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
           }
@@ -502,7 +502,7 @@ function NurseFlowboardPage() {
               type="button"
               onClick={handleRefresh}
               disabled={loading || isRefreshing}
-              className="h-11 w-11 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              className="h-9 w-9 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
               title={t('common.refresh')}
             >
               <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -521,7 +521,7 @@ function NurseFlowboardPage() {
                     setPage(1)
                   }}
                   unrestricted={locationsUnrestricted}
-                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[16rem]`}
+                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[14rem]`}
                 />
               </FlowboardFilterField>
               <FlowboardFilterField label={t('flow.sort')}>
@@ -557,6 +557,26 @@ function NurseFlowboardPage() {
                   <option value="completed">Completed</option>
                 </select>
               </FlowboardFilterField>
+              <FlowboardFilterField label={t('flow.dob_short')} dob>
+                <SearchByDobDropdowns
+                  layout="compact"
+                  year={dobYear}
+                  month={dobMonth}
+                  day={dobDay}
+                  onYearChange={(v) => {
+                    setDobYear(v)
+                    setPage(1)
+                  }}
+                  onMonthChange={(v) => {
+                    setDobMonth(v)
+                    setPage(1)
+                  }}
+                  onDayChange={(v) => {
+                    setDobDay(v)
+                    setPage(1)
+                  }}
+                />
+              </FlowboardFilterField>
               <FlowboardViewToggleSlot>
                 <FlowboardViewToggle
                   value={displayMode}
@@ -566,28 +586,6 @@ function NurseFlowboardPage() {
                 />
               </FlowboardViewToggleSlot>
             </>
-          }
-          afterFilters={
-            <div className="mt-3 border-t border-slate-200 pt-3">
-              <SearchByDobDropdowns
-                layout="inline"
-                year={dobYear}
-                month={dobMonth}
-                day={dobDay}
-                onYearChange={(v) => {
-                  setDobYear(v)
-                  setPage(1)
-                }}
-                onMonthChange={(v) => {
-                  setDobMonth(v)
-                  setPage(1)
-                }}
-                onDayChange={(v) => {
-                  setDobDay(v)
-                  setPage(1)
-                }}
-              />
-            </div>
           }
           footer={
             <>
@@ -601,7 +599,12 @@ function NurseFlowboardPage() {
                   ? ` ${t('flow.filtered_from', { total: appointments.length })}`
                   : ''}
               </p>
-              <div className="flex flex-wrap items-center gap-4">
+              <div className="flex flex-wrap items-center gap-3">
+                {availableDoctors.length > 0 && (
+                  <p className="text-xs text-emerald-600 font-medium shrink-0">
+                    {t('flow.providers_available', { count: availableDoctors.length })}
+                  </p>
+                )}
                 {displayMode === 'list' && (
                   <label className="text-xs text-slate-500 flex items-center gap-2 shrink-0">
                     {t('flow.per_page')}
@@ -621,16 +624,12 @@ function NurseFlowboardPage() {
                     </select>
                   </label>
                 )}
-                {availableDoctors.length > 0 && (
-                  <p className="text-xs text-emerald-600 font-medium shrink-0">
-                    {t('flow.providers_available', { count: availableDoctors.length })}
-                  </p>
-                )}
-                {(searchQuery || dobYear || dobMonth || dobDay) && (
+                {(searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay) && (
                   <button
                     type="button"
                     onClick={() => {
                       setSearchQuery('')
+                      setFilterStatus('all')
                       setDobYear('')
                       setDobMonth('')
                       setDobDay('')

@@ -21,7 +21,6 @@ interface EncounterRooming {
   prescribing_location_ack_at?: string | null
   ma_supervision_ack_at?: string | null
   ready_for_doctor_at?: string | null
-  ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
 }
 
@@ -46,7 +45,6 @@ const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
 export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Props) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
-  const [findings, setFindings] = useState(encounter.ma_exam_findings ?? '')
 
   const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
 
@@ -138,23 +136,6 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
             </label>
           ))}
         </div>
-      </div>
-
-      <div>
-        <label className="text-sm text-slate-500 block mb-1">{t('encounter_modal.rooming_ma_findings')}</label>
-        <textarea
-          value={findings}
-          disabled={saving}
-          onChange={(e) => setFindings(e.target.value)}
-          onBlur={() => {
-            if (findings !== (encounter.ma_exam_findings ?? '')) {
-              void patchRooming({ ma_exam_findings: findings || null })
-            }
-          }}
-          rows={4}
-          placeholder={t('encounter_modal.rooming_ma_placeholder')}
-          className="w-full bg-[#f9fbff] border border-slate-200 rounded-xl px-3 py-2 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 [color-scheme:light]"
-        />
       </div>
     </div>
   )

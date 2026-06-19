@@ -6,6 +6,12 @@ import { UserAvatar } from '@/components/UserAvatar'
 import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
 import { LocationAssignmentChecklist } from '@/components/LocationAssignmentChecklist'
 import { useT } from '@/lib/i18n'
+import {
+  ADMIN_STAFF_ROLE_VALUES,
+  getRoleI18nKey,
+  isPhysicianRole,
+  type AdminStaffRoleValue,
+} from '@/lib/roles'
 
 interface Location {
   id: number
@@ -32,13 +38,21 @@ const INPUT_CLASS =
   'w-full h-10 border border-slate-200 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500'
 
 const ROLE_OPTIONS = [
-  { value: 'doctor', labelKey: 'admin.role_doctor' },
-  { value: 'nurse', labelKey: 'admin.role_nurse' },
-] as const
+  { value: 'doctor' as const, labelKey: 'admin.role_doctor' },
+  { value: 'fnp' as const, labelKey: 'admin.role_fnp' },
+  { value: 'pa' as const, labelKey: 'admin.role_pa' },
+  { value: 'nurse' as const, labelKey: 'admin.role_nurse' },
+]
 
 const ROLE_COLORS: Record<string, string> = {
   doctor: 'bg-blue-50 text-blue-700',
+  fnp: 'bg-blue-50 text-blue-700',
+  pa: 'bg-blue-50 text-blue-700',
   nurse: 'bg-green-50 text-green-700',
+}
+
+function isAdminStaffRoleValue(role: string): role is AdminStaffRoleValue {
+  return (ADMIN_STAFF_ROLE_VALUES as readonly string[]).includes(role)
 }
 
 function userLabel(u: StaffUser) {
@@ -120,9 +134,9 @@ function UserRow({
       <div className="col-span-2 text-sm text-slate-500 truncate">{user.email || t('common.em_dash')}</div>
       <div className="col-span-2">
         <span
-          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold capitalize ${ROLE_COLORS[user.role] ?? 'bg-slate-50 text-slate-600'}`}
+          className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${ROLE_COLORS[user.role] ?? 'bg-slate-50 text-slate-600'}`}
         >
-          {user.role}
+          {t(getRoleI18nKey(user.role))}
         </span>
       </div>
       <div className="col-span-2 min-w-0">
@@ -177,7 +191,7 @@ export default function AdminUsersPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
-  const [role, setRole] = useState<(typeof ROLE_OPTIONS)[number]['value']>('doctor')
+  const [role, setRole] = useState<AdminStaffRoleValue>('doctor')
   const [selectedLocations, setSelectedLocations] = useState<number[]>([])
   const [roleFilter, setRoleFilter] = useState('')
   const [showInactive, setShowInactive] = useState(true)
@@ -192,7 +206,7 @@ export default function AdminUsersPage() {
 
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
-  const [editRole, setEditRole] = useState<(typeof ROLE_OPTIONS)[number]['value']>('doctor')
+  const [editRole, setEditRole] = useState<AdminStaffRoleValue>('doctor')
   const [editActive, setEditActive] = useState(true)
   const [resetPassword, setResetPassword] = useState('')
   const [showResetPw, setShowResetPw] = useState(false)
@@ -245,7 +259,7 @@ export default function AdminUsersPage() {
     setEditUser(u)
     setEditName(u.full_name ?? '')
     setEditEmail(u.email ?? '')
-    setEditRole(u.role === 'nurse' ? 'nurse' : 'doctor')
+    setEditRole(isAdminStaffRoleValue(u.role) ? u.role : 'doctor')
     setEditActive(u.active)
     setEditNpi(u.npi ?? '')
   }
@@ -275,7 +289,7 @@ export default function AdminUsersPage() {
         email: editEmail.trim().toLowerCase(),
         role: editRole,
         active: editActive,
-        ...(editRole === 'doctor' ? { npi: editNpi.trim() || null } : {}),
+        ...(isPhysicianRole(editRole) ? { npi: editNpi.trim() || null } : {}),
       })
       toast.success(t('admin.users.updated', { name: userLabel(editUser) }))
       setEditUser(null)
@@ -697,7 +711,7 @@ export default function AdminUsersPage() {
                   ))}
                 </div>
               </div>
-              {editRole === 'doctor' && (
+              {isPhysicianRole(editRole) && (
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
                     {t('admin.users.npi')}

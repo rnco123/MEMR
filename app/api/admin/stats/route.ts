@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { isPhysicianRole } from '@/lib/roles'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 export const dynamic = 'force-dynamic'
@@ -118,7 +119,7 @@ export async function GET(_req: NextRequest) {
 
     return NextResponse.json({
       totalUsers: profiles.length,
-      doctors: profiles.filter((p) => p.role === 'doctor').length,
+      doctors: profiles.filter((p) => isPhysicianRole(p.role)).length,
       nurses: profiles.filter((p) => p.role === 'nurse').length,
       totalAuditEvents: auditTotalRes.count ?? 0,
       todayEvents: auditTodayRes.count ?? 0,

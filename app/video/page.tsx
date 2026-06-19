@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
-import { UserRole } from '@/lib/roles'
+import { getRoleLabel, isPhysicianRole, CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
@@ -599,7 +599,7 @@ function VideoPage() {
   // For nurses/staff: watch encounter status; if doctor concludes, show message then send them back to virtual waiting room
   useEffect(() => {
     if (!encounterId || !supabase) return
-    if (role === 'doctor') return
+    if (isPhysicianRole(role)) return
     if (sessionEnded) return
 
     const encounterIdNum = Number(encounterId)
@@ -745,7 +745,7 @@ function VideoPage() {
         const r = roleRef.current
         const resolvedName = participantNamesRef.current[pid] || uname || 'Participant'
         const speakerRole =
-          r === 'doctor' && resolvedName === uname
+          isPhysicianRole(r) && resolvedName === uname
             ? 'doctor'
             : r === 'nurse' && resolvedName === uname
               ? 'nurse'
@@ -1014,7 +1014,7 @@ function VideoPage() {
   }
 
   const handleSaveDoctorSoap = async () => {
-    if (!encounterId || !doctorId || role !== 'doctor') return
+    if (!encounterId || !doctorId || !isPhysicianRole(role)) return
     if (!validateDoctorSoap()) return
 
     setSavingSoap(true)
@@ -1045,7 +1045,7 @@ function VideoPage() {
   }
 
   const handleEndConsultation = async () => {
-    if (!encounterId || !doctorId || role !== 'doctor') return
+    if (!encounterId || !doctorId || !isPhysicianRole(role)) return
     if (!validateDoctorSoap()) return
 
     setSavingSoap(true)
@@ -1135,7 +1135,7 @@ function VideoPage() {
     leaveInProgressRef.current = true
     setDailyJoinUrl(null)
     setIsConnected(false)
-    if (role === 'doctor' && encounterId && doctorId) {
+    if (isPhysicianRole(role) && encounterId && doctorId) {
       await handleEndConsultation()
       return
     }
@@ -1242,7 +1242,7 @@ function VideoPage() {
     )
   }
 
-  const roleLabel = role === 'doctor' ? 'Doctor' : role === 'nurse' ? 'Nurse' : 'Staff'
+  const roleLabel = role ? getRoleLabel(role) : 'Staff'
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#EEF4FF]">
@@ -1360,7 +1360,7 @@ function VideoPage() {
       )}
 
       {/* AI Summary Panel — shown to doctor after consultation ends */}
-      {showSummaryPanel && role === 'doctor' && (
+      {showSummaryPanel && isPhysicianRole(role) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
           <div className="bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
             {/* Panel header */}
@@ -1533,7 +1533,7 @@ function VideoPage() {
       )}
 
       {/* Global session-ended overlay for nurses/staff */}
-      {endMessage && role !== 'doctor' && (
+      {endMessage && !isPhysicianRole(role) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm">
           <div className="bg-gray-900 border border-amber-500/50 text-white px-8 py-6 rounded-2xl shadow-2xl max-w-sm text-center">
             <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center mx-auto mb-4">
@@ -1832,7 +1832,7 @@ function VideoPage() {
                 )}
                 {detailsTab === 'soap' && (
                   <div className="space-y-3">
-                    {role === 'doctor' && doctorId ? (
+                    {isPhysicianRole(role) && doctorId ? (
                       <>
                         <div className="flex flex-wrap items-start justify-between gap-2 mb-2">
                           <p className="mb-2 flex-1 min-w-[12rem] text-xs text-slate-500">
@@ -1974,6 +1974,6 @@ function VideoPage() {
 }
 
 export default withRoleProtection(VideoPage, {
-  allowedRoles: [UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/dashboard',
 })

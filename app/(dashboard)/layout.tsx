@@ -19,6 +19,7 @@ import { MobileTabBar, type MobileTabItem } from '@/components/mobile/MobileTabB
 import { InstallPromptBanner } from '@/components/pwa/InstallPromptBanner'
 import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
+import { isPhysicianRole } from '@/lib/roles'
 
 export default function DashboardLayout({
   children,
@@ -161,7 +162,7 @@ export default function DashboardLayout({
   const menuItems =
     role === 'admin'
       ? adminMenuItems
-      : role === 'doctor'
+      : isPhysicianRole(role)
       ? doctorMenuItems
       : role === 'nurse'
       ? nurseMenuItems
@@ -198,7 +199,7 @@ export default function DashboardLayout({
       userMetadata: user?.user_metadata,
     })
 
-  const showSidebar = role === 'doctor' || role === 'nurse' || role === 'admin'
+  const showSidebar = isPhysicianRole(role) || role === 'nurse' || role === 'admin'
 
   const chatMenuItem = menuItems.find((item) => item.href === '#')
 

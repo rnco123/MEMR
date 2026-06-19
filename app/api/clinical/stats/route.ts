@@ -9,7 +9,7 @@ import {
   parseLocationFilter,
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
-import { UserRole } from '@/lib/roles'
+import { UserRole, isPhysicianRole, CLINICAL_STAFF_ROLE_VALUES } from '@/lib/roles'
 import { getDoctorIdForUser } from '@/lib/locations/flowboard-data'
 
 export const dynamic = 'force-dynamic'
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
     }
 
     let totalConsultations = 0
-    if (clinicalRole === UserRole.DOCTOR) {
+    if (isPhysicianRole(clinicalRole)) {
       const doctorId = await getDoctorIdForUser(admin, user.id)
       if (doctorId != null) {
         const { data: encounters } = await admin

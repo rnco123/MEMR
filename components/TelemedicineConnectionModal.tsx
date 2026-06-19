@@ -1,5 +1,7 @@
 'use client'
 
+import { getRoleLabelFromString } from '@/lib/roles'
+
 interface TelemedicineConnectionModalProps {
   isOpen: boolean
   userName: string
@@ -17,7 +19,7 @@ export function TelemedicineConnectionModal({
 }: TelemedicineConnectionModalProps) {
   if (!isOpen) return null
 
-  const roleLabel = userRole === 'doctor' ? 'Doctor' : userRole === 'nurse' ? 'Nurse' : 'Staff'
+  const roleLabel = getRoleLabelFromString(userRole)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/50 backdrop-blur-sm p-0 sm:p-4">

@@ -11,6 +11,7 @@ import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { EncounterRoomingPanel } from './EncounterRoomingPanel'
+import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
 import {
   mergePharmacyIntoList,
@@ -22,6 +23,8 @@ import { EncounterSoapPanel } from './EncounterSoapPanel'
 import { EncounterPatientInfoPanel } from './EncounterPatientInfoPanel'
 import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-doctor-soap'
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
+import { isPhysicianRole } from '@/lib/roles'
+import { canEditPhysicalExamination } from '@/lib/encounter/physical-examination'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 
 function patientAgeFromDob(dob: string | null): number | null {
@@ -136,7 +139,6 @@ interface Encounter {
   prescribing_location_ack_at?: string | null
   ma_supervision_ack_at?: string | null
   ready_for_doctor_at?: string | null
-  ma_exam_findings?: string | null
   consent_ack?: Record<string, string> | null
   program_type?: string | null
   risk_level?: string | null
@@ -445,7 +447,7 @@ export function EncounterDetailModal({
 
   const canCompleteEncounter = useMemo(() => {
     if (!encounter) return false
-    return (role === 'doctor' || role === 'admin') && canDoctorCompleteEncounter(encounter.status)
+    return (isPhysicianRole(role) || role === 'admin') && canDoctorCompleteEncounter(encounter.status)
   }, [encounter, role])
 
   const handleCompleteEncounter = useCallback(async () => {
@@ -472,6 +474,11 @@ export function EncounterDetailModal({
   }, [canCompleteEncounter, completingEncounter, encounterId, onEncounterStatusChange, t])
 
   const canEditPatientInfo = canEditSoap
+
+  const canEditPhysicalExam = useMemo(() => {
+    if (!encounter) return false
+    return canEditPhysicalExamination(encounter.status, role)
+  }, [encounter, role])
 
   /** ICD-10-CM suggestions from intake + SOAP subjective (one request per modal open). */
   useEffect(() => {
@@ -931,6 +938,22 @@ export function EncounterDetailModal({
                   encounterId={encounterId}
                   encounter={encounter}
                   onUpdated={async () => {
+                    const { data: enc } = await supabase
+                      .from('encounters')
+                      .select('*')
+                      .eq('id', encounterId)
+                      .single()
+                    if (enc) setEncounter(enc as Encounter)
+                  }}
+                />
+              )}
+
+              {encounter && (
+                <EncounterPhysicalExamPanel
+                  encounterId={encounterId}
+                  encounterStatus={encounter.status}
+                  canEdit={canEditPhysicalExam}
+                  onSaved={async () => {
                     const { data: enc } = await supabase
                       .from('encounters')
                       .select('*')

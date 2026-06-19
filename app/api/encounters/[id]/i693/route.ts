@@ -8,7 +8,7 @@ import {
   isImmigrationEncounterForI693,
   loadEncounterImmigrationContext,
 } from '@/lib/i693/immigration-eligibility'
-import { prefillFromPatient } from '@/lib/i693/ai-fill'
+import { prefillFromPatient, normalizeI693FormAddress } from '@/lib/i693/ai-fill'
 import type { I693FormData } from '@/lib/i693/types'
 import { buildI693ClinicalContext } from '@/lib/i693/build-context'
 import { syncImmigrationCase } from '@/lib/immigration/case-sync'
@@ -109,6 +109,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       const bundle = await buildI693ClinicalContext(admin, encounterId, Number(enc.patient_id))
       formData = prefillFromPatient(bundle.patient, bundle.vitals, formData)
     }
+
+    // Normalise address fields (state abbreviation, split full address from street)
+    formData = normalizeI693FormAddress(formData)
 
     await logI693Audit('viewed', encounterId, {
       patient_id: enc.patient_id,

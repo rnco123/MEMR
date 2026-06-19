@@ -11,10 +11,11 @@ import {
 import { pharmacyRegistryCreateSchema } from '@/lib/validation'
 import { loadEncounterForRx } from '@/lib/prescriptions/encounter-prescriptions'
 import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const CLINICAL_ROLES = new Set(['doctor', 'nurse', 'staff', 'admin'])
+const CLINICAL_ROLES = CLINICAL_STAFF_WITH_ADMIN_ROLE_SET
 
 export async function POST(request: Request) {
   try {

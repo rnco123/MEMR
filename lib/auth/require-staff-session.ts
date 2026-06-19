@@ -1,10 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import { AuthenticationError, AuthorizationError } from '@/lib/api-error-handler'
 import { loadProfileForUser } from '@/lib/profile/load-profile'
-import { mapRoleToEnum, UserRole } from '@/lib/roles'
+import { mapRoleToEnum, UserRole, PHYSICIAN_USER_ROLES } from '@/lib/roles'
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 
-const STAFF_ROLES: UserRole[] = [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
+const STAFF_ROLES: UserRole[] = [UserRole.ADMIN, ...PHYSICIAN_USER_ROLES, UserRole.NURSE]
 
 export type StaffSession = {
   supabase: SupabaseClient

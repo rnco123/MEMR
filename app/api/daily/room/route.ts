@@ -8,7 +8,7 @@ import { config } from '@/lib/config'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { resolveClinicalApiRole } from '@/lib/locations/scope'
-import { UserRole } from '@/lib/roles'
+import { UserRole, isPhysicianRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -75,15 +75,15 @@ export async function POST(request: NextRequest) {
 
     const roleInfo = await fetchUserRole(await createServerClient(), user.id)
     const clinicalRole = resolveClinicalApiRole(roleInfo?.role)
-    if (clinicalRole !== UserRole.DOCTOR && clinicalRole !== UserRole.NURSE) {
+    if (!isPhysicianRole(clinicalRole) && clinicalRole !== UserRole.NURSE) {
       return NextResponse.json(
-        { error: 'Only doctors and nurses can join telemedicine' },
+        { error: 'Only physicians and nurses can join telemedicine' },
         { status: 403 }
       )
     }
 
     await guardEncounterAccess(user.id, encounterIdNum, {
-      requireDoctorAssignment: clinicalRole === UserRole.DOCTOR,
+      requireDoctorAssignment: isPhysicianRole(clinicalRole),
     })
 
     const supabase = createAdminClient()
@@ -260,7 +260,11 @@ export async function POST(request: NextRequest) {
     }
 
     const userRole = (profileForToken?.role as string) ?? ''
-    const displayName = userRole === 'doctor' ? 'Doctor' : userRole === 'nurse' || userRole === 'staff' ? 'Nurse' : 'Staff'
+    const displayName = isPhysicianRole(userRole)
+      ? 'Doctor'
+      : userRole === 'nurse' || userRole === 'staff'
+        ? 'Nurse'
+        : 'Staff'
     const userName = profileForToken?.full_name || displayName
 
     // Meeting token: room_name required; exp recommended by Daily
@@ -270,7 +274,7 @@ export async function POST(request: NextRequest) {
         room_name: roomData.name,
         user_id: user.id.slice(0, 36), // Daily limit 36 chars
         user_name: userName ?? undefined,
-        is_owner: userRole === 'doctor',
+        is_owner: isPhysicianRole(userRole),
         exp,
       },
     }

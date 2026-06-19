@@ -30,6 +30,7 @@ type StatusFilter = 'all' | ImmigrationWorkflowStatus
 const COLOR_DOT: Record<string, string> = {
   red: 'bg-red-500',
   yellow: 'bg-amber-400',
+  purple: 'bg-purple-500',
   green: 'bg-emerald-500',
   blue: 'bg-blue-500',
 }
@@ -117,6 +118,7 @@ export function I693WorkflowBoard({
       incomplete: [],
       ready_review: [],
       completed: [],
+      doctor_reviewed: [],
       delivered: [],
     }
     for (const r of filtered) {
@@ -422,7 +424,7 @@ export function I693WorkflowBoard({
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 min-h-[400px]">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 min-h-[400px]">
           {WORKFLOW_COLUMNS.map((col) => (
             <div
               key={col.status}

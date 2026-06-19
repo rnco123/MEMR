@@ -15,6 +15,8 @@ function normalizePathname(pathname: string): string {
   return pathname
 }
 
+const PHYSICIAN_ROUTE_ROLES = [UserRole.DOCTOR, UserRole.FNP, UserRole.PA] as const
+
 /**
  * Role rules aligned with `withRoleProtection` on each page.
  * Returns null when this path has no extra role requirement in middleware.
@@ -33,28 +35,28 @@ function getRequiredRolesForPath(pathname: string): UserRole[] | null {
   }
 
   if (p.startsWith('/dashboard/flowboard')) {
-    return [UserRole.ADMIN, UserRole.DOCTOR]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES]
   }
   if (p.startsWith('/dashboard/nurse-flowboard')) {
     return [UserRole.ADMIN, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/patients-history')) {
-    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/prescriptions')) {
-    return [UserRole.ADMIN, UserRole.DOCTOR]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES]
   }
   if (p === '/dashboard') {
-    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/')) {
-    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/video')) {
-    return [UserRole.DOCTOR, UserRole.NURSE]
+    return [...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/patient-file')) {
-    return [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   return null
 }
@@ -286,13 +288,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Redirect authenticated users with roles away from login page
-  // But allow access if session is invalid (after sign-out)
-  if (isAuthenticated && userRole && pathname === '/login') {
-    const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = userRole === UserRole.ADMIN ? '/admin' : '/dashboard'
-    return NextResponse.redirect(redirectUrl)
-  }
+  // Authenticated /login is handled client-side (post-login Lottie redirect screen).
 
   // Don't redirect authenticated users without roles from dashboard immediately
   // Let the client-side handle it to avoid redirect loops

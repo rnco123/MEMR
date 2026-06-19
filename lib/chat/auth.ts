@@ -65,8 +65,10 @@ export async function getChatSupabaseClient(request: NextRequest) {
   return supabase
 }
 
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES } from '@/lib/roles'
+
 /** Staff roles allowed in 1:1 chat directory. */
-export const CHAT_ELIGIBLE_ROLES = ['admin', 'doctor', 'nurse', 'staff'] as const
+export const CHAT_ELIGIBLE_ROLES = CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES
 
 export function sortParticipantIds(a: string, b: string): [string, string] {
   return a < b ? [a, b] : [b, a]

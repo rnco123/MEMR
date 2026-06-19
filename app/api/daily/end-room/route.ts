@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { isClinicalStaffRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
     }
 
     const role = profileData?.role as string | null
-    if (!role || !['doctor', 'nurse', 'staff'].includes(role)) {
+    if (!isClinicalStaffRole(role)) {
       return NextResponse.json(
         { error: 'Not allowed to end telemedicine session' },
         { status: 403 }

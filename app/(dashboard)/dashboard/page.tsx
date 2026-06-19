@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { ROLE_PERMISSIONS, getRoleLabel, UserRole } from '@/lib/roles'
+import { ROLE_PERMISSIONS, getRoleLabel, UserRole, isPhysicianRole, FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -45,8 +45,8 @@ function DashboardPage() {
   } = useUserLocations()
 
   const permissions = role ? ROLE_PERMISSIONS[role] : null
-  const isDoctorLike = role === 'doctor' || role === 'admin'
-  const isClinicalStaff = role === 'doctor' || role === 'nurse'
+  const isDoctorLike = isPhysicianRole(role) || role === 'admin'
+  const isClinicalStaff = isPhysicianRole(role) || role === 'nurse'
 
   const fetchAvailability = useCallback(async () => {
     try {
@@ -122,7 +122,7 @@ function DashboardPage() {
   }, [user, isClinicalStaff, selectedLocationId])
 
   const fetchUpcomingAppointments = useCallback(async () => {
-    if (!user || role !== 'doctor') {
+    if (!user || !isPhysicianRole(role)) {
       setUpcomingAppointments([])
       return
     }
@@ -286,7 +286,7 @@ function DashboardPage() {
           <div className="inline-flex items-center gap-2 px-3.5 py-2 bg-white border border-slate-200 rounded-lg shadow-sm">
             <div className={`w-2.5 h-2.5 rounded-full ${isDoctorLike ? 'bg-[#2E6EF3]' : 'bg-emerald-500'}`}></div>
             <span className="text-slate-700 text-sm font-semibold">
-              {t('dashboard.role_dashboard', { role: role ? (role === 'doctor' ? t('auth.role_doctor') : role === 'nurse' ? t('auth.role_nurse') : getRoleLabel(role)) : '' })}
+              {t('dashboard.role_dashboard', { role: role ? getRoleLabel(role) : '' })}
             </span>
           </div>
           
@@ -537,6 +537,6 @@ function DashboardPage() {
 
 // Protect the dashboard with HOC - only doctors and nurses can access
 export default withRoleProtection(DashboardPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...FULL_CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/',
 })

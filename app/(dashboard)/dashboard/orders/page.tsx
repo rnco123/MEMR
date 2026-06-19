@@ -1,7 +1,7 @@
 'use client'
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { UserRole } from '@/lib/roles'
+import { FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -287,6 +287,6 @@ function OrdersPage() {
 }
 
 export default withRoleProtection(OrdersPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR, UserRole.NURSE],
+  allowedRoles: [...FULL_CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/dashboard',
 })

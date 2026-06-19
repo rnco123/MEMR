@@ -10,9 +10,10 @@ import {
 import { suggestIcdCodesFromSubjective } from '@/lib/icd-suggestions/suggest-icd-openai'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
+const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
 
 async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
   try {

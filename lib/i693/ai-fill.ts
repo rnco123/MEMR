@@ -27,6 +27,17 @@ Rules:
 - Map patient demographics from the patient record (split legal name into family/given/middle when possible).
 - date fields: YYYY-MM-DD if known, else "".
 - applicant.sex: "male", "female", or "".
+- ADDRESS PARSING (critical): The patient's address may be stored as a single combined string (e.g. "123 Main St, Springfield, IL 62701, United States"). You MUST split it into individual fields:
+    - applicant.street  → street number and name only (e.g. "123 Main St")
+    - applicant.apt     → apartment / suite / floor number if present (e.g. "Apt 4B"), else ""
+    - applicant.city    → city or town (e.g. "Springfield")
+    - applicant.state   → 2-letter US state abbreviation (e.g. "IL"); use full name if abbreviation unknown
+    - applicant.zip     → 5-digit ZIP code (e.g. "62701"), else ""
+    - applicant.province    → province for foreign addresses, else ""
+    - applicant.postal_code → postal code for foreign addresses, else ""
+    - applicant.country     → country only if non-US (e.g. "Mexico"); for US addresses leave "" or "United States"
+  If the state and ZIP are already provided separately in the patient record, trust those values.
+  Never put a full address string into applicant.street — always split it.
 - Part 7 (medical_history): pull height, weight, BP, pulse, temperature from vitals when present; exam findings from SOAP/MA notes into organ-system fields.
 - Part 8–11: TB, syphilis, gonorrhea, mental disorders, drug abuse — use chart documentation; if not documented use "Not documented in chart" or "".
 - Part 13 vaccinations: only vaccines explicitly mentioned in intake or notes; else [].
@@ -94,6 +105,139 @@ export async function fillI693WithOpenAI(
   return { form: mergeI693Form(parsed), model }
 }
 
+// ── Address parser ────────────────────────────────────────────────────────────
+
+const STATE_FULL_TO_ABBREV: Readonly<Record<string, string>> = {
+  'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+  'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+  'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+  'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+  'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+  'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+  'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+  'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+  'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+  'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+  'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+  'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+  'Wisconsin': 'WI', 'Wyoming': 'WY', 'District of Columbia': 'DC',
+  'Puerto Rico': 'PR', 'Guam': 'GU', 'American Samoa': 'AS',
+  'U.S. Virgin Islands': 'VI', 'Northern Mariana Islands': 'MP',
+}
+
+const US_STATE_ABBREVS: ReadonlySet<string> = new Set([
+  ...Object.values(STATE_FULL_TO_ABBREV),
+])
+
+const US_STATE_NAMES: ReadonlySet<string> = new Set(Object.keys(STATE_FULL_TO_ABBREV))
+
+/** Convert a full US state name to its 2-letter abbreviation; pass through if already abbreviated. */
+export function normalizeStateAbbrev(raw: string): string {
+  if (!raw) return ''
+  const trimmed = raw.trim()
+  if (US_STATE_ABBREVS.has(trimmed.toUpperCase())) return trimmed.toUpperCase()
+  return STATE_FULL_TO_ABBREV[trimmed] ?? trimmed
+}
+
+type ParsedAddress = {
+  street: string
+  apt: string
+  city: string
+  state: string
+  zip: string
+  country: string
+}
+
+/**
+ * Parses a combined address string (common Google Maps / autocomplete format) into
+ * individual I-693 form fields. Falls back gracefully when the format is unrecognised.
+ *
+ * Recognised formats (comma-separated):
+ *   "123 Main St, City, State Zip, Country"
+ *   "123 Main St, City, ST Zip, Country"
+ *   "123 Main St Apt 4B, City, State Zip"
+ */
+export function parseAddressComponents(
+  raw: string,
+  knownState = '',
+  knownZip = '',
+): ParsedAddress {
+  const fallback: ParsedAddress = { street: raw.trim(), apt: '', city: '', state: knownState, zip: knownZip, country: '' }
+  if (!raw.includes(',')) return fallback
+
+  const parts = raw.split(',').map(p => p.trim()).filter(Boolean)
+  if (parts.length < 2) return fallback
+
+  let country = ''
+  let state = ''
+  let zip = ''
+  let city = ''
+  let street = ''
+  let apt = ''
+
+  // Walk from the end:
+  let i = parts.length - 1
+
+  // Last part → country if it looks like one
+  const lastCountryRx = /^(United States(?: of America)?|USA?|Canada|Mexico|United Kingdom|UK|Australia)$/i
+  if (lastCountryRx.test(parts[i])) {
+    country = parts[i]
+    i--
+  }
+
+  // Next part → "State ZIP" or just state/zip
+  if (i >= 1) {
+    const stateZipPart = parts[i]
+    const zipRx = /(\d{5}(?:-\d{4})?)$/
+    const zipMatch = stateZipPart.match(zipRx)
+    if (zipMatch) {
+      zip = zipMatch[1]
+      const statePart = stateZipPart.slice(0, zipMatch.index).trim()
+      if (statePart) state = statePart
+      i--
+    } else if (US_STATE_ABBREVS.has(stateZipPart.toUpperCase())) {
+      state = stateZipPart.toUpperCase()
+      i--
+    } else if (US_STATE_NAMES.has(stateZipPart)) {
+      state = stateZipPart
+      i--
+    }
+  }
+
+  // Apply known values when parser didn't find them
+  if (!state && knownState) state = knownState
+  if (!zip && knownZip) zip = knownZip
+
+  // Always normalise to 2-letter abbreviation for the PDF combo box
+  state = normalizeStateAbbrev(state)
+
+  // Next part → city
+  if (i >= 1) {
+    city = parts[i]
+    i--
+  }
+
+  // Remaining → street (join with comma)
+  const streetRaw = parts.slice(0, i + 1).join(', ')
+
+  // Extract apt from street if present: "123 Main St, Apt 4B" or "123 Main St Apt 4B"
+  const aptRx = /\b(apt|ste?|suite|flr|floor|unit|#)\s*\.?\s*([A-Za-z0-9\-]+)\s*$/i
+  const aptMatch = streetRaw.match(aptRx)
+  if (aptMatch) {
+    apt = aptMatch[0].trim()
+    street = streetRaw.slice(0, aptMatch.index).trim().replace(/,\s*$/, '')
+  } else {
+    street = streetRaw
+  }
+
+  // If street ended up empty but we have a value, keep original
+  if (!street && !city) return fallback
+
+  return { street, apt, city, state, zip, country }
+}
+
+// ── Pre-fill from patient record ──────────────────────────────────────────────
+
 /** Pre-fill applicant and contact from patient / vitals without LLM */
 export function prefillFromPatient(
   patient: Record<string, unknown> | null,
@@ -110,11 +254,25 @@ export function prefillFromPatient(
   if (patient.date_of_birth && !form.applicant.date_of_birth) {
     form.applicant.date_of_birth = String(patient.date_of_birth).slice(0, 10)
   }
-  if (patient.street_address && !form.applicant.street) {
-    form.applicant.street = String(patient.street_address)
+
+  // Address — parse full address string into individual fields
+  if (patient.street_address && !form.applicant.street && !form.applicant.city) {
+    const knownState = patient.state ? String(patient.state).trim() : ''
+    const knownZip = patient.zip_code ? String(patient.zip_code).trim() : ''
+    const parsed = parseAddressComponents(String(patient.street_address), knownState, knownZip)
+
+    if (!form.applicant.street) form.applicant.street = parsed.street
+    if (!form.applicant.apt && parsed.apt) form.applicant.apt = parsed.apt
+    if (!form.applicant.city && parsed.city) form.applicant.city = parsed.city
+    if (!form.applicant.state && parsed.state) form.applicant.state = parsed.state
+    if (!form.applicant.zip && parsed.zip) form.applicant.zip = parsed.zip
+    if (!form.applicant.country && parsed.country) form.applicant.country = parsed.country
+  } else {
+    // street_address not set but individual fields might be
+    if (patient.state && !form.applicant.state) form.applicant.state = String(patient.state)
+    if (patient.zip_code && !form.applicant.zip) form.applicant.zip = String(patient.zip_code)
   }
-  if (patient.state && !form.applicant.state) form.applicant.state = String(patient.state)
-  if (patient.zip_code && !form.applicant.zip) form.applicant.zip = String(patient.zip_code)
+
   if (patient.phone && !form.applicant_contact.day_phone) {
     form.applicant_contact.day_phone = String(patient.phone)
   }
@@ -142,6 +300,43 @@ export function prefillFromPatient(
     if (vitals.temperature != null && !form.medical_history.temperature) {
       form.medical_history.temperature = String(vitals.temperature)
     }
+  }
+
+  return form
+}
+
+// ── Address normalisation for saved form data ─────────────────────────────────
+
+/**
+ * Fixes form data where the full address string ended up in `applicant.street`.
+ * Safe to call on any form — no-ops if address already looks clean.
+ * Also normalises `applicant.state` to 2-letter abbreviation.
+ */
+export function normalizeI693FormAddress(form: I693FormData): I693FormData {
+  const a = form.applicant
+  const stateNorm = normalizeStateAbbrev(a.state)
+
+  // Street looks like a full combined address (contains commas and no separate city)
+  const streetLooksLikeFull = a.street.includes(',') && !a.city
+  if (streetLooksLikeFull) {
+    const parsed = parseAddressComponents(a.street, stateNorm, a.zip)
+    return {
+      ...form,
+      applicant: {
+        ...a,
+        street: parsed.street,
+        apt: a.apt || parsed.apt,
+        city: parsed.city || a.city,
+        state: parsed.state || stateNorm,
+        zip: parsed.zip || a.zip,
+        country: a.country || parsed.country,
+      },
+    }
+  }
+
+  // Just normalise state abbreviation
+  if (stateNorm !== a.state) {
+    return { ...form, applicant: { ...a, state: stateNorm } }
   }
 
   return form

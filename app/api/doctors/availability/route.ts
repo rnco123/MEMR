@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { createSupabaseWithAccessToken, hasServiceRoleKey } from '@/lib/supabase/user-jwt-client'
 import { config } from '@/lib/config'
 import { fetchProfileFields, fetchUserRole } from '@/lib/fetch-user-role'
-import { UserRole, mapRoleToEnum } from '@/lib/roles'
+import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
 import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
 
 export const dynamic = 'force-dynamic'
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
   const userIdToLookup = doctorUserIdParam ?? user.id
 
   if (userIdToLookup !== user.id) {
-    if (clinicalRole === UserRole.DOCTOR) {
+    if (isPhysicianRole(clinicalRole)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
     if (clinicalRole === UserRole.NURSE) {
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
   const profileRole = mapRoleToEnum(
     profile?.role != null ? String(profile.role) : undefined
   )
-  const isDoctor = profileRole === UserRole.DOCTOR || !!existingDoctorCheck
+  const isDoctor = isPhysicianRole(profileRole) || !!existingDoctorCheck
 
   if (!isDoctor) {
     return NextResponse.json(

@@ -222,6 +222,76 @@ export const roomingPatchSchema = z.object({
 
 export type RoomingPatchInput = z.infer<typeof roomingPatchSchema>
 
+const physicalExamField = z.string().max(4000).optional().nullable()
+
+const systemStatusField = z.enum(['N', 'A', 'NA']).nullable().optional()
+
+export const rosExamDataSchema = z.object({
+  ros: z.object({
+    cons: systemStatusField,
+    skin: systemStatusField,
+    eyes: systemStatusField,
+    ears: systemStatusField,
+    nose: systemStatusField,
+    throat: systemStatusField,
+    cv_resp: systemStatusField,
+    gi: systemStatusField,
+    gu: systemStatusField,
+    gyn: systemStatusField,
+    gyn_lmp: z.string().max(50).optional().nullable(),
+    male: systemStatusField,
+    ms: systemStatusField,
+    neu: systemStatusField,
+    neu_numbness: z.string().max(200).optional().nullable(),
+    neu_tingling: z.string().max(200).optional().nullable(),
+    psych: systemStatusField,
+    hemat_lymph: systemStatusField,
+  }).optional(),
+  exam: z.object({
+    general: systemStatusField,
+    skin: systemStatusField,
+    head: systemStatusField,
+    eyes: systemStatusField,
+    ears: systemStatusField,
+    nose: systemStatusField,
+    throat: systemStatusField,
+    neck: systemStatusField,
+    cv: systemStatusField,
+    respir: systemStatusField,
+    abdomen: systemStatusField,
+    gu: systemStatusField,
+    rectal: systemStatusField,
+    ms: systemStatusField,
+    ms_sites: z.string().max(500).optional().nullable(),
+    neuro: systemStatusField,
+  }).optional(),
+  remarks: z.string().max(8000).optional().nullable(),
+}).optional()
+
+/** Every clinical field is optional — nurse may save partial or empty exams. */
+export const physicalExaminationDataSchema = z
+  .object({
+    general_appearance: physicalExamField,
+    eyes_ears_nose_throat: physicalExamField,
+    cardiovascular: physicalExamField,
+    pulmonary: physicalExamField,
+    abdomen: physicalExamField,
+    musculoskeletal: physicalExamField,
+    neurologic: physicalExamField,
+    psychiatric: physicalExamField,
+    skin: physicalExamField,
+    lymphatic: physicalExamField,
+    remarks: z.string().max(8000).optional().nullable(),
+  })
+  .partial()
+
+export const physicalExaminationPatchSchema = z.object({
+  physical_examination: physicalExaminationDataSchema.default({}),
+  ros_exam: rosExamDataSchema.optional(),
+})
+
+export type PhysicalExaminationPatchInput = z.infer<typeof physicalExaminationPatchSchema>
+
 export const encounterOrderCreateSchema = z.object({
   order_type: z.enum(['lab_draw', 'injection', 'immunization', 'poc_test', 'referral', 'other']),
   title: z.string().min(1).max(500),

@@ -6,7 +6,7 @@ import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { resolveDisplayName } from '@/lib/display-name'
 import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { loadProfileForUser, updateProfileForUser } from '@/lib/profile/load-profile'
-import { UserRole } from '@/lib/roles'
+import { UserRole, isPhysicianRole } from '@/lib/roles'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +36,7 @@ export async function GET() {
     const avatarId = profile?.avatar_id ?? null
 
     let npi: string | null = null
-    if (role === UserRole.DOCTOR) {
+    if (isPhysicianRole(role)) {
       const { data: doctorRow } = await supabase
         .from('doctors')
         .select('npi')
@@ -95,8 +95,8 @@ export async function PATCH(req: NextRequest) {
 
     if (validated.npi !== undefined) {
       const profileForRole = await loadProfileForUser(supabase, user.id, { email: user.email })
-      if (profileForRole?.role !== UserRole.DOCTOR) {
-        throw new ValidationError('NPI can only be set for doctor accounts')
+      if (!isPhysicianRole(profileForRole?.role)) {
+        throw new ValidationError('NPI can only be set for physician accounts')
       }
       let parsedNpi: string | null
       try {
@@ -160,7 +160,7 @@ export async function PATCH(req: NextRequest) {
       profile?.avatar_id ?? (validated.avatar_id as string | undefined) ?? null
 
     let npi: string | null = null
-    if (role === UserRole.DOCTOR) {
+    if (isPhysicianRole(role)) {
       const { data: doctorRow } = await supabase
         .from('doctors')
         .select('npi')

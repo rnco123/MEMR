@@ -1,4 +1,4 @@
-import type { McmProductRow } from '@/lib/mcm/external-catalog'
+import type { McmProductRow } from '@/lib/mcm/catalog'
 
 export interface PreSalesSuggestion {
   product_id: number

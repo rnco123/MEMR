@@ -4,9 +4,10 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_ROLES = new Set(['nurse', 'staff', 'doctor'])
+const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
 
 export type AiSoapNoteRow = {
   id: number

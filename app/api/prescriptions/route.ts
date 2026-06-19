@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { prescriptionCreateSchema } from '@/lib/validation'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getDoctorRowId } from '@/lib/clinical'
+import { isPhysicianRole } from '@/lib/roles'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,7 @@ export async function GET() {
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (roleInfo?.role !== 'doctor') throw new AuthorizationError('Doctors only')
+    if (!isPhysicianRole(roleInfo?.role)) throw new AuthorizationError('Physicians only')
 
     const doctorId = await getDoctorRowId(supabase, user.id)
     if (!doctorId) {
@@ -64,7 +65,7 @@ export async function POST(request: Request) {
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (roleInfo?.role !== 'doctor') throw new AuthorizationError('Doctors only')
+    if (!isPhysicianRole(roleInfo?.role)) throw new AuthorizationError('Physicians only')
 
     const doctorId = await getDoctorRowId(supabase, user.id)
     if (!doctorId) throw new ValidationError('Complete your doctor profile before prescribing')

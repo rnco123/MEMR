@@ -3,12 +3,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, useRef, type RefObject } from 'react'
 import { createClient } from './supabase/client'
 import type { User, Session } from '@supabase/supabase-js'
-import { useRouter } from 'next/navigation'
 import type { UserRole } from './roles'
 import { isValidRole, mapRoleToEnum } from './roles'
 import { fetchProfileFields } from './fetch-user-role'
 import { isAbortError } from './is-abort-error'
 import { logAuditEventClient } from './audit'
+import { preloadVerifyingAccessAnimation } from './lottie/verifying-access'
 
 interface AuthContextType {
   user: User | null
@@ -29,7 +29,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRoleState] = useState<UserRole | null>(null)
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
   // Use ref to preserve role during refreshes to prevent welcome screen on temporary failures
   const roleRef = useRef<UserRole | null>(null)
@@ -100,33 +99,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Extract role from user metadata or fetch from database
+  // Extract role — profiles table is authoritative (H-03); metadata is legacy fallback only.
   const extractRole = async (user: User | null): Promise<UserRole | null> => {
     if (!user) return null
-    
-    // First check user metadata (for test mode or legacy users)
-    const metadataRole = mapRoleToEnum(user.user_metadata?.role)
-    if (metadataRole) {
-      return metadataRole
-    }
 
     const apiRole = await fetchRoleViaApi()
     if (apiRole) return apiRole
 
-    // If no role in metadata, fetch from database (direct Supabase — may fail on restricted DNS)
     const dbRole = await fetchUserRoleWithRetry(user.id, user.email)
-    if (dbRole) {
-      // Update user metadata with role for faster access
-      // Store in user metadata to avoid repeated queries
-      if (user.user_metadata) {
-        user.user_metadata.role = dbRole
-      } else {
-        user.user_metadata = { role: dbRole }
-      }
-      return dbRole
-    }
+    if (dbRole) return dbRole
 
-    return null
+    return mapRoleToEnum(user.user_metadata?.role)
   }
 
   useEffect(() => {
@@ -417,6 +400,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  useEffect(() => {
+    preloadVerifyingAccessAnimation()
+  }, [])
+
   const signIn = async (email: string, password: string) => {
     try {
       const res = await fetch('/api/auth/login', {
@@ -436,10 +423,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const signedInUser = data.user ?? null
-      let userRole =
-        mapRoleToEnum(data.role) ||
-        mapRoleToEnum(signedInUser?.user_metadata?.role) ||
-        null
+      let userRole = mapRoleToEnum(data.role) || null
 
       if (signedInUser && !userRole) {
         userRole = await extractRole(signedInUser)
@@ -461,14 +445,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (signedInUser?.id) {
         logAuditEventClient('user_logged_in', 'user', signedInUser.id, { role: userRole }).catch(() => {})
       }
-      if (userRole === 'admin') {
-        router.push('/admin')
-      } else if (userRole) {
-        router.push('/dashboard')
-      } else {
-        router.push('/')
-      }
-      router.refresh()
       return { error: null }
     } catch (err) {
       const message =
@@ -511,10 +487,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Store in localStorage for test mode
       localStorage.setItem('test_user', JSON.stringify(mockUser))
       localStorage.setItem('test_role', data.user.role)
-
-      // Redirect based on role
-      router.push('/dashboard')
-      router.refresh()
 
       return { error: null }
     } catch (err) {

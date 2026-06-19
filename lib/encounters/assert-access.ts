@@ -5,7 +5,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { AuthorizationError } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { mapRoleToEnum, UserRole } from '@/lib/roles'
+import { mapRoleToEnum, UserRole, isPhysicianRole } from '@/lib/roles'
 import { getLocationScopeForUser, isAllowedByLocationScope } from '@/lib/locations/scope'
 
 export type EncounterAccessOptions = {
@@ -88,7 +88,7 @@ export async function assertEncounterAccess(
     throw new AuthorizationError('Access denied: encounter belongs to a different location')
   }
 
-  if (role === UserRole.DOCTOR && requireDoctorAssignment) {
+  if (isPhysicianRole(role) && requireDoctorAssignment) {
     const doctorRowId = await resolveDoctorRowId(adminClient, userId)
     if (!doctorRowId || encounter.doctor_id !== doctorRowId) {
       throw new AuthorizationError('You are not assigned to this encounter')

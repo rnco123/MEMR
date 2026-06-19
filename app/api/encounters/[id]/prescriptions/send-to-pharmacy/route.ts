@@ -11,10 +11,11 @@ import {
   handleApiError,
 } from '@/lib/api-error-handler'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const CLINICAL_ROLES = new Set(['doctor', 'nurse', 'staff'])
+const CLINICAL_ROLES = CLINICAL_STAFF_ROLE_SET
 
 const sendToPharmacySchema = z.object({
   prescription_ids: z.array(z.number().int().positive()).min(1).max(50),

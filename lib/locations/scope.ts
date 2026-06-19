@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { fetchAllLocations } from '@/lib/locations/fetch-all'
-import { mapRoleToEnum, UserRole } from '@/lib/roles'
+import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
 
 export type LocationRow = {
   id: number
@@ -26,6 +26,8 @@ export function resolveClinicalApiRole(role: string | null | undefined): UserRol
   if (
     mapped === UserRole.ADMIN ||
     mapped === UserRole.DOCTOR ||
+    mapped === UserRole.FNP ||
+    mapped === UserRole.PA ||
     mapped === UserRole.NURSE
   ) {
     return mapped
@@ -44,11 +46,16 @@ export async function getLocationScopeForUser(
     return { unrestricted: true, locationIds: [] }
   }
 
-  if (resolved !== UserRole.DOCTOR && resolved !== UserRole.NURSE) {
+  if (
+    resolved !== UserRole.DOCTOR &&
+    resolved !== UserRole.FNP &&
+    resolved !== UserRole.PA &&
+    resolved !== UserRole.NURSE
+  ) {
     return { unrestricted: false, locationIds: [] }
   }
 
-  const staffRole = resolved === UserRole.DOCTOR ? 'doctor' : 'nurse'
+  const staffRole = isPhysicianRole(resolved) ? 'doctor' : 'nurse'
 
   const { data: rows } = await admin
     .from('user_locations')

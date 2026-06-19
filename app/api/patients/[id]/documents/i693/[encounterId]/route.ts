@@ -5,14 +5,14 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { mergeI693Form } from '@/lib/i693/types'
 import type { I693FormData } from '@/lib/i693/types'
+import { normalizeI693FormAddress } from '@/lib/i693/ai-fill'
 import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
 import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
+import { isI693ApiRole } from '@/lib/immigration/api-auth'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-const ALLOWED = new Set(['doctor', 'nurse', 'staff', 'admin'])
 
 export async function GET(
   _request: NextRequest,
@@ -33,8 +33,7 @@ export async function GET(
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    const role = roleInfo?.role?.toLowerCase()
-    if (!role || !ALLOWED.has(role)) throw new AuthorizationError()
+    if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
 
     const admin = createAdminClient()
     const { data: sub, error } = await admin
@@ -47,9 +46,10 @@ export async function GET(
     if (error) throw error
     if (!sub) throw new ValidationError('I-693 form not found for this encounter')
 
-    const formData = mergeI693Form(sub.form_data as Partial<I693FormData>)
+    const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
     const annotations = resolveStoredI693Annotations(sub.annotations, formData)
 
+    // Note: skip cached PDF if address normalization would change it
     if (sub.pdf_storage_path && annotations.length === 0) {
       const { data: fileBlob, error: dlErr } = await admin.storage
         .from('patient-documents')

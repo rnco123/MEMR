@@ -9,7 +9,7 @@ import {
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
 import { buildFlowboardRows, getDoctorIdForUser } from '@/lib/locations/flowboard-data'
-import { UserRole } from '@/lib/roles'
+import { UserRole, isPhysicianRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
             ? 'admin'
             : 'doctor'
 
-    if (mode === 'doctor' && clinicalRole !== UserRole.DOCTOR && clinicalRole !== UserRole.ADMIN) {
+    if (mode === 'doctor' && !isPhysicianRole(clinicalRole) && clinicalRole !== UserRole.ADMIN) {
       throw new AuthorizationError()
     }
     if (mode === 'nurse' && clinicalRole !== UserRole.NURSE && clinicalRole !== UserRole.ADMIN) {

@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { handleApiError, AuthenticationError, AuthorizationError } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
+import { PHYSICIAN_ROLE_VALUES, CLINICAL_STAFF_ROLE_VALUES } from '@/lib/roles'
 
 /**
  * Require authentication for API route
@@ -60,7 +61,7 @@ export async function requireRole(
  * Require doctor role
  */
 export async function requireDoctor(request: NextRequest) {
-  return requireRole(request, ['doctor'])
+  return requireRole(request, [...PHYSICIAN_ROLE_VALUES])
 }
 
 /**
@@ -74,5 +75,5 @@ export async function requireNurse(request: NextRequest) {
  * Require doctor or nurse role
  */
 export async function requireMedicalStaff(request: NextRequest) {
-  return requireRole(request, ['doctor', 'nurse', 'staff'])
+  return requireRole(request, [...CLINICAL_STAFF_ROLE_VALUES])
 }

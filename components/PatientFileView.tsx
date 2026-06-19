@@ -263,51 +263,25 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     fetchPatient()
   }, [patientId, supabase])
 
-  // Fetch encounters for patient
+  // Fetch encounters for patient (server route bypasses admin RLS gap)
   useEffect(() => {
     const fetchEncounters = async () => {
       if (!patientId || isNaN(patientId)) return
-      
+
       setLoadingEncounters(true)
       try {
-        // First get all appointments for this patient
-        const { data: appointments, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-
-        if (appointmentsError) {
-          console.error('Error fetching appointments for encounters:', appointmentsError)
+        const res = await fetch(`/api/patients/${patientId}/encounters`)
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}))
+          console.error('Error fetching encounters:', body.error ?? res.statusText)
           setEncounters([])
-          setLoadingEncounters(false)
           return
         }
 
-        if (!appointments || appointments.length === 0) {
-          setEncounters([])
-          setLoadingEncounters(false)
-          return
+        const { encounters: encountersData } = (await res.json()) as {
+          encounters?: PatientEncounter[]
         }
-
-        const appointmentIds = appointments.map(a => a.id)
-
-        // Fetch encounters for those appointments with related data
-        const { data: encountersData, error: encountersError } = await supabase
-          .from('encounters')
-          .select(`
-            *,
-            appointments (*),
-            doctors (*)
-          `)
-          .in('appointment_id', appointmentIds)
-          .order('created_at', { ascending: false })
-
-        if (encountersError) {
-          console.error('Error fetching encounters:', encountersError)
-          setEncounters([])
-        } else {
-          setEncounters((encountersData as PatientEncounter[]) || [])
-        }
+        setEncounters(encountersData ?? [])
       } catch (error) {
         console.error('Error in fetchEncounters:', error)
         setEncounters([])
@@ -317,7 +291,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     }
 
     fetchEncounters()
-  }, [patientId, supabase])
+  }, [patientId])
 
   // Fetch medical history from intake forms and vitals
   useEffect(() => {

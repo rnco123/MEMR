@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { UserRole, mapRoleToEnum } from '@/lib/roles'
+import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
 import { useUserProfile } from '@/lib/user-profile-context'
 import { AvatarPicker } from '@/components/AvatarPicker'
 import { ChangePasswordForm } from '@/components/ChangePasswordForm'
@@ -18,8 +18,7 @@ export default function ProfilePage() {
   const [npi, setNpi] = useState('')
   const [savingName, setSavingName] = useState(false)
   const [savingNpi, setSavingNpi] = useState(false)
-  const isDoctor =
-    mapRoleToEnum(profile?.role) === UserRole.DOCTOR || role === UserRole.DOCTOR
+  const isDoctor = isPhysicianRole(profile?.role) || isPhysicianRole(role)
 
   useEffect(() => {
     if (profile) {

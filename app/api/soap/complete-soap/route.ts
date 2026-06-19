@@ -3,6 +3,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
 import { fetchUserRole } from '@/lib/fetch-user-role'
+import { isPhysicianNurseAdminRole } from '@/lib/roles'
 import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +38,7 @@ export async function POST(request: NextRequest) {
     // H-05b: Require clinical staff role (doctor or nurse minimum).
     const roleInfo = await fetchUserRole(supabase, user.id)
     const role = roleInfo?.role
-    if (!role || !['doctor', 'nurse', 'admin'].includes(role)) {
+    if (!isPhysicianNurseAdminRole(role)) {
       return NextResponse.json({ error: 'Forbidden: clinical role required' }, { status: 403 })
     }
 

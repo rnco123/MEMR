@@ -1,7 +1,7 @@
 'use client'
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { UserRole } from '@/lib/roles'
+import { PHYSICIAN_OR_ADMIN_ROLES } from '@/lib/roles'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -330,6 +330,6 @@ function PrescriptionsPage() {
 }
 
 export default withRoleProtection(PrescriptionsPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR],
+  allowedRoles: [...PHYSICIAN_OR_ADMIN_ROLES],
   redirectTo: '/dashboard',
 })

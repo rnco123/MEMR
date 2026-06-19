@@ -1,7 +1,12 @@
 export const IMMIGRATION_PROGRAM = 'immigration_i693' as const
 
-export type ImmigrationWorkflowStatus = 'incomplete' | 'ready_review' | 'completed' | 'delivered'
-export type ImmigrationStatusColor = 'red' | 'yellow' | 'green' | 'blue'
+export type ImmigrationWorkflowStatus =
+  | 'incomplete'
+  | 'ready_review'
+  | 'completed'
+  | 'doctor_reviewed'
+  | 'delivered'
+export type ImmigrationStatusColor = 'red' | 'yellow' | 'purple' | 'green' | 'blue'
 
 export type ImmigrationCaseRow = {
   id: number
@@ -41,6 +46,7 @@ export const WORKFLOW_COLUMNS: {
   { status: 'incomplete', color: 'red', emoji: '🔴', labelKey: 'i693.wf_incomplete' },
   { status: 'ready_review', color: 'yellow', emoji: '🟡', labelKey: 'i693.wf_ready_review' },
   { status: 'completed', color: 'green', emoji: '🟢', labelKey: 'i693.wf_completed' },
+  { status: 'doctor_reviewed', color: 'purple', emoji: '🟣', labelKey: 'i693.wf_doctor_reviewed' },
   { status: 'delivered', color: 'blue', emoji: '🔵', labelKey: 'i693.wf_delivered' },
 ]
 

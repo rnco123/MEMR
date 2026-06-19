@@ -22,6 +22,7 @@ export type CaseFlags = {
   is_vaccine_complete: boolean
   is_intake_complete: boolean
   is_md_signed: boolean
+  is_i693_exported: boolean
   is_delivered: boolean
 }
 
@@ -130,16 +131,18 @@ export async function deriveCaseFlags(
     form.civil_surgeon.vaccinations_complete === true
 
   const i693Status = String(i693?.status ?? '')
+  const is_i693_exported = i693Status === 'exported'
   const is_md_signed =
     hasText(form.civil_surgeon.date_signed) ||
     i693Status === 'reviewed' ||
-    i693Status === 'exported'
+    is_i693_exported
 
   return {
     is_intake_complete,
     is_lab_complete,
     is_vaccine_complete,
     is_md_signed,
+    is_i693_exported,
     is_delivered: existingDelivered,
   }
 }
@@ -150,7 +153,23 @@ const WORKFLOW_STATUS_ORDER: Record<ImmigrationWorkflowStatus, number> = {
   incomplete: 0,
   ready_review: 1,
   completed: 2,
-  delivered: 3,
+  doctor_reviewed: 3,
+  delivered: 4,
+}
+
+function workflowStatusColor(status: ImmigrationWorkflowStatus): ImmigrationStatusColor {
+  switch (status) {
+    case 'delivered':
+      return 'blue'
+    case 'completed':
+      return 'green'
+    case 'doctor_reviewed':
+      return 'purple'
+    case 'ready_review':
+      return 'yellow'
+    default:
+      return 'red'
+  }
 }
 
 type ImmigrationCaseWriteRow = {
@@ -342,17 +361,12 @@ export async function syncImmigrationCase(
   if (options?.manualStatus) {
     const computed = computeWorkflowFromFlags(flags)
     status = options.manualStatus
-    status_color =
-      status === 'delivered'
-        ? 'blue'
-        : status === 'completed'
-          ? 'green'
-          : status === 'ready_review'
-            ? 'yellow'
-            : 'red'
+    status_color = workflowStatusColor(status)
     missing_items = computed.missing_items
     if (status === 'delivered') flags.is_delivered = true
-    if (status === 'completed' || status === 'delivered') flags.is_md_signed = true
+    if (status === 'doctor_reviewed' || status === 'completed' || status === 'delivered') {
+      flags.is_md_signed = true
+    }
   } else if (existing && !options?.forceRecomputeStatus) {
     const computed = computeWorkflowFromFlags(flags)
     const existingOrder = WORKFLOW_STATUS_ORDER[existing.status as ImmigrationWorkflowStatus] ?? 0

@@ -4,6 +4,9 @@ import {
   formatSoapForRisk,
   formatVitalsForRisk,
 } from '@/lib/risk-alerts/build-clinical-context'
+import { loadEncounterPhysicalExamination } from '@/lib/encounter/physical-examination-store'
+import { formatPhysicalExaminationForContext } from '@/lib/encounter/physical-examination'
+import { parseAddressComponents } from '@/lib/i693/ai-fill'
 
 export type I693ClinicalBundle = {
   patient: Record<string, unknown> | null
@@ -81,15 +84,31 @@ export async function buildI693ClinicalContext(
     .maybeSingle()
 
   const patientBlock = patient
-    ? [
-        `Patient: ${patient.first_name} ${patient.last_name}`,
-        `DOB: ${patient.date_of_birth ?? 'unknown'}`,
-        `Gender: ${patient.gender ?? 'unknown'}`,
-        `Phone: ${patient.phone ?? ''}`,
-        `Email: ${patient.email ?? ''}`,
-        `Address: ${[patient.street_address, patient.state, patient.zip_code].filter(Boolean).join(', ')}`,
-        `Patient code: ${patient.patient_code ?? ''}`,
-      ].join('\n')
+    ? (() => {
+        const addrRaw = String(patient.street_address ?? '').trim()
+        const knownState = String(patient.state ?? '').trim()
+        const knownZip = String(patient.zip_code ?? '').trim()
+        const addr = addrRaw
+          ? parseAddressComponents(addrRaw, knownState, knownZip)
+          : { street: '', apt: '', city: '', state: knownState, zip: knownZip, country: '' }
+        const addrLines = [
+          addr.street && `  Street: ${addr.street}`,
+          addr.apt && `  Apt/Ste/Flr: ${addr.apt}`,
+          addr.city && `  City: ${addr.city}`,
+          addr.state && `  State: ${addr.state}`,
+          addr.zip && `  ZIP: ${addr.zip}`,
+          addr.country && `  Country: ${addr.country}`,
+        ].filter(Boolean).join('\n')
+        return [
+          `Patient: ${patient.first_name} ${patient.last_name}`,
+          `DOB: ${patient.date_of_birth ?? 'unknown'}`,
+          `Gender: ${patient.gender ?? 'unknown'}`,
+          `Phone: ${patient.phone ?? ''}`,
+          `Email: ${patient.email ?? ''}`,
+          addrLines ? `Address (parsed):\n${addrLines}` : '',
+          `Patient code: ${patient.patient_code ?? ''}`,
+        ].filter(Boolean).join('\n')
+      })()
     : ''
 
   const intakeText = formatIntakeForRisk(intake)
@@ -111,16 +130,22 @@ export async function buildI693ClinicalContext(
     } | null
   )
 
+  const physicalExamBundle = await loadEncounterPhysicalExamination(admin, encounterId, {
+    legacyFindings: enc?.ma_exam_findings as string | null | undefined,
+  })
+  const physicalExamText = formatPhysicalExaminationForContext(physicalExamBundle.physical_examination)
+
   const maFindings =
-    enc?.ma_exam_findings && String(enc.ma_exam_findings).trim()
+    physicalExamText ||
+    (enc?.ma_exam_findings && String(enc.ma_exam_findings).trim()
       ? String(enc.ma_exam_findings).trim()
-      : null
+      : null)
 
   const textBlock = [
     patientBlock && `PATIENT RECORD:\n${patientBlock}`,
     intakeText && `INTAKE:\n${intakeText}`,
     vitalsText,
-    maFindings && `MA EXAM FINDINGS:\n${maFindings}`,
+    maFindings && `PHYSICAL EXAMINATION:\n${maFindings}`,
     aiSoapText && `AI SOAP:\n${aiSoapText}`,
     doctorSoapText && `DOCTOR SOAP:\n${doctorSoapText}`,
   ]

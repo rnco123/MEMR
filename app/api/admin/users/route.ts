@@ -7,7 +7,10 @@ import { logAuditEvent } from '@/lib/audit-server'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { fetchAllLocations } from '@/lib/locations/fetch-all'
+import { ADMIN_STAFF_ROLE_VALUES, isPhysicianRole } from '@/lib/roles'
 import { z } from 'zod'
+
+const adminStaffRoleSchema = z.enum(ADMIN_STAFF_ROLE_VALUES)
 
 export const dynamic = 'force-dynamic'
 
@@ -23,7 +26,7 @@ const createUserSchema = z.object({
   name: z.string().min(2).max(100).trim(),
   email: z.string().email().toLowerCase().trim(),
   password: passwordSchema,
-  role: z.enum(['doctor', 'nurse']),
+  role: adminStaffRoleSchema,
   location_ids: z.array(z.number().int().positive()).optional(),
 })
 
@@ -32,7 +35,7 @@ const patchUserSchema = z
     uid: z.string().uuid(),
     full_name: z.string().min(2).max(100).trim().optional(),
     email: z.string().email().toLowerCase().trim().optional(),
-    role: z.enum(['doctor', 'nurse']).optional(),
+    role: adminStaffRoleSchema.optional(),
     active: z.boolean().optional(),
     password: passwordSchema.optional(),
     location_ids: z.array(z.number().int().positive()).optional(),
@@ -53,7 +56,7 @@ const patchUserSchema = z
 async function syncStaffRecord(
   admin: ReturnType<typeof createAdminClient>,
   uid: string,
-  role: 'doctor' | 'nurse',
+  role: z.infer<typeof adminStaffRoleSchema>,
   fullName: string,
   email: string | null,
   options?: { primaryLocationId?: number | null; npi?: string | null }
@@ -64,7 +67,7 @@ async function syncStaffRecord(
       : {}
   const npiPatch = options && 'npi' in options ? { npi: options.npi ?? null } : {}
 
-  if (role === 'doctor') {
+  if (isPhysicianRole(role)) {
     const { data: existing } = await admin.from('doctors').select('id').eq('user_id', uid).maybeSingle()
     const payload = {
       full_name: fullName,
@@ -155,7 +158,7 @@ export async function GET(_req: NextRequest) {
       avatar_id: p.avatar_id ?? null,
       avatar_url: resolveStaffAvatarUrl(p.avatar_id ?? null),
       assigned_locations: locationsByUser.get(p.uid) ?? [],
-      npi: p.role === 'doctor' ? (npiByUserId.get(p.uid) ?? null) : null,
+      npi: isPhysicianRole(p.role) ? (npiByUserId.get(p.uid) ?? null) : null,
     }))
 
     return NextResponse.json({ users, locations: locations ?? [] })
@@ -297,9 +300,9 @@ export async function PATCH(req: NextRequest) {
     if (!targetProfile) throw new ValidationError('User not found')
     if (targetProfile.role === 'admin') throw new ValidationError('Admin accounts cannot be edited here')
 
-    const nextRole = (role ?? targetProfile.role) as 'doctor' | 'nurse'
-    if (nextRole !== 'doctor' && nextRole !== 'nurse') {
-      throw new ValidationError('Role must be doctor or nurse')
+    const nextRole = (role ?? targetProfile.role) as z.infer<typeof adminStaffRoleSchema>
+    if (!adminStaffRoleSchema.safeParse(nextRole).success) {
+      throw new ValidationError('Role must be doctor, fnp, pa, or nurse')
     }
 
     const nextName = full_name ?? targetProfile.full_name ?? ''
@@ -332,8 +335,8 @@ export async function PATCH(req: NextRequest) {
 
     let parsedNpi: string | null | undefined
     if (npi !== undefined) {
-      if (nextRole !== 'doctor') {
-        throw new ValidationError('NPI can only be set for doctor accounts')
+      if (!isPhysicianRole(nextRole)) {
+        throw new ValidationError('NPI can only be set for physician accounts')
       }
       try {
         parsedNpi = parseDoctorNpi(npi)

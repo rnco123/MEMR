@@ -1,9 +1,27 @@
-import { isValidRole, mapRoleToEnum, UserRole, getRoleLabel } from '@/lib/roles'
+import {
+  isValidRole,
+  mapRoleToEnum,
+  UserRole,
+  getRoleLabel,
+  isPhysicianRole,
+  isClinicalStaffRole,
+  isClinicalStaffWithAdminRole,
+  isPhysicianNurseAdminRole,
+  CLINICAL_STAFF_ROLE_SET,
+} from '@/lib/roles'
 
 describe('Role utilities', () => {
   describe('isValidRole', () => {
     test('validates doctor role', () => {
       expect(isValidRole('doctor')).toBe(true)
+    })
+
+    test('validates fnp role', () => {
+      expect(isValidRole('fnp')).toBe(true)
+    })
+
+    test('validates pa role', () => {
+      expect(isValidRole('pa')).toBe(true)
     })
 
     test('validates nurse role', () => {
@@ -27,6 +45,14 @@ describe('Role utilities', () => {
       expect(mapRoleToEnum('doctor')).toBe(UserRole.DOCTOR)
     })
 
+    test('maps fnp to FNP', () => {
+      expect(mapRoleToEnum('fnp')).toBe(UserRole.FNP)
+    })
+
+    test('maps pa to PA', () => {
+      expect(mapRoleToEnum('pa')).toBe(UserRole.PA)
+    })
+
     test('maps nurse to NURSE', () => {
       expect(mapRoleToEnum('nurse')).toBe(UserRole.NURSE)
     })
@@ -41,9 +67,50 @@ describe('Role utilities', () => {
     })
   })
 
+  describe('isPhysicianRole', () => {
+    test('includes doctor, fnp, and pa', () => {
+      expect(isPhysicianRole('doctor')).toBe(true)
+      expect(isPhysicianRole('fnp')).toBe(true)
+      expect(isPhysicianRole('pa')).toBe(true)
+    })
+
+    test('excludes nurse and admin', () => {
+      expect(isPhysicianRole('nurse')).toBe(false)
+      expect(isPhysicianRole('admin')).toBe(false)
+    })
+  })
+
+  describe('clinical role helpers', () => {
+    test('isClinicalStaffRole includes physicians and nurses', () => {
+      expect(isClinicalStaffRole('pa')).toBe(true)
+      expect(isClinicalStaffRole('fnp')).toBe(true)
+      expect(isClinicalStaffRole('nurse')).toBe(true)
+      expect(isClinicalStaffRole('admin')).toBe(false)
+    })
+
+    test('isClinicalStaffWithAdminRole includes admin', () => {
+      expect(isClinicalStaffWithAdminRole('pa')).toBe(true)
+      expect(isClinicalStaffWithAdminRole('admin')).toBe(true)
+    })
+
+    test('isPhysicianNurseAdminRole matches consent/SOAP access list', () => {
+      expect(isPhysicianNurseAdminRole('fnp')).toBe(true)
+      expect(isPhysicianNurseAdminRole('staff')).toBe(false)
+    })
+
+    test('CLINICAL_STAFF_ROLE_SET includes fnp and pa', () => {
+      expect(CLINICAL_STAFF_ROLE_SET.has('fnp')).toBe(true)
+      expect(CLINICAL_STAFF_ROLE_SET.has('pa')).toBe(true)
+    })
+  })
+
   describe('getRoleLabel', () => {
     test('returns correct label for doctor', () => {
       expect(getRoleLabel(UserRole.DOCTOR)).toBe('Doctor')
+    })
+
+    test('returns correct label for fnp', () => {
+      expect(getRoleLabel(UserRole.FNP)).toBe('Family Nurse Practitioner (FNP)')
     })
 
     test('returns correct label for nurse', () => {

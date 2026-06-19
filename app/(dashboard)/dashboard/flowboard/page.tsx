@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
+import { isPhysicianRole, PHYSICIAN_OR_ADMIN_ROLES } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -27,7 +28,6 @@ import {
   writeFlowboardDisplayMode,
   type FlowboardDisplayMode,
 } from '@/components/FlowboardViewToggle'
-import { UserRole } from '@/lib/roles'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -189,7 +189,7 @@ function FlowboardPage() {
   }, [selectedLocationId])
 
   useEffect(() => {
-    if (user && role === 'doctor' && !initialLoadDone.current) {
+    if (user && isPhysicianRole(role) && !initialLoadDone.current) {
       initialLoadDone.current = true
       const hasCache = typeof window !== 'undefined' && !!sessionStorage.getItem(CACHE_KEY)
       fetchAssignedAppointments(!hasCache)
@@ -197,7 +197,7 @@ function FlowboardPage() {
   }, [user, role, fetchAssignedAppointments])
 
   useEffect(() => {
-    if (user && role === 'doctor' && initialLoadDone.current) {
+    if (user && isPhysicianRole(role) && initialLoadDone.current) {
       fetchAssignedAppointments(false)
     }
   }, [selectedLocationId, user, role, fetchAssignedAppointments])
@@ -341,7 +341,7 @@ function FlowboardPage() {
                   setPage(1)
                 }}
                 placeholder={t('flow.search_placeholder')}
-                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
+                className="w-full pl-10 pr-4 h-9 bg-[#f9fbff] border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
               />
             </div>
           }
@@ -350,7 +350,7 @@ function FlowboardPage() {
               type="button"
               onClick={refreshData}
               disabled={loading || isRefreshing}
-              className="h-11 w-11 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              className="h-9 w-9 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
               title={t('common.refresh')}
             >
               <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -360,6 +360,18 @@ function FlowboardPage() {
           }
           filters={
             <>
+              <FlowboardFilterField label={t('location.filter_label')} wide>
+                <LocationFilterSelect
+                  locations={userLocations}
+                  value={selectedLocationId}
+                  onChange={(v) => {
+                    setSelectedLocationId(v)
+                    setPage(1)
+                  }}
+                  unrestricted={locationsUnrestricted}
+                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[14rem]`}
+                />
+              </FlowboardFilterField>
               <FlowboardFilterField label={t('flow.sort')}>
                 <select
                   value={sortBy}
@@ -373,28 +385,6 @@ function FlowboardPage() {
                   <option value="name">{t('flow.sort_name')}</option>
                   <option value="treatment">{t('flow.sort_treatment')}</option>
                 </select>
-              </FlowboardFilterField>
-              <FlowboardFilterField label={t('flow.view')}>
-                <select
-                  value="mine"
-                  onChange={() => {}}
-                  disabled
-                  className={`${FLOWBOARD_SELECT_CLASS} bg-slate-50 text-slate-500 cursor-not-allowed`}
-                >
-                  <option value="mine">{t('flow.view_mine')}</option>
-                </select>
-              </FlowboardFilterField>
-              <FlowboardFilterField label={t('location.filter_label')} wide>
-                <LocationFilterSelect
-                  locations={userLocations}
-                  value={selectedLocationId}
-                  onChange={(v) => {
-                    setSelectedLocationId(v)
-                    setPage(1)
-                  }}
-                  unrestricted={locationsUnrestricted}
-                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[16rem]`}
-                />
               </FlowboardFilterField>
               <FlowboardFilterField label={t('flow.status')}>
                 <select
@@ -788,7 +778,7 @@ function FlowboardPage() {
 }
 
 export default withRoleProtection(FlowboardPage, {
-  allowedRoles: [UserRole.ADMIN, UserRole.DOCTOR],
+  allowedRoles: [...PHYSICIAN_OR_ADMIN_ROLES],
   redirectTo: '/dashboard',
 })
 

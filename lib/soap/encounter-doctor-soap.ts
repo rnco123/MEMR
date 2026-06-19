@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
+import { isPhysicianRole, CLINICAL_STAFF_ROLE_VALUES, CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES } from '@/lib/roles'
 import { getDoctorRowId } from '@/lib/clinical'
 import { fetchProfileFields } from '@/lib/fetch-user-role'
 import { cleanSoapSection } from '@/lib/soap/clean-soap-section'
@@ -20,7 +21,7 @@ export type SoapAuditSummary = {
 } | null
 
 const SOAP_EDITABLE_UNTIL = 'completed'
-const SOAP_EDITOR_ROLES = new Set(['doctor', 'nurse', 'staff'])
+const SOAP_EDITOR_ROLES = new Set<string>(CLINICAL_STAFF_ROLE_VALUES)
 
 /**
  * SOAP edit rules:
@@ -33,7 +34,7 @@ export function canEditEncounterSoap(
 ): boolean {
   if (!status) return false
   if (status === SOAP_EDITABLE_UNTIL) {
-    return role === 'doctor'
+    return isPhysicianRole(role)
   }
   return true
 }
@@ -42,7 +43,7 @@ export function canEditSoapByRole(role: string | null | undefined): boolean {
   return Boolean(role && SOAP_EDITOR_ROLES.has(role))
 }
 
-const SOAP_VIEWER_ROLES = new Set(['doctor', 'nurse', 'staff', 'admin'])
+const SOAP_VIEWER_ROLES = new Set<string>(CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES)
 
 export function assertSoapViewerRole(role: string | null | undefined): void {
   if (!role || !SOAP_VIEWER_ROLES.has(role)) {

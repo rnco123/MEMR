@@ -9,10 +9,11 @@ import {
 } from '@/lib/forms/signature-paths'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { PHYSICIAN_NURSE_ADMIN_ROLE_SET } from '@/lib/roles'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'patient_consent_forms'
-const ALLOWED_ROLES = new Set(['nurse', 'doctor', 'admin'])
+const ALLOWED_ROLES = PHYSICIAN_NURSE_ADMIN_ROLE_SET
 
 export type ConsentFormPayload = {
   id: number

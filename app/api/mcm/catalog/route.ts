@@ -13,10 +13,11 @@ import {
   AuthorizationError,
   ValidationError,
 } from '@/lib/api-error-handler'
+import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const ALLOWED_ROLES = new Set(['doctor', 'nurse', 'staff'])
+const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
 
 /**
  * Pre-sales product/category catalog from the primary Supabase project.

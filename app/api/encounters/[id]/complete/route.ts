@@ -7,6 +7,7 @@ import {
   ValidationError,
   handleApiError,
 } from '@/lib/api-error-handler'
+import { isPhysicianRole } from '@/lib/roles'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 import { completeEncounter } from '@/lib/encounter/complete-encounter'
@@ -30,8 +31,8 @@ export async function POST(_request: Request, { params }: { params: { id: string
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (roleInfo?.role !== 'doctor' && roleInfo?.role !== 'admin') {
-      throw new AuthorizationError('Only doctors can complete encounters')
+    if (!isPhysicianRole(roleInfo?.role) && roleInfo?.role !== 'admin') {
+      throw new AuthorizationError('Only physicians can complete encounters')
     }
 
     const admin = createAdminClient()

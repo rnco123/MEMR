@@ -3,10 +3,11 @@ import { createClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
+import { isPhysicianRole, TRANSCRIPT_SPEAKER_ROLE_VALUES } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_ROLES = ['doctor', 'nurse', 'staff', 'patient'] as const
+const VALID_ROLES = TRANSCRIPT_SPEAKER_ROLE_VALUES
 
 async function getUserFromRequest(request: Request): Promise<{ user: { id: string }; token?: string } | null> {
   const authHeader = request.headers.get('Authorization')
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Encounter not found' }, { status: 404 })
     }
 
-    if (userRole === 'doctor') {
+    if (isPhysicianRole(userRole)) {
       const { data: doctorRow } = await supabase
         .from('doctors')
         .select('id')

@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getUserFromRequest, getSupabaseForRequest } from '@/lib/encounters/auth-from-request'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 
+import { isClinicalStaffRole } from '@/lib/roles'
+
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +61,7 @@ export async function POST(
       .maybeSingle()
 
     const role = profile?.role as string | null
-    if (!role || !['doctor', 'nurse', 'staff'].includes(role)) {
+    if (!isClinicalStaffRole(role)) {
       return NextResponse.json({ error: 'Not authorized' }, { status: 403 })
     }
 

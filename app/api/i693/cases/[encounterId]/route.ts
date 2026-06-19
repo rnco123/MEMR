@@ -19,6 +19,7 @@ const STATUSES = new Set<ImmigrationWorkflowStatus>([
   'incomplete',
   'ready_review',
   'completed',
+  'doctor_reviewed',
   'delivered',
 ])
 

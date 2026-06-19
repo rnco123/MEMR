@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
 import { fetchProfileFields } from '@/lib/fetch-user-role'
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
 import {
   canEditEncounterSoap,
   canEditSoapByRole,
@@ -33,7 +34,7 @@ export type PatientInfoAuditSummary = {
 export const PATIENT_INFO_SELECT =
   'id, first_name, last_name, email, phone, gender, date_of_birth, street_address, state, zip_code, patient_code'
 
-const PATIENT_INFO_VIEWER_ROLES = new Set(['doctor', 'nurse', 'staff', 'admin'])
+const PATIENT_INFO_VIEWER_ROLES = CLINICAL_STAFF_WITH_ADMIN_ROLE_SET
 
 export function canEditPatientInfoByRole(role: string | null | undefined): boolean {
   return canEditSoapByRole(role)
