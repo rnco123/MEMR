@@ -25,6 +25,12 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
+import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
+import {
+  appointmentMatchesDobFilters,
+  appointmentMatchesSearchQuery,
+  hasActiveFlowboardDobFilters,
+} from '@/lib/flowboard/appointment-search-filter'
 
 type Appointment = FlowboardKanbanAppointment & {
   created_at?: string
@@ -57,6 +63,9 @@ export default function AdminFlowboardPage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [dobYear, setDobYear] = useState('')
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterLocationId, setFilterLocationId] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
@@ -142,6 +151,8 @@ export default function AdminFlowboardPage() {
     [allLocations]
   )
 
+  const hasDobFilters = hasActiveFlowboardDobFilters(dobYear, dobMonth, dobDay)
+
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
@@ -150,16 +161,14 @@ export default function AdminFlowboardPage() {
       result = result.filter((a) => a.location_id === lid)
     }
 
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      result = result.filter(
-        (appointment) =>
-          appointment.patient_id.toString().includes(query) ||
-          (appointment.patient?.first_name ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.last_name ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.email ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.phone ?? '').includes(query)
+    if (hasDobFilters) {
+      result = result.filter((appointment) =>
+        appointmentMatchesDobFilters(appointment, dobYear, dobMonth, dobDay)
       )
+    }
+
+    if (searchQuery.trim()) {
+      result = result.filter((appointment) => appointmentMatchesSearchQuery(appointment, searchQuery))
     }
 
     if (filterStatus !== 'all') {
@@ -187,7 +196,7 @@ export default function AdminFlowboardPage() {
     }
 
     return result
-  }, [appointments, searchQuery, filterStatus, filterLocationId, sortBy])
+  }, [appointments, searchQuery, dobYear, dobMonth, dobDay, filterStatus, filterLocationId, sortBy])
 
   const paginatedAppointments = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -258,7 +267,7 @@ export default function AdminFlowboardPage() {
                       setFilterLocationId(e.target.value)
                       setPage(1)
                     }}
-                    className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[16rem]`}
+                    className={FLOWBOARD_SELECT_CLASS}
                   >
                     <option value="all">{t('admin.flow.all_locations')}</option>
                     {locationOptions.map(([id, title]) => (
@@ -286,6 +295,26 @@ export default function AdminFlowboardPage() {
                   ))}
                 </select>
               </FlowboardFilterField>
+              <FlowboardFilterField label={t('flow.dob_short')} dob>
+                <SearchByDobDropdowns
+                  layout="compact"
+                  year={dobYear}
+                  month={dobMonth}
+                  day={dobDay}
+                  onYearChange={(v) => {
+                    setDobYear(v)
+                    setPage(1)
+                  }}
+                  onMonthChange={(v) => {
+                    setDobMonth(v)
+                    setPage(1)
+                  }}
+                  onDayChange={(v) => {
+                    setDobDay(v)
+                    setPage(1)
+                  }}
+                />
+              </FlowboardFilterField>
               <FlowboardViewToggleSlot>
                 <FlowboardViewToggle
                   value={displayMode}
@@ -305,7 +334,7 @@ export default function AdminFlowboardPage() {
                   end: Math.min(page * pageSize, filteredAppointments.length),
                   total: filteredAppointments.length,
                 })}
-                {searchQuery || filterStatus !== 'all'
+                {searchQuery || filterStatus !== 'all' || hasDobFilters
                   ? ` ${t('admin.flow.filtered_from', { total: appointments.length })}`
                   : ''}
               </p>
@@ -328,6 +357,23 @@ export default function AdminFlowboardPage() {
                       ))}
                     </select>
                   </label>
+                )}
+                {(searchQuery || filterStatus !== 'all' || filterLocationId !== 'all' || hasDobFilters) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setFilterStatus('all')
+                      setFilterLocationId('all')
+                      setDobYear('')
+                      setDobMonth('')
+                      setDobDay('')
+                      setPage(1)
+                    }}
+                    className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors shrink-0"
+                  >
+                    {t('common.clear_filters')}
+                  </button>
                 )}
               </div>
             </>

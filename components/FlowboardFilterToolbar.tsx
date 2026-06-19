@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 
 /** Shared native select styles for flowboard filter bars. */
 export const FLOWBOARD_SELECT_CLASS =
-  'h-9 w-full min-w-0 sm:w-auto sm:min-w-[5.5rem] sm:max-w-[10rem] px-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer'
+  'h-9 w-full min-w-0 max-w-full px-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer'
 
 type FlowboardFilterToolbarProps = {
   search: ReactNode
@@ -27,7 +27,7 @@ export function FlowboardFilterToolbar({
         <div className="min-w-0 flex-1">{search}</div>
         {searchActions}
       </div>
-      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2.5">
         {filters}
         {afterFilters}
       </div>
@@ -54,14 +54,14 @@ export function FlowboardFilterField({
     <div
       className={
         dob
-          ? 'flex w-full min-w-0 basis-full items-center gap-2 sm:basis-auto sm:w-auto'
+          ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden lg:basis-auto lg:w-auto'
           : wide
-            ? 'flex w-full min-w-0 basis-full items-center gap-2 sm:max-w-[18rem] sm:basis-auto'
-            : 'flex w-full min-w-0 items-center gap-2 sm:w-auto sm:max-w-[12rem]'
+            ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden sm:basis-auto sm:w-[min(100%,14rem)]'
+            : 'flex w-full min-w-0 max-w-full shrink-0 basis-[calc(50%-0.375rem)] items-center gap-2 overflow-hidden sm:basis-auto sm:w-auto sm:max-w-[11rem]'
       }
     >
       <span className="shrink-0 text-[11px] font-medium text-slate-500 whitespace-nowrap">{label}</span>
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 max-w-full overflow-hidden">{children}</div>
     </div>
   )
 }
@@ -69,7 +69,7 @@ export function FlowboardFilterField({
 /** Pushes list/kanban toggle to the end; wraps to its own row on narrow widths. */
 export function FlowboardViewToggleSlot({ children }: { children: ReactNode }) {
   return (
-    <div className="flex w-full shrink-0 basis-full justify-end sm:ml-auto sm:w-auto sm:basis-auto">
+    <div className="flex w-full shrink-0 basis-full justify-end lg:ml-auto lg:w-auto lg:basis-auto">
       {children}
     </div>
   )

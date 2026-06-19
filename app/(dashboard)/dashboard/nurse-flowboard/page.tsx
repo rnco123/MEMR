@@ -16,7 +16,12 @@ import {
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
-import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
+import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
+import {
+  appointmentMatchesDobFilters,
+  appointmentMatchesSearchQuery,
+  hasActiveFlowboardDobFilters,
+} from '@/lib/flowboard/appointment-search-filter'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
 import {
   FlowboardFilterField,
@@ -260,27 +265,19 @@ function NurseFlowboardPage() {
     fetchAvailableDoctors()
   }
 
+  const hasDobFilters = hasActiveFlowboardDobFilters(dobYear, dobMonth, dobDay)
+
   // Filter and sort appointments (useMemo so sort/filter updates immediately)
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    if (dobYear || dobMonth || dobDay) {
-      result = result.filter((a) =>
-        matchDob(a.patient?.date_of_birth, dobYear, dobMonth, dobDay)
-      )
+    if (hasDobFilters) {
+      result = result.filter((a) => appointmentMatchesDobFilters(a, dobYear, dobMonth, dobDay))
     }
 
-    // Search filter (null-safe) — name, ID, provider, email, phone. DOB is via dropdowns.
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      result = result.filter(
-        (a) =>
-          (a.patient?.first_name ?? '').toLowerCase().includes(query) ||
-          (a.patient?.last_name ?? '').toLowerCase().includes(query) ||
-          a.patient_id.toString().includes(query) ||
-          (a.assigned_doctor?.full_name ?? '').toLowerCase().includes(query) ||
-          (a.patient?.email ?? '').toLowerCase().includes(query) ||
-          (a.patient?.phone ?? '').includes(query)
+      result = result.filter((a) =>
+        appointmentMatchesSearchQuery(a, searchQuery, { includeProvider: true })
       )
     }
 
@@ -335,6 +332,16 @@ function NurseFlowboardPage() {
         return
       }
 
+      let appointmentPatientId = appointments.find((a) => a.id === appointmentId)?.patient_id
+      if (!appointmentPatientId) {
+        const { data: apptRow } = await supabase
+          .from('appointments')
+          .select('patient_id')
+          .eq('id', appointmentId)
+          .maybeSingle()
+        appointmentPatientId = apptRow?.patient_id
+      }
+
       // Update appointment date and time if provided
       if (appointmentDate || appointmentTime) {
         const updateData: { appointment_date?: string; appointment_time?: string } = {}
@@ -361,13 +368,21 @@ function NurseFlowboardPage() {
       let encounterIdForTimeline: number
       if (existingEncounter) {
         // Update encounter with doctor_id and set status to provider_assigned
+        const updatePayload: {
+          doctor_id: number
+          status: string
+          updated_at: string
+          patient_id?: number
+        } = {
+          doctor_id: doctorIdNum,
+          status: 'provider_assigned',
+          updated_at: new Date().toISOString(),
+        }
+        if (appointmentPatientId) updatePayload.patient_id = appointmentPatientId
+
         const { error } = await supabase
           .from('encounters')
-          .update({ 
-            doctor_id: doctorIdNum,
-            status: 'provider_assigned',
-            updated_at: new Date().toISOString(),
-          })
+          .update(updatePayload)
           .eq('id', existingEncounter.id)
 
         if (error) {
@@ -377,12 +392,11 @@ function NurseFlowboardPage() {
         }
         encounterIdForTimeline = existingEncounter.id
       } else {
-        // Create new encounter with doctor_id and status provider_assigned
-        // Note: patient_id is not needed - it can be retrieved via appointment_id foreign key
         const { data: inserted, error } = await supabase
           .from('encounters')
           .insert({
             appointment_id: appointmentId,
+            patient_id: appointmentPatientId ?? null,
             doctor_id: doctorIdNum,
             status: 'provider_assigned',
           })
@@ -521,7 +535,7 @@ function NurseFlowboardPage() {
                     setPage(1)
                   }}
                   unrestricted={locationsUnrestricted}
-                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[14rem]`}
+                  className={FLOWBOARD_SELECT_CLASS}
                 />
               </FlowboardFilterField>
               <FlowboardFilterField label={t('flow.sort')}>
@@ -595,7 +609,7 @@ function NurseFlowboardPage() {
                   end: Math.min(page * pageSize, filteredAppointments.length),
                   total: filteredAppointments.length,
                 })}
-                {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
+                {searchQuery || filterStatus !== 'all' || hasDobFilters
                   ? ` ${t('flow.filtered_from', { total: appointments.length })}`
                   : ''}
               </p>
@@ -624,7 +638,7 @@ function NurseFlowboardPage() {
                     </select>
                   </label>
                 )}
-                {(searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay) && (
+                {(searchQuery || filterStatus !== 'all' || hasDobFilters) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -658,10 +672,10 @@ function NurseFlowboardPage() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-slate-900 mb-1">
-              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay ? t('common.no_results') : t('flow.no_appointments')}
+              {searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.no_results') : t('flow.no_appointments')}
             </h3>
             <p className="text-slate-500 text-sm">
-              {searchQuery || filterStatus !== 'all' || dobYear || dobMonth || dobDay
+              {searchQuery || filterStatus !== 'all' || hasDobFilters
                 ? t('common.try_adjust_filters')
                 : t('flow.empty_message')}
             </p>

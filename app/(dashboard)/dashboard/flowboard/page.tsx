@@ -33,6 +33,12 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
+import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
+import {
+  appointmentMatchesDobFilters,
+  appointmentMatchesSearchQuery,
+  hasActiveFlowboardDobFilters,
+} from '@/lib/flowboard/appointment-search-filter'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -100,6 +106,9 @@ function FlowboardPage() {
   })
   const viewMode: 'mine' = 'mine'
   const [searchQuery, setSearchQuery] = useState('')
+  const [dobYear, setDobYear] = useState('')
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [pageSize, setPageSize] = useState(25)
@@ -231,20 +240,19 @@ function FlowboardPage() {
   }
 
   // Filter and sort appointments (search/filter on ALL records)
+  const hasDobFilters = hasActiveFlowboardDobFilters(dobYear, dobMonth, dobDay)
+
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    // Search filter - by patient ID, name, email, phone (null-safe)
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase().trim()
-      result = result.filter(
-        (appointment) =>
-          appointment.patient_id.toString().includes(query) ||
-          (appointment.patient?.first_name ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.last_name ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.email ?? '').toLowerCase().includes(query) ||
-          (appointment.patient?.phone ?? '').includes(query)
+    if (hasDobFilters) {
+      result = result.filter((appointment) =>
+        appointmentMatchesDobFilters(appointment, dobYear, dobMonth, dobDay)
       )
+    }
+
+    if (searchQuery.trim()) {
+      result = result.filter((appointment) => appointmentMatchesSearchQuery(appointment, searchQuery))
     }
 
     // Status filter
@@ -274,7 +282,7 @@ function FlowboardPage() {
     }
 
     return result
-  }, [appointments, searchQuery, filterStatus, sortBy])
+  }, [appointments, searchQuery, dobYear, dobMonth, dobDay, hasDobFilters, filterStatus, sortBy])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -369,7 +377,7 @@ function FlowboardPage() {
                     setPage(1)
                   }}
                   unrestricted={locationsUnrestricted}
-                  className={`${FLOWBOARD_SELECT_CLASS} sm:max-w-[14rem]`}
+                  className={FLOWBOARD_SELECT_CLASS}
                 />
               </FlowboardFilterField>
               <FlowboardFilterField label={t('flow.sort')}>
@@ -403,6 +411,26 @@ function FlowboardPage() {
                   ))}
                 </select>
               </FlowboardFilterField>
+              <FlowboardFilterField label={t('flow.dob_short')} dob>
+                <SearchByDobDropdowns
+                  layout="compact"
+                  year={dobYear}
+                  month={dobMonth}
+                  day={dobDay}
+                  onYearChange={(v) => {
+                    setDobYear(v)
+                    setPage(1)
+                  }}
+                  onMonthChange={(v) => {
+                    setDobMonth(v)
+                    setPage(1)
+                  }}
+                  onDayChange={(v) => {
+                    setDobDay(v)
+                    setPage(1)
+                  }}
+                />
+              </FlowboardFilterField>
               <FlowboardViewToggleSlot>
                 <FlowboardViewToggle
                   value={displayMode}
@@ -421,7 +449,9 @@ function FlowboardPage() {
                   end: Math.min(page * pageSize, filteredAppointments.length),
                   total: filteredAppointments.length,
                 })}
-                {searchQuery || filterStatus !== 'all' ? ` ${t('flow.filtered_from', { total: appointments.length })}` : ''}
+                {searchQuery || filterStatus !== 'all' || hasDobFilters
+                  ? ` ${t('flow.filtered_from', { total: appointments.length })}`
+                  : ''}
               </p>
               <div className="flex flex-wrap items-center gap-4">
                 {displayMode === 'list' && (
@@ -443,11 +473,15 @@ function FlowboardPage() {
                     </select>
                   </label>
                 )}
-                {searchQuery && (
+                {(searchQuery || filterStatus !== 'all' || hasDobFilters) && (
                   <button
                     type="button"
                     onClick={() => {
                       setSearchQuery('')
+                      setFilterStatus('all')
+                      setDobYear('')
+                      setDobMonth('')
+                      setDobDay('')
                       setPage(1)
                     }}
                     className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors shrink-0"
@@ -473,10 +507,10 @@ function FlowboardPage() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-slate-900 mb-1">
-              {searchQuery || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}
+              {searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.no_results') : t('flow.no_active')}
             </h3>
             <p className="text-slate-500 text-sm">
-              {searchQuery || filterStatus !== 'all'
+              {searchQuery || filterStatus !== 'all' || hasDobFilters
                 ? t('common.try_adjust_filters')
                 : t('flow.no_active_message')}
             </p>
@@ -648,29 +682,40 @@ function FlowboardPage() {
       {/* ---- Mobile-only view (phone-sized screens) ---- */}
       <div className="lg:hidden flex flex-col flex-1 overflow-hidden">
         {/* Mobile search bar */}
-        <div className="px-4 py-3 bg-white border-b border-slate-100 flex gap-2">
-          <div className="relative flex-1">
-            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
-              placeholder={t('flow.search_placeholder')}
-              className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-            />
+        <div className="px-4 py-3 bg-white border-b border-slate-100 space-y-2">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
+                placeholder={t('flow.search_placeholder')}
+                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+              />
+            </div>
+            <select
+              value={filterStatus}
+              onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
+              className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+            >
+              <option value="all">{t('common.all')}</option>
+              {ENCOUNTER_STATUSES.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
           </div>
-          <select
-            value={filterStatus}
-            onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
-            className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-          >
-            <option value="all">{t('common.all')}</option>
-            {ENCOUNTER_STATUSES.map((s) => (
-              <option key={s.value} value={s.value}>{s.label}</option>
-            ))}
-          </select>
+          <SearchByDobDropdowns
+            layout="inline"
+            year={dobYear}
+            month={dobMonth}
+            day={dobDay}
+            onYearChange={(v) => { setDobYear(v); setPage(1) }}
+            onMonthChange={(v) => { setDobMonth(v); setPage(1) }}
+            onDayChange={(v) => { setDobDay(v); setPage(1) }}
+          />
         </div>
 
         {/* Mobile card list */}
@@ -686,8 +731,8 @@ function FlowboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
-              <p className="font-semibold text-slate-900">{searchQuery || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}</p>
-              <p className="text-sm text-slate-500 mt-1">{searchQuery || filterStatus !== 'all' ? t('common.try_adjust_filters') : t('flow.no_active_message')}</p>
+              <p className="font-semibold text-slate-900">{searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.no_results') : t('flow.no_active')}</p>
+              <p className="text-sm text-slate-500 mt-1">{searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.try_adjust_filters') : t('flow.no_active_message')}</p>
             </div>
           ) : (
             filteredAppointments.map((appointment) => {

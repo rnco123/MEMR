@@ -15,6 +15,7 @@ import {
 } from '@/lib/locations/scope'
 import { UserRole } from '@/lib/roles'
 import { nurseWalkInCreateSchema } from '@/lib/validation'
+import { insertEncounter } from '@/lib/encounters/insert-encounter'
 
 export const dynamic = 'force-dynamic'
 
@@ -143,7 +144,7 @@ export async function POST(request: Request) {
       intakeId = Number(intake.id)
     }
 
-    const encounterPayload: Record<string, unknown> = {
+    const encounterPayload = {
       appointment_id: appointmentId,
       patient_id: v.patient_id,
       intake_id: intakeId,
@@ -151,11 +152,7 @@ export async function POST(request: Request) {
       status: 'appointment_initiated',
     }
 
-    const { data: encounter, error: encError } = await admin
-      .from('encounters')
-      .insert(encounterPayload)
-      .select('id')
-      .single()
+    const { data: encounter, error: encError } = await insertEncounter(admin, encounterPayload)
 
     if (encError) throw encError
 

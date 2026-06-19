@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { loadPatientVisitStats, resolvePatientLastVisit } from '@/lib/patients/patient-visit-stats'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,53 +23,15 @@ export async function GET(_req: NextRequest) {
 
     const patientIds = patientsData.map((p) => p.id)
 
-    const [encountersRes, appointmentsRes] = await Promise.all([
-      admin
-        .from('encounters')
-        .select('id, patient_id, appointment_id, created_at')
-        .in('patient_id', patientIds),
-      admin
-        .from('appointments')
-        .select('patient_id, appointment_date, appointment_time')
-        .in('patient_id', patientIds),
-    ])
-
-    const encounterCounts: Record<number, number> = {}
-    const encounterLastVisits: Record<number, string> = {}
-    const appointmentLastVisits: Record<number, string> = {}
-
-    for (const encounter of encountersRes.data ?? []) {
-      const pid = encounter.patient_id
-      if (!pid) continue
-      encounterCounts[pid] = (encounterCounts[pid] || 0) + 1
-      if (!encounterLastVisits[pid] || encounter.created_at > encounterLastVisits[pid]) {
-        encounterLastVisits[pid] = encounter.created_at
-      }
-    }
-
-    for (const appointment of appointmentsRes.data ?? []) {
-      if (!appointment.patient_id || !appointment.appointment_date) continue
-      const dateTimeString = appointment.appointment_time
-        ? `${appointment.appointment_date}T${appointment.appointment_time}`
-        : appointment.appointment_date
-      const existing = appointmentLastVisits[appointment.patient_id]
-      if (!existing || new Date(dateTimeString).getTime() > new Date(existing).getTime()) {
-        appointmentLastVisits[appointment.patient_id] = dateTimeString
-      }
-    }
+    const { encounterCounts, encounterLastVisits, appointmentLastVisits } =
+      await loadPatientVisitStats(admin, patientIds)
 
     const rows = patientsData.map((patient) => {
-      const encounterDate = encounterLastVisits[patient.id] || null
-      const appointmentDate = appointmentLastVisits[patient.id] || null
-      let lastVisit: string | null = null
-      if (encounterDate && appointmentDate) {
-        lastVisit =
-          new Date(encounterDate).getTime() >= new Date(appointmentDate).getTime()
-            ? encounterDate
-            : appointmentDate
-      } else {
-        lastVisit = encounterDate || appointmentDate || null
-      }
+      const lastVisit = resolvePatientLastVisit(
+        patient.id,
+        encounterLastVisits,
+        appointmentLastVisits
+      )
 
       return {
         ...patient,

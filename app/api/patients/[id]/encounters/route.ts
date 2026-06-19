@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
+import { loadEncountersForPatient } from '@/lib/patients/patient-encounters'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,25 +28,9 @@ export async function GET(
     }
 
     const admin = await guardPatientAccess(user.id, patientId)
+    const encounters = await loadEncountersForPatient(admin, patientId)
 
-    const { data: encounters, error } = await admin
-      .from('encounters')
-      .select(`
-        *,
-        appointments (*),
-        doctors (*)
-      `)
-      .eq('patient_id', patientId)
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      return NextResponse.json(
-        { error: `Failed to fetch encounters: ${error.message}` },
-        { status: 500 }
-      )
-    }
-
-    return NextResponse.json({ encounters: encounters ?? [] })
+    return NextResponse.json({ encounters })
   } catch (error) {
     return handleApiError(error)
   }
