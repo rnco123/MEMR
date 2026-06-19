@@ -4,7 +4,7 @@ import type { EncounterStatus } from '@/lib/encounter-status'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 
 /** Statuses from which a doctor may mark the encounter completed (nurse final review skipped). */
-const DOCTOR_COMPLETE_FROM: EncounterStatus[] = ['final_review', 'consultation_concluded']
+const DOCTOR_COMPLETE_FROM: EncounterStatus[] = ['in_consultation', 'consultation_concluded', 'final_review']
 
 export function canDoctorCompleteEncounter(status: string | null | undefined): boolean {
   if (!status) return false
