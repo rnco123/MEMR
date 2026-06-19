@@ -8,7 +8,7 @@ import {
   parseLocationFilter,
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
-import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
+import { parseSearchDateToIso, sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,9 +30,29 @@ export async function GET(req: NextRequest) {
     }
 
     const page = Math.max(1, Number(req.nextUrl.searchParams.get('page') || '1'))
-    const search = sanitizePatientSearchTerm((req.nextUrl.searchParams.get('search') || '').trim())
+    const rawSearch = (req.nextUrl.searchParams.get('search') || '').trim()
+    const search = sanitizePatientSearchTerm(rawSearch)
     const gender = req.nextUrl.searchParams.get('gender') || 'all'
     const sortBy = req.nextUrl.searchParams.get('sort') || 'name'
+    const dobYear = (req.nextUrl.searchParams.get('dob_year') || '').trim()
+    const dobMonth = (req.nextUrl.searchParams.get('dob_month') || '').trim()
+    const dobDay = (req.nextUrl.searchParams.get('dob_day') || '').trim()
+
+    // Build DOB filter from explicit dropdowns OR from auto-detected date in search text
+    function buildDobFilter(y: string, m: string, d: string) {
+      if (!y) return null
+      if (m && d) return { eq: `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}` }
+      if (m) {
+        const lastDay = new Date(Number(y), Number(m), 0).getDate()
+        return { gte: `${y}-${m.padStart(2, '0')}-01`, lte: `${y}-${m.padStart(2, '0')}-${String(lastDay).padStart(2, '0')}` }
+      }
+      return { gte: `${y}-01-01`, lte: `${y}-12-31` }
+    }
+    let dobFilter = buildDobFilter(dobYear, dobMonth, dobDay)
+    if (!dobFilter) {
+      const parsedDate = parseSearchDateToIso(rawSearch)
+      if (parsedDate) dobFilter = { eq: parsedDate }
+    }
 
     const admin = createAdminClient()
     const scope = await getLocationScopeForUser(admin, user.id, clinicalRole)
@@ -60,7 +80,8 @@ export async function GET(req: NextRequest) {
       query = query.in('location_id', scope.locationIds)
     }
 
-    if (search) {
+    if (search && !dobFilter) {
+      // Only apply text search when not overridden by a DOB filter
       const term = `%${search}%`
       const numTerm = parseInt(search, 10)
       if (!Number.isNaN(numTerm)) {
@@ -72,6 +93,12 @@ export async function GET(req: NextRequest) {
           `first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term},phone.ilike.${term}`
         )
       }
+    }
+
+    if (dobFilter && 'eq' in dobFilter) {
+      query = query.eq('date_of_birth', dobFilter.eq)
+    } else if (dobFilter && 'gte' in dobFilter) {
+      query = query.gte('date_of_birth', dobFilter.gte!).lte('date_of_birth', dobFilter.lte!)
     }
 
     if (gender !== 'all') {

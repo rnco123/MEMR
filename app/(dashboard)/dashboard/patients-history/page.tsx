@@ -12,6 +12,8 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
+import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
+import { parseSearchDateToIso } from '@/lib/nurse/patient-search-query'
 
 interface Patient {
   id: number // bigint
@@ -47,6 +49,10 @@ function PatientsHistoryPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'visits'>('name')
   const [filterGender, setFilterGender] = useState<'all' | 'Male' | 'Female'>('all')
+  const [searchMode, setSearchMode] = useState<'name' | 'dob'>('name')
+  const [dobYear, setDobYear] = useState('')
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
   const supabase = useMemo(() => createClient(), [])
   const prevSearchRef = useRef(debouncedSearch)
   const prevFilterRef = useRef(filterGender)
@@ -71,6 +77,15 @@ function PatientsHistoryPage() {
       if (selectedLocationId !== 'all') {
         params.set('location_id', String(selectedLocationId))
       }
+      if (searchMode === 'dob') {
+        if (dobYear) params.set('dob_year', dobYear)
+        if (dobMonth) params.set('dob_month', dobMonth)
+        if (dobDay) params.set('dob_day', dobDay)
+      } else {
+        // Auto-detect date pattern in text search
+        const detected = parseSearchDateToIso(debouncedSearch.trim())
+        if (detected) params.set('search', detected)
+      }
       const res = await fetch(`/api/clinical/patients-history?${params}`, { credentials: 'include' })
       const json = await res.json()
       if (!res.ok) {
@@ -87,12 +102,15 @@ function PatientsHistoryPage() {
     } finally {
       setLoading(false)
     }
-  }, [debouncedSearch, filterGender, page, sortBy, selectedLocationId])
+  }, [debouncedSearch, filterGender, page, sortBy, selectedLocationId, searchMode, dobYear, dobMonth, dobDay])
 
   // Fetch when page, search, filters, or sort change
   useEffect(() => {
     if (!user || (!isPhysicianRole(role) && role !== 'nurse')) return
-    const searchOrFilterChanged = debouncedSearch !== prevSearchRef.current || filterGender !== prevFilterRef.current
+    const searchOrFilterChanged =
+      debouncedSearch !== prevSearchRef.current ||
+      filterGender !== prevFilterRef.current ||
+      searchMode === 'dob'
     if (searchOrFilterChanged) {
       prevSearchRef.current = debouncedSearch
       prevFilterRef.current = filterGender
@@ -101,7 +119,7 @@ function PatientsHistoryPage() {
     } else {
       fetchPatients()
     }
-  }, [user, role, debouncedSearch, filterGender, page, sortBy, selectedLocationId, fetchPatients])
+  }, [user, role, debouncedSearch, filterGender, page, sortBy, selectedLocationId, fetchPatients, searchMode, dobYear, dobMonth, dobDay])
 
   const handleRefresh = () => {
     setPage(1)
@@ -151,28 +169,61 @@ function PatientsHistoryPage() {
       />
 
       {/* ── Mobile search bar ── */}
-      <div className="lg:hidden px-4 py-3 bg-white border-b border-slate-100 flex gap-2">
-        <div className="relative flex-1">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder={t('patients.search_placeholder')}
-            className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-          />
+      <div className="lg:hidden px-4 py-3 bg-white border-b border-slate-100 space-y-2">
+        {/* Mode toggle */}
+        <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+          <button
+            type="button"
+            onClick={() => setSearchMode('name')}
+            className={`flex-1 h-8 rounded-lg text-xs font-medium transition-colors ${searchMode === 'name' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+          >
+            Name / Phone
+          </button>
+          <button
+            type="button"
+            onClick={() => setSearchMode('dob')}
+            className={`flex-1 h-8 rounded-lg text-xs font-medium transition-colors ${searchMode === 'dob' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`}
+          >
+            Date of Birth
+          </button>
         </div>
-        <select
-          value={filterGender}
-          onChange={(e) => setFilterGender(e.target.value as typeof filterGender)}
-          className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-        >
-          <option value="all">{t('common.all')}</option>
-          <option value="Male">{t('common.male')}</option>
-          <option value="Female">{t('common.female')}</option>
-        </select>
+        <div className="flex gap-2">
+          {searchMode === 'name' ? (
+            <div className="relative flex-1">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('patients.search_placeholder')}
+                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+              />
+            </div>
+          ) : (
+            <div className="flex-1">
+              <SearchByDobDropdowns
+                year={dobYear}
+                month={dobMonth}
+                day={dobDay}
+                onYearChange={setDobYear}
+                onMonthChange={setDobMonth}
+                onDayChange={setDobDay}
+                layout="compact"
+              />
+            </div>
+          )}
+          <select
+            value={filterGender}
+            onChange={(e) => setFilterGender(e.target.value as typeof filterGender)}
+            className="h-10 shrink-0 px-2.5 rounded-xl border border-slate-200 bg-[#f9fbff] text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
+          >
+            <option value="all">{t('common.all')}</option>
+            <option value="Male">{t('common.male')}</option>
+            <option value="Female">{t('common.female')}</option>
+          </select>
+        </div>
       </div>
 
       {/* ── Mobile patient list ── */}
@@ -265,17 +316,51 @@ function PatientsHistoryPage() {
         {/* Search and Filters */}
         <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-5">
           <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 relative">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('patients.search_placeholder')}
-                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-              />
+            {/* Search mode toggle + input */}
+            <div className="flex-1 flex gap-2 items-center">
+              {/* Mode pills */}
+              <div className="flex gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('name')}
+                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'name' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Name / Phone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('dob')}
+                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'dob' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Date of Birth
+                </button>
+              </div>
+              {searchMode === 'name' ? (
+                <div className="flex-1 relative">
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('patients.search_placeholder')}
+                    className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
+                  />
+                </div>
+              ) : (
+                <div className="flex-1">
+                  <SearchByDobDropdowns
+                    year={dobYear}
+                    month={dobMonth}
+                    day={dobDay}
+                    onYearChange={setDobYear}
+                    onMonthChange={setDobMonth}
+                    onDayChange={setDobDay}
+                    layout="compact"
+                  />
+                </div>
+              )}
             </div>
 
             <button

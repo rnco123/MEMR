@@ -4,6 +4,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useT } from '@/lib/i18n'
+import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
 
 type Patient = {
   id: number
@@ -29,6 +30,10 @@ export default function AdminPatientsHistoryPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<'name' | 'recent' | 'visits'>('name')
   const [filterGender, setFilterGender] = useState<'all' | 'Male' | 'Female'>('all')
+  const [searchMode, setSearchMode] = useState<'name' | 'dob'>('name')
+  const [dobYear, setDobYear] = useState('')
+  const [dobMonth, setDobMonth] = useState('')
+  const [dobDay, setDobDay] = useState('')
 
   const fetchPatients = async () => {
     setLoading(true)
@@ -50,16 +55,22 @@ export default function AdminPatientsHistoryPage() {
 
   const filteredPatients = useMemo(() => {
     let result = [...patients]
-    const trimmed = searchQuery.trim().toLowerCase()
-    if (trimmed) {
-      result = result.filter(
-        (patient) =>
-          String(patient.id).includes(trimmed) ||
-          patient.first_name.toLowerCase().includes(trimmed) ||
-          patient.last_name.toLowerCase().includes(trimmed) ||
-          (patient.email ?? '').toLowerCase().includes(trimmed) ||
-          (patient.phone ?? '').toLowerCase().includes(trimmed)
-      )
+    if (searchMode === 'dob') {
+      if (dobYear || dobMonth || dobDay) {
+        result = result.filter((patient) => matchDob(patient.date_of_birth, dobYear, dobMonth, dobDay))
+      }
+    } else {
+      const trimmed = searchQuery.trim().toLowerCase()
+      if (trimmed) {
+        result = result.filter(
+          (patient) =>
+            String(patient.id).includes(trimmed) ||
+            patient.first_name.toLowerCase().includes(trimmed) ||
+            patient.last_name.toLowerCase().includes(trimmed) ||
+            (patient.email ?? '').toLowerCase().includes(trimmed) ||
+            (patient.phone ?? '').toLowerCase().includes(trimmed)
+        )
+      }
     }
 
     if (filterGender !== 'all') {
@@ -84,11 +95,11 @@ export default function AdminPatientsHistoryPage() {
     }
 
     return result
-  }, [patients, searchQuery, filterGender, sortBy])
+  }, [patients, searchQuery, filterGender, sortBy, searchMode, dobYear, dobMonth, dobDay])
 
   useEffect(() => {
     setPage(1)
-  }, [searchQuery, filterGender, sortBy])
+  }, [searchQuery, filterGender, sortBy, searchMode, dobYear, dobMonth, dobDay])
 
   const paginatedPatients = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -160,17 +171,50 @@ export default function AdminPatientsHistoryPage() {
 
         <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4">
           <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 relative">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder={t('admin.patients.search')}
-                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-              />
+            {/* Search mode toggle + input */}
+            <div className="flex-1 flex gap-2 items-center">
+              <div className="flex gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('name')}
+                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'name' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Name / Phone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSearchMode('dob')}
+                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'dob' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                >
+                  Date of Birth
+                </button>
+              </div>
+              {searchMode === 'name' ? (
+                <div className="flex-1 relative">
+                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder={t('admin.patients.search')}
+                    className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
+                  />
+                </div>
+              ) : (
+                <div className="flex-1">
+                  <SearchByDobDropdowns
+                    year={dobYear}
+                    month={dobMonth}
+                    day={dobDay}
+                    onYearChange={setDobYear}
+                    onMonthChange={setDobMonth}
+                    onDayChange={setDobDay}
+                    layout="compact"
+                  />
+                </div>
+              )}
             </div>
             <button
               onClick={() => void fetchPatients()}
