@@ -180,18 +180,19 @@ export function parseAddressComponents(
 
   // Last part → country if it looks like one
   const lastCountryRx = /^(United States(?: of America)?|USA?|Canada|Mexico|United Kingdom|UK|Australia)$/i
-  if (lastCountryRx.test(parts[i])) {
-    country = parts[i]
+  const lastPart = parts[i] ?? ''
+  if (lastCountryRx.test(lastPart)) {
+    country = lastPart
     i--
   }
 
   // Next part → "State ZIP" or just state/zip
   if (i >= 1) {
-    const stateZipPart = parts[i]
+    const stateZipPart = parts[i] ?? ''
     const zipRx = /(\d{5}(?:-\d{4})?)$/
     const zipMatch = stateZipPart.match(zipRx)
     if (zipMatch) {
-      zip = zipMatch[1]
+      zip = zipMatch[1] ?? ''
       const statePart = stateZipPart.slice(0, zipMatch.index).trim()
       if (statePart) state = statePart
       i--
@@ -213,7 +214,7 @@ export function parseAddressComponents(
 
   // Next part → city
   if (i >= 1) {
-    city = parts[i]
+    city = parts[i] ?? ''
     i--
   }
 
