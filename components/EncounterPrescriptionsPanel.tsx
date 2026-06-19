@@ -369,7 +369,7 @@ export function EncounterPrescriptionsPanel({
                   pharmacyId={pharmacyId}
                   assignedPharmacy={resolvedPharmacy}
                   pharmacies={pharmacies}
-                  editable={editable}
+                  editable={true}
                   onUpdated={onPharmacyUpdated}
                   onPharmaciesReload={onPharmaciesReload}
                   compact
