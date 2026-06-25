@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { fetchProfileFields } from '@/lib/fetch-user-role'
 
-const CORE_FIELDS = 'uid, role, full_name, email, active'
+const CORE_FIELDS = 'uid, role, full_name, email, active, compliance_access'
 const FIELDS_WITH_AVATAR = `${CORE_FIELDS}, avatar_id`
 
 export type LoadedProfile = {
@@ -10,6 +10,7 @@ export type LoadedProfile = {
   full_name?: string | null
   email?: string | null
   active?: boolean
+  compliance_access?: boolean
   avatar_id?: string | null
   avatar_column_available: boolean
 }
@@ -28,6 +29,7 @@ export async function loadProfileForUser(
       full_name: (withAvatar.full_name as string) ?? null,
       email: (withAvatar.email as string) ?? null,
       active: withAvatar.active !== false,
+      compliance_access: withAvatar.compliance_access === true,
       avatar_id: (withAvatar.avatar_id as string) ?? null,
       avatar_column_available: true,
     }
@@ -42,6 +44,7 @@ export async function loadProfileForUser(
     full_name: (core.full_name as string) ?? null,
     email: (core.email as string) ?? null,
     active: core.active !== false,
+    compliance_access: core.compliance_access === true,
     avatar_id: null,
     avatar_column_available: false,
   }

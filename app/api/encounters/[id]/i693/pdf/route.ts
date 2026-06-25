@@ -13,7 +13,7 @@ import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
 import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -39,7 +39,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
     const role = roleInfo!.role!.trim().toLowerCase()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardI693EncounterAccess(user.id, encounterId)
 
 
     const admin = createAdminClient()

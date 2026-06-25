@@ -135,6 +135,7 @@ export async function POST(request: Request) {
         opening_hours: v.opening_hours ?? null,
         google_map_url: mapResult.url,
         is_active: v.is_active ?? true,
+        location_group: v.location_group?.trim() || null,
         updated_at: now,
       })
       .select(LOCATION_ADMIN_SELECT)

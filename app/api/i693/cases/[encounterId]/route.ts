@@ -12,7 +12,7 @@ import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import type { ImmigrationWorkflowStatus } from '@/lib/immigration/types'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 const STATUSES = new Set<ImmigrationWorkflowStatus>([
@@ -41,7 +41,7 @@ export async function GET(
     const roleInfo = await fetchUserRole(supabase, user.id)
     if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardI693EncounterAccess(user.id, encounterId)
 
     const admin = createAdminClient()
     const caseRow = await syncImmigrationCase(admin, encounterId)
@@ -72,7 +72,7 @@ export async function PATCH(
     if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
     const role = roleInfo!.role!.trim().toLowerCase()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardI693EncounterAccess(user.id, encounterId)
 
     let body: {
       status?: string

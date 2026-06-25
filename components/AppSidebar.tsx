@@ -198,6 +198,8 @@ type AppSidebarProps = {
     profileHref?: string
   }
   footer?: React.ReactNode
+  /** Items pinned to the bottom of the nav — visible even when sidebar is collapsed (icon + tooltip). */
+  bottomItems?: SidebarNavItem[]
   homeHref?: string
   collapseLabel?: string
   expandLabel?: string
@@ -213,6 +215,7 @@ export function AppSidebar({
   storageKey,
   user,
   footer,
+  bottomItems,
   homeHref,
   collapseLabel = 'Collapse',
   expandLabel = 'Expand',
@@ -455,6 +458,21 @@ export function AppSidebar({
         })}
       </nav>
 
+      {bottomItems && bottomItems.length > 0 && (
+        <div className="shrink-0 border-t border-slate-100/60 p-2">
+          {bottomItems.map((item) => (
+            <NavRow
+              key={item.href + item.name}
+              item={item}
+              isActive={resolveActive(item)}
+              collapsed={effectiveCollapsed}
+              theme={theme}
+              onNavigate={handleNavClick}
+            />
+          ))}
+        </div>
+      )}
+
       {footer && showLabels && (
         <div className="shrink-0 border-t border-slate-100/80 p-2">{footer}</div>
       )}
@@ -487,7 +505,7 @@ export function AppSidebar({
           mobileOpen
             ? 'fixed left-0 top-16 bottom-0 flex w-[min(18rem,88vw)] max-lg:shadow-2xl'
             : 'max-lg:hidden',
-          'lg:relative lg:top-auto lg:flex lg:shadow-none lg:mr-1',
+          'lg:relative lg:top-auto lg:z-auto lg:flex lg:shadow-none lg:mr-1',
           effectiveCollapsed ? 'lg:w-[4.25rem]' : 'lg:w-64',
         ].join(' ')}
         aria-hidden={!mobileOpen ? undefined : false}

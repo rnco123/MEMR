@@ -25,12 +25,9 @@ import { useRouter } from 'next/navigation'
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
-import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
-import {
-  appointmentMatchesDobFilters,
-  appointmentMatchesSearchQuery,
-  hasActiveFlowboardDobFilters,
-} from '@/lib/flowboard/appointment-search-filter'
+import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
+import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
+import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 
 type Appointment = FlowboardKanbanAppointment & {
   created_at?: string
@@ -63,9 +60,8 @@ export default function AdminFlowboardPage() {
   const [loading, setLoading] = useState(true)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [dobYear, setDobYear] = useState('')
-  const [dobMonth, setDobMonth] = useState('')
-  const [dobDay, setDobDay] = useState('')
+  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
+    useAiPatientSearchParse(searchQuery)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterLocationId, setFilterLocationId] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
@@ -151,8 +147,6 @@ export default function AdminFlowboardPage() {
     [allLocations]
   )
 
-  const hasDobFilters = hasActiveFlowboardDobFilters(dobYear, dobMonth, dobDay)
-
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
@@ -161,14 +155,12 @@ export default function AdminFlowboardPage() {
       result = result.filter((a) => a.location_id === lid)
     }
 
-    if (hasDobFilters) {
+    const activeParsed =
+      parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
+    if (activeParsed) {
       result = result.filter((appointment) =>
-        appointmentMatchesDobFilters(appointment, dobYear, dobMonth, dobDay)
+        appointmentMatchesParsedPatientSearch(appointment, activeParsed)
       )
-    }
-
-    if (searchQuery.trim()) {
-      result = result.filter((appointment) => appointmentMatchesSearchQuery(appointment, searchQuery))
     }
 
     if (filterStatus !== 'all') {
@@ -196,7 +188,7 @@ export default function AdminFlowboardPage() {
     }
 
     return result
-  }, [appointments, searchQuery, dobYear, dobMonth, dobDay, filterStatus, filterLocationId, sortBy])
+  }, [appointments, parsedSearch, debouncedQuery, filterStatus, filterLocationId, sortBy])
 
   const paginatedAppointments = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -227,21 +219,15 @@ export default function AdminFlowboardPage() {
 
         <FlowboardFilterToolbar
           search={
-            <div className="relative">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                  setPage(1)
-                }}
-                placeholder={t('admin.flow.search')}
-                className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-              />
-            </div>
+            <SmartPatientSearchInput
+              value={searchQuery}
+              onChange={(value) => {
+                setSearchQuery(value)
+                setPage(1)
+              }}
+              placeholder={t('admin.flow.search')}
+              loading={searchPending}
+            />
           }
           filters={
             <>
@@ -295,26 +281,6 @@ export default function AdminFlowboardPage() {
                   ))}
                 </select>
               </FlowboardFilterField>
-              <FlowboardFilterField label={t('flow.dob_short')} dob>
-                <SearchByDobDropdowns
-                  layout="compact"
-                  year={dobYear}
-                  month={dobMonth}
-                  day={dobDay}
-                  onYearChange={(v) => {
-                    setDobYear(v)
-                    setPage(1)
-                  }}
-                  onMonthChange={(v) => {
-                    setDobMonth(v)
-                    setPage(1)
-                  }}
-                  onDayChange={(v) => {
-                    setDobDay(v)
-                    setPage(1)
-                  }}
-                />
-              </FlowboardFilterField>
               <FlowboardViewToggleSlot>
                 <FlowboardViewToggle
                   value={displayMode}
@@ -334,7 +300,7 @@ export default function AdminFlowboardPage() {
                   end: Math.min(page * pageSize, filteredAppointments.length),
                   total: filteredAppointments.length,
                 })}
-                {searchQuery || filterStatus !== 'all' || hasDobFilters
+                {debouncedQuery.trim() || filterStatus !== 'all'
                   ? ` ${t('admin.flow.filtered_from', { total: appointments.length })}`
                   : ''}
               </p>
@@ -358,16 +324,13 @@ export default function AdminFlowboardPage() {
                     </select>
                   </label>
                 )}
-                {(searchQuery || filterStatus !== 'all' || filterLocationId !== 'all' || hasDobFilters) && (
+                {(debouncedQuery.trim() || filterStatus !== 'all' || filterLocationId !== 'all') && (
                   <button
                     type="button"
                     onClick={() => {
                       setSearchQuery('')
                       setFilterStatus('all')
                       setFilterLocationId('all')
-                      setDobYear('')
-                      setDobMonth('')
-                      setDobDay('')
                       setPage(1)
                     }}
                     className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors shrink-0"

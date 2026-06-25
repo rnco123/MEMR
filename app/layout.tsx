@@ -7,6 +7,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { I18nProvider } from "@/lib/i18n";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "sonner";
+import { ReportBugFab } from "@/components/support/ReportBugFab";
 // Import Sentry client-side configuration
 import "../sentry.client.config";
 
@@ -46,7 +47,10 @@ export default function RootLayout({
         <ErrorBoundary>
           <I18nProvider>
             <AuthProvider>
-              <UserProfileProvider>{children}</UserProfileProvider>
+              <UserProfileProvider>
+                {children}
+                <ReportBugFab />
+              </UserProfileProvider>
             </AuthProvider>
           </I18nProvider>
         </ErrorBoundary>

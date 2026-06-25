@@ -123,6 +123,13 @@ export function isPhysicianRole(role: string | UserRole | null | undefined): boo
   return (PHYSICIAN_ROLE_VALUES as readonly string[]).includes(String(role).trim().toLowerCase())
 }
 
+/** Nurse, doctor, FNP, or PA — dashboard clinical pages (not admin). */
+export function isClinicalDashboardRole(role: string | UserRole | null | undefined): boolean {
+  const mapped = mapRoleToEnum(role == null ? null : String(role))
+  if (!mapped) return false
+  return (CLINICAL_DASHBOARD_ROLES as readonly UserRole[]).includes(mapped)
+}
+
 export function isClinicalStaffRole(role: string | null | undefined): boolean {
   if (role == null) return false
   return CLINICAL_STAFF_ROLE_SET.has(String(role).trim().toLowerCase())

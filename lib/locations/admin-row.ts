@@ -1,10 +1,11 @@
 export const LOCATION_ADMIN_SELECT =
-  'id, title, location_code, address, phone, email, opening_hours, google_map_url, is_active, tenant_id, external_location_id, created_at, updated_at, tenants:tenant_id (id, name, tenant_code)'
+  'id, title, location_code, location_group, address, phone, email, opening_hours, google_map_url, is_active, tenant_id, external_location_id, created_at, updated_at, tenants:tenant_id (id, name, tenant_code)'
 
 export type AdminLocationRow = {
   id: number
   title: string
   location_code: string | null
+  location_group: string | null
   address: string | null
   phone: string | null
   email: string | null
@@ -40,6 +41,7 @@ export function normalizeAdminLocationRow(row: Record<string, unknown>): AdminLo
     id: Number(row.id),
     title: String(row.title ?? ''),
     location_code: (row.location_code as string | null) ?? null,
+    location_group: (row.location_group as string | null)?.trim() || null,
     address: (row.address as string | null) ?? null,
     phone: (row.phone as string | null) ?? null,
     email: (row.email as string | null) ?? null,

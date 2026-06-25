@@ -4,6 +4,7 @@ import {
   formatClinicChatTime,
   formatClinicDateTime,
   formatClinicTimeSlot,
+  getClinicTodayDateString,
 } from '@/lib/datetime/clinic-timezone'
 
 describe('clinic-timezone', () => {
@@ -25,5 +26,11 @@ describe('clinic-timezone', () => {
 
   test('exports America/Chicago timezone constant', () => {
     expect(CLINIC_TIME_ZONE).toBe('America/Chicago')
+  })
+
+  test('getClinicTodayDateString returns YYYY-MM-DD in Central time', () => {
+    const formatted = getClinicTodayDateString(new Date('2026-06-25T06:00:00.000Z'))
+    expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(formatted).toBe('2026-06-25')
   })
 })

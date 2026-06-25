@@ -1,5 +1,10 @@
 import { matchDob } from '@/components/SearchByDobDropdowns'
-import { parseSearchDateToIso } from '@/lib/nurse/patient-search-query'
+import { parseSearchDateParts } from '@/lib/nurse/patient-search-query'
+import {
+  appointmentMatchesParsedSearch,
+  patientMatchesParsedSearch,
+} from '@/lib/nurse/patient-search-apply'
+import type { ParsedPatientSearch } from '@/lib/nurse/patient-search-types'
 
 export type FlowboardAppointmentSearch = {
   patient_id: number
@@ -13,6 +18,7 @@ export type FlowboardAppointmentSearch = {
   assigned_doctor?: { full_name?: string | null } | null
 }
 
+/** Legacy raw-string matcher (local date parse only). Prefer parsed OpenAI search. */
 export function appointmentMatchesSearchQuery(
   appointment: FlowboardAppointmentSearch,
   searchQuery: string,
@@ -21,44 +27,37 @@ export function appointmentMatchesSearchQuery(
   const query = searchQuery.trim()
   if (!query) return true
 
+  const dateParts = parseSearchDateParts(query)
+  if (dateParts) {
+    return matchDob(
+      appointment.patient?.date_of_birth,
+      dateParts.year,
+      dateParts.month ?? '',
+      dateParts.day ?? ''
+    )
+  }
+
   const q = query.toLowerCase()
   const patient = appointment.patient
 
-  if (
+  return (
     appointment.patient_id.toString().includes(q) ||
     (patient?.first_name ?? '').toLowerCase().includes(q) ||
     (patient?.last_name ?? '').toLowerCase().includes(q) ||
     (patient?.email ?? '').toLowerCase().includes(q) ||
     (patient?.phone ?? '').includes(q) ||
-    (options?.includeProvider &&
+    (Boolean(options?.includeProvider) &&
       (appointment.assigned_doctor?.full_name ?? '').toLowerCase().includes(q))
-  ) {
-    return true
-  }
-
-  const parsedIso = parseSearchDateToIso(query)
-  if (parsedIso) {
-    const [y, m, d] = parsedIso.split('-')
-    return matchDob(patient?.date_of_birth, y, m, d)
-  }
-
-  return false
+  )
 }
 
-export function appointmentMatchesDobFilters(
+export function appointmentMatchesParsedPatientSearch(
   appointment: FlowboardAppointmentSearch,
-  dobYear: string,
-  dobMonth: string,
-  dobDay: string
+  parsed: ParsedPatientSearch | null,
+  options?: { includeProvider?: boolean }
 ): boolean {
-  if (!dobYear && !dobMonth && !dobDay) return true
-  return matchDob(appointment.patient?.date_of_birth, dobYear, dobMonth, dobDay)
+  if (!parsed?.raw.trim()) return true
+  return appointmentMatchesParsedSearch(appointment, parsed, options)
 }
 
-export function hasActiveFlowboardDobFilters(
-  dobYear: string,
-  dobMonth: string,
-  dobDay: string
-): boolean {
-  return !!(dobYear || dobMonth || dobDay)
-}
+export { patientMatchesParsedSearch }

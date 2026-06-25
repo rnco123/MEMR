@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { isPhysicianRole, PHYSICIAN_OR_ADMIN_ROLES } from '@/lib/roles'
+import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole, UserRole } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -33,12 +33,9 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
-import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
-import {
-  appointmentMatchesDobFilters,
-  appointmentMatchesSearchQuery,
-  hasActiveFlowboardDobFilters,
-} from '@/lib/flowboard/appointment-search-filter'
+import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
+import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
+import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -106,9 +103,8 @@ function FlowboardPage() {
   })
   const viewMode: 'mine' = 'mine'
   const [searchQuery, setSearchQuery] = useState('')
-  const [dobYear, setDobYear] = useState('')
-  const [dobMonth, setDobMonth] = useState('')
-  const [dobDay, setDobDay] = useState('')
+  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
+    useAiPatientSearchParse(searchQuery, { includeProvider: true })
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [pageSize, setPageSize] = useState(25)
@@ -122,6 +118,12 @@ function FlowboardPage() {
   } | null>(null)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const initialLoadDone = useRef(false)
+
+  useEffect(() => {
+    if (role === UserRole.NURSE) {
+      router.replace('/dashboard/nurse-flowboard')
+    }
+  }, [role, router])
 
   useEffect(() => {
     setDisplayMode(readFlowboardDisplayMode())
@@ -198,7 +200,7 @@ function FlowboardPage() {
   }, [selectedLocationId])
 
   useEffect(() => {
-    if (user && isPhysicianRole(role) && !initialLoadDone.current) {
+    if (user && isClinicalDashboardRole(role) && role !== UserRole.NURSE && !initialLoadDone.current) {
       initialLoadDone.current = true
       const hasCache = typeof window !== 'undefined' && !!sessionStorage.getItem(CACHE_KEY)
       fetchAssignedAppointments(!hasCache)
@@ -206,7 +208,7 @@ function FlowboardPage() {
   }, [user, role, fetchAssignedAppointments])
 
   useEffect(() => {
-    if (user && isPhysicianRole(role) && initialLoadDone.current) {
+    if (user && isClinicalDashboardRole(role) && role !== UserRole.NURSE && initialLoadDone.current) {
       fetchAssignedAppointments(false)
     }
   }, [selectedLocationId, user, role, fetchAssignedAppointments])
@@ -240,19 +242,15 @@ function FlowboardPage() {
   }
 
   // Filter and sort appointments (search/filter on ALL records)
-  const hasDobFilters = hasActiveFlowboardDobFilters(dobYear, dobMonth, dobDay)
-
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    if (hasDobFilters) {
+    const activeParsed =
+      parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
+    if (activeParsed) {
       result = result.filter((appointment) =>
-        appointmentMatchesDobFilters(appointment, dobYear, dobMonth, dobDay)
+        appointmentMatchesParsedPatientSearch(appointment, activeParsed, { includeProvider: true })
       )
-    }
-
-    if (searchQuery.trim()) {
-      result = result.filter((appointment) => appointmentMatchesSearchQuery(appointment, searchQuery))
     }
 
     // Status filter
@@ -282,7 +280,7 @@ function FlowboardPage() {
     }
 
     return result
-  }, [appointments, searchQuery, dobYear, dobMonth, dobDay, hasDobFilters, filterStatus, sortBy])
+  }, [appointments, parsedSearch, debouncedQuery, filterStatus, sortBy])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -337,21 +335,16 @@ function FlowboardPage() {
         {/* Search and Filters */}
         <FlowboardFilterToolbar
           search={
-            <div className="relative">
-              <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value)
-                  setPage(1)
-                }}
-                placeholder={t('flow.search_placeholder')}
-                className="w-full pl-10 pr-4 h-9 bg-[#f9fbff] border border-slate-200 rounded-lg text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-              />
-            </div>
+            <SmartPatientSearchInput
+              size="sm"
+              value={searchQuery}
+              onChange={(value) => {
+                setSearchQuery(value)
+                setPage(1)
+              }}
+              placeholder={t('flow.search_placeholder')}
+              loading={searchPending}
+            />
           }
           searchActions={
             <button
@@ -411,26 +404,6 @@ function FlowboardPage() {
                   ))}
                 </select>
               </FlowboardFilterField>
-              <FlowboardFilterField label={t('flow.dob_short')} dob>
-                <SearchByDobDropdowns
-                  layout="compact"
-                  year={dobYear}
-                  month={dobMonth}
-                  day={dobDay}
-                  onYearChange={(v) => {
-                    setDobYear(v)
-                    setPage(1)
-                  }}
-                  onMonthChange={(v) => {
-                    setDobMonth(v)
-                    setPage(1)
-                  }}
-                  onDayChange={(v) => {
-                    setDobDay(v)
-                    setPage(1)
-                  }}
-                />
-              </FlowboardFilterField>
               <FlowboardViewToggleSlot>
                 <FlowboardViewToggle
                   value={displayMode}
@@ -449,7 +422,7 @@ function FlowboardPage() {
                   end: Math.min(page * pageSize, filteredAppointments.length),
                   total: filteredAppointments.length,
                 })}
-                {searchQuery || filterStatus !== 'all' || hasDobFilters
+                {debouncedQuery.trim() || filterStatus !== 'all'
                   ? ` ${t('flow.filtered_from', { total: appointments.length })}`
                   : ''}
               </p>
@@ -473,15 +446,12 @@ function FlowboardPage() {
                     </select>
                   </label>
                 )}
-                {(searchQuery || filterStatus !== 'all' || hasDobFilters) && (
+                {(debouncedQuery.trim() || filterStatus !== 'all') && (
                   <button
                     type="button"
                     onClick={() => {
                       setSearchQuery('')
                       setFilterStatus('all')
-                      setDobYear('')
-                      setDobMonth('')
-                      setDobDay('')
                       setPage(1)
                     }}
                     className="text-xs text-[#2E6EF3] hover:text-[#1f5ad2] font-medium transition-colors shrink-0"
@@ -507,10 +477,10 @@ function FlowboardPage() {
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-slate-900 mb-1">
-              {searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.no_results') : t('flow.no_active')}
+              {debouncedQuery.trim() || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}
             </h3>
             <p className="text-slate-500 text-sm">
-              {searchQuery || filterStatus !== 'all' || hasDobFilters
+              {debouncedQuery.trim() || filterStatus !== 'all'
                 ? t('common.try_adjust_filters')
                 : t('flow.no_active_message')}
             </p>
@@ -684,18 +654,17 @@ function FlowboardPage() {
         {/* Mobile search bar */}
         <div className="px-4 py-3 bg-white border-b border-slate-100 space-y-2">
           <div className="flex gap-2">
-            <div className="relative flex-1">
-              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-              <input
-                type="search"
-                value={searchQuery}
-                onChange={(e) => { setSearchQuery(e.target.value); setPage(1) }}
-                placeholder={t('flow.search_placeholder')}
-                className="w-full h-10 pl-9 pr-3 rounded-xl border border-slate-200 bg-[#f9fbff] text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-              />
-            </div>
+            <SmartPatientSearchInput
+              size="md"
+              type="search"
+              value={searchQuery}
+              onChange={(value) => {
+                setSearchQuery(value)
+                setPage(1)
+              }}
+              placeholder={t('flow.search_placeholder')}
+              loading={searchPending}
+            />
             <select
               value={filterStatus}
               onChange={(e) => { setFilterStatus(e.target.value); setPage(1) }}
@@ -707,15 +676,6 @@ function FlowboardPage() {
               ))}
             </select>
           </div>
-          <SearchByDobDropdowns
-            layout="inline"
-            year={dobYear}
-            month={dobMonth}
-            day={dobDay}
-            onYearChange={(v) => { setDobYear(v); setPage(1) }}
-            onMonthChange={(v) => { setDobMonth(v); setPage(1) }}
-            onDayChange={(v) => { setDobDay(v); setPage(1) }}
-          />
         </div>
 
         {/* Mobile card list */}
@@ -731,8 +691,8 @@ function FlowboardPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                 </svg>
               </div>
-              <p className="font-semibold text-slate-900">{searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.no_results') : t('flow.no_active')}</p>
-              <p className="text-sm text-slate-500 mt-1">{searchQuery || filterStatus !== 'all' || hasDobFilters ? t('common.try_adjust_filters') : t('flow.no_active_message')}</p>
+              <p className="font-semibold text-slate-900">{debouncedQuery.trim() || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_active')}</p>
+              <p className="text-sm text-slate-500 mt-1">{debouncedQuery.trim() || filterStatus !== 'all' ? t('common.try_adjust_filters') : t('flow.no_active_message')}</p>
             </div>
           ) : (
             filteredAppointments.map((appointment) => {
@@ -823,7 +783,7 @@ function FlowboardPage() {
 }
 
 export default withRoleProtection(FlowboardPage, {
-  allowedRoles: [...PHYSICIAN_OR_ADMIN_ROLES],
+  allowedRoles: [...CLINICAL_DASHBOARD_ROLES],
   redirectTo: '/dashboard',
 })
 

@@ -437,7 +437,11 @@ export function I693WorkflowBoard({
                 <h3 className="text-sm font-semibold text-slate-800">{t(col.labelKey)}</h3>
                 <span className="ml-auto text-xs text-slate-500">{byColumn[col.status].length}</span>
               </div>
-              <div className="p-2 space-y-2 flex-1 overflow-y-auto max-h-[calc(100vh-16rem)]">
+              <div
+                onDragOver={(event) => event.preventDefault()}
+                onDrop={(event) => handleColumnDrop(event, col.status)}
+                className="p-2 space-y-2 flex-1 overflow-y-auto max-h-[calc(100vh-16rem)]"
+              >
                 {byColumn[col.status].map((row) => renderCard(row))}
               </div>
             </div>

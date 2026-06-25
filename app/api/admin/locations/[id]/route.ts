@@ -106,6 +106,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (v.email !== undefined) patch.email = normalizeEmail(v.email ?? null)
     if (v.opening_hours !== undefined) patch.opening_hours = v.opening_hours
     if (v.is_active !== undefined) patch.is_active = v.is_active
+    if (v.location_group !== undefined) patch.location_group = v.location_group?.trim() || null
 
     if (mapResult) {
       patch.google_map_url = mapResult.url

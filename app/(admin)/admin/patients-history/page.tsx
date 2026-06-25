@@ -4,7 +4,9 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useT } from '@/lib/i18n'
-import { SearchByDobDropdowns, matchDob } from '@/components/SearchByDobDropdowns'
+import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
+import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { patientMatchesParsedSearch } from '@/lib/nurse/patient-search-apply'
 
 type Patient = {
   id: number
@@ -28,12 +30,8 @@ export default function AdminPatientsHistoryPage() {
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
-  const [sortBy, setSortBy] = useState<'name' | 'recent' | 'visits'>('name')
-  const [filterGender, setFilterGender] = useState<'all' | 'Male' | 'Female'>('all')
-  const [searchMode, setSearchMode] = useState<'name' | 'dob'>('name')
-  const [dobYear, setDobYear] = useState('')
-  const [dobMonth, setDobMonth] = useState('')
-  const [dobDay, setDobDay] = useState('')
+  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
+    useAiPatientSearchParse(searchQuery)
 
   const fetchPatients = async () => {
     setLoading(true)
@@ -55,51 +53,25 @@ export default function AdminPatientsHistoryPage() {
 
   const filteredPatients = useMemo(() => {
     let result = [...patients]
-    if (searchMode === 'dob') {
-      if (dobYear || dobMonth || dobDay) {
-        result = result.filter((patient) => matchDob(patient.date_of_birth, dobYear, dobMonth, dobDay))
-      }
-    } else {
-      const trimmed = searchQuery.trim().toLowerCase()
-      if (trimmed) {
-        result = result.filter(
-          (patient) =>
-            String(patient.id).includes(trimmed) ||
-            patient.first_name.toLowerCase().includes(trimmed) ||
-            patient.last_name.toLowerCase().includes(trimmed) ||
-            (patient.email ?? '').toLowerCase().includes(trimmed) ||
-            (patient.phone ?? '').toLowerCase().includes(trimmed)
-        )
-      }
+    const activeParsed =
+      parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
+    if (activeParsed) {
+      result = result.filter((patient) => patientMatchesParsedSearch(patient, activeParsed))
     }
 
-    if (filterGender !== 'all') {
-      result = result.filter((patient) => patient.gender === filterGender)
-    }
-
-    switch (sortBy) {
-      case 'name':
-        result.sort((a, b) => `${a.last_name} ${a.first_name}`.localeCompare(`${b.last_name} ${b.first_name}`))
-        break
-      case 'recent':
-        result.sort((a, b) => {
-          if (!a.last_visit && !b.last_visit) return 0
-          if (!a.last_visit) return 1
-          if (!b.last_visit) return -1
-          return new Date(b.last_visit).getTime() - new Date(a.last_visit).getTime()
-        })
-        break
-      case 'visits':
-        result.sort((a, b) => (b.encounter_count || 0) - (a.encounter_count || 0))
-        break
-    }
+    result.sort((a, b) => {
+      if (!a.last_visit && !b.last_visit) return 0
+      if (!a.last_visit) return 1
+      if (!b.last_visit) return -1
+      return new Date(b.last_visit).getTime() - new Date(a.last_visit).getTime()
+    })
 
     return result
-  }, [patients, searchQuery, filterGender, sortBy, searchMode, dobYear, dobMonth, dobDay])
+  }, [patients, parsedSearch, debouncedQuery])
 
   useEffect(() => {
     setPage(1)
-  }, [searchQuery, filterGender, sortBy, searchMode, dobYear, dobMonth, dobDay])
+  }, [debouncedQuery])
 
   const paginatedPatients = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE
@@ -171,51 +143,12 @@ export default function AdminPatientsHistoryPage() {
 
         <div className="bg-white border border-slate-200 rounded-2xl p-4 mb-4">
           <div className="flex flex-col lg:flex-row gap-3">
-            {/* Search mode toggle + input */}
-            <div className="flex-1 flex gap-2 items-center">
-              <div className="flex gap-1 bg-slate-100 rounded-xl p-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setSearchMode('name')}
-                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'name' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Name / Phone
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSearchMode('dob')}
-                  className={`h-9 px-3 rounded-lg text-xs font-medium transition-colors whitespace-nowrap ${searchMode === 'dob' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                >
-                  Date of Birth
-                </button>
-              </div>
-              {searchMode === 'name' ? (
-                <div className="flex-1 relative">
-                  <svg className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('admin.patients.search')}
-                    className="w-full pl-10 pr-4 h-11 bg-[#f9fbff] border border-slate-200 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] focus:border-transparent"
-                  />
-                </div>
-              ) : (
-                <div className="flex-1">
-                  <SearchByDobDropdowns
-                    year={dobYear}
-                    month={dobMonth}
-                    day={dobDay}
-                    onYearChange={setDobYear}
-                    onMonthChange={setDobMonth}
-                    onDayChange={setDobDay}
-                    layout="compact"
-                  />
-                </div>
-              )}
-            </div>
+            <SmartPatientSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder={t('admin.patients.search')}
+              loading={searchPending}
+            />
             <button
               onClick={() => void fetchPatients()}
               disabled={loading}
@@ -226,32 +159,6 @@ export default function AdminPatientsHistoryPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('admin.patients.sort')}</span>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="name">{t('patients.sort_name')}</option>
-                <option value="recent">{t('patients.sort_recent')}</option>
-                <option value="visits">{t('patients.sort_visits')}</option>
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <span className="text-slate-500 text-xs font-medium whitespace-nowrap">{t('patients.gender')}</span>
-              <select
-                value={filterGender}
-                onChange={(e) => setFilterGender(e.target.value as typeof filterGender)}
-                className="h-11 px-3 bg-white border border-slate-200 rounded-xl text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
-              >
-                <option value="all">{t('common.all')}</option>
-                <option value="Male">{t('common.male')}</option>
-                <option value="Female">{t('common.female')}</option>
-              </select>
-            </div>
           </div>
         </div>
 
@@ -344,7 +251,7 @@ export default function AdminPatientsHistoryPage() {
               end: Math.min(page * PAGE_SIZE, filteredPatients.length),
               total: filteredPatients.length,
             })}
-            {searchQuery || filterGender !== 'all'
+            {debouncedQuery.trim()
               ? ` ${t('admin.patients.filtered_from', { total: patients.length })}`
               : ''}
           </p>

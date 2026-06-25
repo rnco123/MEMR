@@ -1,6 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
+import { ensureEncounterPhysicianReview } from '@/lib/compliance/ensure-physician-review'
 import type { EncounterStatus } from '@/lib/encounter-status'
+import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 
 /** Statuses from which a doctor may mark the encounter completed (nurse final review skipped). */
@@ -43,6 +45,13 @@ export async function completeEncounter(
     encounterId: args.encounterId,
     status: 'completed',
     profileId,
+  })
+
+  const roleInfo = await fetchUserRole(admin, args.userId)
+  await ensureEncounterPhysicianReview(admin, {
+    encounterId: args.encounterId,
+    documentingUserId: args.userId,
+    documentingRole: roleInfo?.role ?? null,
   })
 
   return { status: 'completed' }

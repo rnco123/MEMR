@@ -19,6 +19,21 @@ export async function guardEncounterAccess(
   return admin
 }
 
+/**
+ * I-693: location-scoped only — physicians at the same clinic may view/edit without
+ * being the assigned encounter doctor (workflow changes are audit-logged).
+ */
+export const I693_ENCOUNTER_ACCESS: EncounterAccessOptions = {
+  requireDoctorAssignment: false,
+}
+
+export async function guardI693EncounterAccess(
+  userId: string,
+  encounterId: number
+): Promise<SupabaseClient> {
+  return guardEncounterAccess(userId, encounterId, I693_ENCOUNTER_ACCESS)
+}
+
 export async function guardPatientAccess(userId: string, patientId: number): Promise<SupabaseClient> {
   const admin = createAdminClient()
   await assertPatientAccess(admin, userId, patientId)

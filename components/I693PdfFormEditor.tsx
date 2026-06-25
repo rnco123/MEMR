@@ -28,6 +28,7 @@ import {
 import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
 import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
+import type { I693LocationAutofillMeta } from '@/lib/i693/location-autofill'
 import {
   type I693Annotation,
   type I693CrossAnnotation,
@@ -192,6 +193,8 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [splitViewOpen, setSplitViewOpen] = useState(false)
   const [splitDocIndex, setSplitDocIndex] = useState(0)
   const [supportingLoading, setSupportingLoading] = useState(false)
+  const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
+  const [locationAutofillLoading, setLocationAutofillLoading] = useState(false)
   const [aiDraft, setAiDraft] = useState<I693SupportingDocumentDraft | null>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const previewHostRef = useRef<HTMLDivElement>(null)
@@ -314,6 +317,55 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     },
     [encounterId, t]
   )
+
+  const loadLocationAutofillMeta = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/i693/location-autofill`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = (await res.json()) as I693LocationAutofillMeta
+      if (res.ok) setLocationAutofill(json)
+    } catch {
+      setLocationAutofill(null)
+    }
+  }, [encounterId])
+
+  const applyLocationAutofill = useCallback(async () => {
+    setLocationAutofillLoading(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/i693/location-autofill`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Location auto-fill failed')
+
+      const next = mergeAcceptedI693AiDraft(
+        formRef.current,
+        parseFormDataFromApi(json.form_data)
+      )
+      setForm(next)
+      formRef.current = next
+      setDirty(true)
+      setLocationAutofill({
+        available: true,
+        region_label: json.region_label ?? null,
+        location_title: json.location_title ?? null,
+        location_address: json.location_address ?? null,
+        location_group: json.location_group ?? null,
+        location_id: json.location_id ?? null,
+      })
+      if (mode !== 'editor') setMode('editor')
+      setEditorTick((n) => n + 1)
+      toast.success(t('i693.location_autofill_applied'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Location auto-fill failed')
+    } finally {
+      setLocationAutofillLoading(false)
+    }
+  }, [encounterId, mode, t])
 
   const renderEditorPdf = useCallback(
     async (data: I693FormData) => {
@@ -550,6 +602,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       setLoading(true)
       try {
         await loadFormAndAnnotations()
+        await loadLocationAutofillMeta()
         if (!cancelled) setEditorTick((n) => n + 1)
       } catch (e) {
         if (!cancelled) toast.error(e instanceof Error ? e.message : 'Failed to load I-693')
@@ -560,7 +613,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     return () => {
       cancelled = true
     }
-  }, [loadFormAndAnnotations])
+  }, [loadFormAndAnnotations, loadLocationAutofillMeta])
 
   useEffect(() => {
     if (mode !== 'editor' || editorTick === 0) return
@@ -1428,6 +1481,43 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           e.currentTarget.value = ''
         }}
       />
+
+      {locationAutofill ? (
+        <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-sm font-semibold text-slate-900">{t('i693.location_autofill_title')}</h3>
+            <p className="mt-1 text-xs text-slate-500">{t('i693.location_autofill_hint')}</p>
+            {(locationAutofill.region_label || locationAutofill.location_title) ? (
+              <p className="mt-2 text-xs font-medium text-[#2E6EF3]">
+                {[locationAutofill.region_label, locationAutofill.location_title]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </p>
+            ) : null}
+            {locationAutofill.location_address ? (
+              <p className="mt-1 text-xs text-slate-600">{locationAutofill.location_address}</p>
+            ) : null}
+            {!locationAutofill.available ? (
+              <p className="mt-2 text-xs text-slate-400">
+                {locationAutofill.reason ?? t('i693.location_autofill_unavailable')}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void applyLocationAutofill()}
+            disabled={
+              locationAutofillLoading ||
+              saving ||
+              previewLoading ||
+              !locationAutofill.available
+            }
+            className="inline-flex shrink-0 items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {locationAutofillLoading ? t('common.loading') : t('i693.location_autofill_button')}
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
         <div>

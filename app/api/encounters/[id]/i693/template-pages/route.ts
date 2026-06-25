@@ -4,7 +4,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { getI693TemplatePages } from '@/lib/i693/template-pages'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -25,7 +25,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       throw new AuthorizationError()
     }
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardI693EncounterAccess(user.id, encounterId)
 
     const pages = await getI693TemplatePages()
     if (!pages) {

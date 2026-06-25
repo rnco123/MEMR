@@ -9,8 +9,9 @@ import { formatDateForPdfDisplay } from '@/lib/i693/pdf-editor-layout'
 export const VACCINE_LINE_TO_CODE: Record<number, string> = {
   1: 'dt',
   2: 'td',
-  3: 'mmr',
-  4: 'polio',
+  // Template line order: OPV/IPV (polio) precedes MMR on page 12.
+  3: 'polio',
+  4: 'mmr',
   5: 'hib',
   6: 'hep_b',
   7: 'varicella',
@@ -217,12 +218,30 @@ function doseDate(row: I693VaccinationGridRow, doseIndex: number): string {
   return ''
 }
 
+/** Selector checkboxes for which formulation was administered (Td/Tdap, OPV/IPV). */
+function vaccineGivenSelectorValue(
+  data: I693FormData,
+  short: string,
+  widgetIndex: number
+): boolean | null {
+  if (short === 'P9_TDVaccineCheckBox') return getVaccinationGridRow(data, 'td').givenTdap === true
+  if (short === 'P10_TDVaccineCheckBox') return getVaccinationGridRow(data, 'td').givenTd === true
+  if (short === 'Pt10_PVVaccineCheckBox') {
+    const polio = getVaccinationGridRow(data, 'polio')
+    return widgetIndex === 1 ? polio.givenIpv === true : polio.givenOpv === true
+  }
+  return null
+}
+
 /** Value to write into a vaccination-table PDF widget. */
 export function vaccinationWidgetValue(
   data: I693FormData,
   short: string,
   widgetIndex = 0
 ): string | boolean | null {
+  const selector = vaccineGivenSelectorValue(data, short, widgetIndex)
+  if (selector !== null) return selector
+
   let parsed = parseVaccinationWidget(short)
   if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
     const line = widgetIndex + 3
@@ -241,7 +260,8 @@ export function vaccinationWidgetValue(
     case 'datesReceived':
       return doseDate(row, parsed.doseIndex)
     case 'completeSeries':
-      return row.completeSeries ? 'Yes' : ''
+      // Form convention: Mark "X" if the series is complete.
+      return row.completeSeries ? 'X' : ''
     case 'contraindicated':
       return row.contraindicated === true
     case 'insufficientInterval':
@@ -267,6 +287,25 @@ export function applyVaccinationWidgetToGrid(
   checked: boolean,
   widgetIndex = 0
 ): void {
+  if (!data.vaccination_grid?.length) {
+    data.vaccination_grid = defaultVaccinationGrid()
+  }
+
+  if (short === 'P9_TDVaccineCheckBox') {
+    getVaccinationGridRow(data, 'td').givenTdap = checked
+    return
+  }
+  if (short === 'P10_TDVaccineCheckBox') {
+    getVaccinationGridRow(data, 'td').givenTd = checked
+    return
+  }
+  if (short === 'Pt10_PVVaccineCheckBox') {
+    const polio = getVaccinationGridRow(data, 'polio')
+    if (widgetIndex === 1) polio.givenIpv = checked
+    else polio.givenOpv = checked
+    return
+  }
+
   let parsed = parseVaccinationWidget(short)
   if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
     const line = widgetIndex + 3
@@ -274,10 +313,6 @@ export function applyVaccinationWidgetToGrid(
     if (code) parsed = { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
   }
   if (!parsed) return
-
-  if (!data.vaccination_grid?.length) {
-    data.vaccination_grid = defaultVaccinationGrid()
-  }
 
   const row = getVaccinationGridRow(data, parsed.vaccineCode)
   const val = raw.trim()
@@ -299,7 +334,8 @@ export function applyVaccinationWidgetToGrid(
       break
     }
     case 'completeSeries':
-      row.completeSeries = checked || val === 'Yes' || val === 'On'
+      row.completeSeries =
+        checked || val === 'Yes' || val === 'On' || val.toUpperCase() === 'X'
       break
     case 'contraindicated':
       row.contraindicated = checked

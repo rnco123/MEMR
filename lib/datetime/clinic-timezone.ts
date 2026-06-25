@@ -95,6 +95,16 @@ function centralDayKey(d: Date): string {
   }).format(d)
 }
 
+/** YYYY-MM-DD for the current calendar day in clinic (Central) time. */
+export function getClinicTodayDateString(now: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now)
+}
+
 function centralTimeOnly(date: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
     timeZone: CLINIC_TIME_ZONE,

@@ -35,10 +35,10 @@ function getRequiredRolesForPath(pathname: string): UserRole[] | null {
   }
 
   if (p.startsWith('/dashboard/flowboard')) {
-    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/nurse-flowboard')) {
-    return [UserRole.ADMIN, UserRole.NURSE]
+    return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]
   }
   if (p.startsWith('/dashboard/patients-history')) {
     return [UserRole.ADMIN, ...PHYSICIAN_ROUTE_ROLES, UserRole.NURSE]

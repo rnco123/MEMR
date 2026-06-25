@@ -319,19 +319,21 @@ export function EncounterDetailModal({
           setIntake(intakeData as IntakeForm)
         }
 
-        // Fetch vitals
-        const { data: vitalsData, error: vitalsError } = await supabase
-          .from('vitals')
-          .select('*')
-          .eq('encounter_id', encounterId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (vitalsError) {
-          console.error('Error fetching vitals:', vitalsError)
-        } else if (vitalsData) {
-          setVitals(vitalsData as Vitals)
+        // Fetch vitals (API bypasses stale RLS that blocked physicians on client reads)
+        try {
+          const vitalsRes = await fetch(`/api/encounters/${encounterId}/vitals`, {
+            credentials: 'include',
+          })
+          const vitalsJson = await vitalsRes.json()
+          if (vitalsRes.ok) {
+            setVitals((vitalsJson.data as Vitals | null) ?? null)
+          } else {
+            console.error('Error fetching vitals:', vitalsJson.error)
+            setVitals(null)
+          }
+        } catch (vitalsErr) {
+          console.error('Error fetching vitals:', vitalsErr)
+          setVitals(null)
         }
 
         // Fetch SOAP notes by encounter_id (table links to encounters.id)

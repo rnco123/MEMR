@@ -39,7 +39,8 @@ async function resolveDoctorRowId(
  * - Admin: unrestricted.
  * - Doctor / Nurse: encounter location (appointment or patient) must be in scope.
  * - Unassigned location: denied for non-admin.
- * - Doctor: must be assigned to encounter when `requireDoctorAssignment` is true.
+ * - Doctor: must be assigned to encounter when `requireDoctorAssignment` is true
+ *   (I-693 routes pass `requireDoctorAssignment: false`; see `guardI693EncounterAccess`).
  */
 export async function assertEncounterAccess(
   adminClient: SupabaseClient,

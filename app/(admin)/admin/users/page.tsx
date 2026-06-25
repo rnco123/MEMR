@@ -31,6 +31,7 @@ interface StaffUser {
   avatar_url?: string | null
   assigned_locations?: Location[]
   npi?: string | null
+  compliance_access?: boolean
 }
 
 const PAGE_SIZE = 20
@@ -193,6 +194,7 @@ export default function AdminUsersPage() {
   const [showPw, setShowPw] = useState(false)
   const [role, setRole] = useState<AdminStaffRoleValue>('doctor')
   const [selectedLocations, setSelectedLocations] = useState<number[]>([])
+  const [complianceAccess, setComplianceAccess] = useState(false)
   const [roleFilter, setRoleFilter] = useState('')
   const [showInactive, setShowInactive] = useState(true)
   const [search, setSearch] = useState('')
@@ -212,6 +214,7 @@ export default function AdminUsersPage() {
   const [showResetPw, setShowResetPw] = useState(false)
   const [editLocationIds, setEditLocationIds] = useState<number[]>([])
   const [editNpi, setEditNpi] = useState('')
+  const [editComplianceAccess, setEditComplianceAccess] = useState(false)
 
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -262,6 +265,7 @@ export default function AdminUsersPage() {
     setEditRole(isAdminStaffRoleValue(u.role) ? u.role : 'doctor')
     setEditActive(u.active)
     setEditNpi(u.npi ?? '')
+    setEditComplianceAccess(u.compliance_access === true)
   }
 
   const openResetPassword = (u: StaffUser) => {
@@ -289,6 +293,7 @@ export default function AdminUsersPage() {
         email: editEmail.trim().toLowerCase(),
         role: editRole,
         active: editActive,
+        ...(editRole === 'doctor' ? { compliance_access: editComplianceAccess } : { compliance_access: false }),
         ...(isPhysicianRole(editRole) ? { npi: editNpi.trim() || null } : {}),
       })
       toast.success(t('admin.users.updated', { name: userLabel(editUser) }))
@@ -342,6 +347,7 @@ export default function AdminUsersPage() {
     setShowPw(false)
     setRole('doctor')
     setSelectedLocations([])
+    setComplianceAccess(false)
     setFormError(null)
     setFormSuccess(null)
   }
@@ -355,7 +361,14 @@ export default function AdminUsersPage() {
       const res = await fetch('/api/admin/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, password, role, location_ids: selectedLocations }),
+        body: JSON.stringify({
+          name,
+          email,
+          password,
+          role,
+          location_ids: selectedLocations,
+          compliance_access: role === 'doctor' ? complianceAccess : false,
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -533,7 +546,10 @@ export default function AdminUsersPage() {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setRole(opt.value)}
+                      onClick={() => {
+                        setRole(opt.value)
+                        if (opt.value !== 'doctor') setComplianceAccess(false)
+                      }}
                       className={`py-2 rounded-lg border text-sm font-medium transition-colors ${
                         role === opt.value
                           ? 'bg-purple-600 border-purple-600 text-white'
@@ -555,6 +571,21 @@ export default function AdminUsersPage() {
                   listClassName="max-h-56"
                 />
               </div>
+
+              {role === 'doctor' && (
+                <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={complianceAccess}
+                    onChange={(e) => setComplianceAccess(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 accent-purple-600"
+                  />
+                  <span>
+                    <span className="font-medium">{t('admin.users.compliance_access')}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">{t('admin.users.compliance_access_hint')}</span>
+                  </span>
+                </label>
+              )}
 
               {formError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
@@ -699,7 +730,10 @@ export default function AdminUsersPage() {
                     <button
                       key={opt.value}
                       type="button"
-                      onClick={() => setEditRole(opt.value)}
+                      onClick={() => {
+                        setEditRole(opt.value)
+                        if (opt.value !== 'doctor') setEditComplianceAccess(false)
+                      }}
                       className={`py-2 rounded-lg border text-sm font-medium ${
                         editRole === opt.value
                           ? 'bg-purple-600 border-purple-600 text-white'
@@ -732,6 +766,20 @@ export default function AdminUsersPage() {
                 <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} className="w-4 h-4 accent-purple-600" />
                 {t('admin.users.active_account')}
               </label>
+              {editRole === 'doctor' && (
+                <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editComplianceAccess}
+                    onChange={(e) => setEditComplianceAccess(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 accent-purple-600"
+                  />
+                  <span>
+                    <span className="font-medium">{t('admin.users.compliance_access')}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">{t('admin.users.compliance_access_hint')}</span>
+                  </span>
+                </label>
+              )}
               {modalError && (
                 <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>
               )}

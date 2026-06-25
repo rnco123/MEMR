@@ -97,6 +97,15 @@ export default function DashboardLayout({
       ),
     },
     {
+      name: t('nav.compliance'),
+      href: '/dashboard/compliance',
+      icon: (
+        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      ),
+    },
+    {
       name: t('nav.chat'),
       href: '#',
       icon: (
@@ -120,7 +129,7 @@ export default function DashboardLayout({
     },
     {
       name: t('nav.flowboard'),
-      href: '/dashboard/nurse-flowboard',
+      href: '/dashboard/flowboard',
       icon: (
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -168,12 +177,21 @@ export default function DashboardLayout({
       ? nurseMenuItems
       : []
 
+  // Compliance is doctor-only (plus admin). fnp/pa are excluded even if flag is set.
+  const canAccessCompliance =
+    role === 'admin' || (role === 'doctor' && profile?.compliance_access === true)
+  const visibleMenuItems = menuItems.filter(
+    (item) => item.href !== '/dashboard/compliance' || canAccessCompliance
+  )
+
   const withPatientsActive = (item: MenuItem): SidebarNavItem => ({
     ...item,
     isActive: (p) =>
       item.href === '/dashboard/patients-history'
         ? p === item.href || p.startsWith('/patient-file/')
-        : p === item.href,
+        : item.href === '/dashboard/flowboard'
+          ? p === '/dashboard/flowboard' || p === '/dashboard/nurse-flowboard'
+          : p === item.href,
   })
 
   const profileNavItem: SidebarNavItem = {
@@ -183,10 +201,22 @@ export default function DashboardLayout({
     isActive: (p) => p === '/dashboard/profile',
   }
 
+  const supportNavItem: SidebarNavItem = {
+    name: t('nav.support'),
+    href: '/dashboard/support',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+    isActive: (p) => p === '/dashboard/support' || p.startsWith('/dashboard/support'),
+  }
+
   const sidebarSections: SidebarNavSection[] = [
     {
       title: t('nav.section.navigation'),
-      items: [...menuItems.map(withPatientsActive), profileNavItem],
+      items: [...visibleMenuItems.map(withPatientsActive), profileNavItem],
     },
   ]
 
@@ -201,10 +231,10 @@ export default function DashboardLayout({
 
   const showSidebar = isPhysicianRole(role) || role === 'nurse' || role === 'admin'
 
-  const chatMenuItem = menuItems.find((item) => item.href === '#')
+  const chatMenuItem = visibleMenuItems.find((item) => item.href === '#')
 
   const mobileTabItems: MobileTabItem[] = [
-    ...menuItems
+    ...visibleMenuItems
       .filter((item) => item.href !== '#')
       .slice(0, 4)
       .map((item) => ({
@@ -215,7 +245,9 @@ export default function DashboardLayout({
         isActive: (p: string) =>
           item.href === '/dashboard/patients-history'
             ? p === item.href || p.startsWith('/patient-file/')
-            : p === item.href,
+            : item.href === '/dashboard/flowboard'
+              ? p === '/dashboard/flowboard' || p === '/dashboard/nurse-flowboard'
+              : p === item.href,
       })),
     ...(chatMenuItem
       ? [
@@ -295,6 +327,7 @@ export default function DashboardLayout({
             expandLabel={t('nav.sidebar.expand')}
             closeLabel={t('nav.sidebar.close')}
             homeHref="/dashboard"
+            bottomItems={[supportNavItem]}
             user={{
               name: displayName,
               subtitle: role ? String(role) : undefined,

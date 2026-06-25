@@ -19,6 +19,7 @@ export type UserProfileSummary = {
   role: string | null
   display_name: string
   npi?: string | null
+  compliance_access?: boolean
 }
 
 type UserProfileContextValue = {
@@ -54,6 +55,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
           role: data.role ?? null,
           display_name: data.display_name ?? data.full_name ?? data.email ?? 'User',
           npi: data.npi ?? null,
+          compliance_access: data.compliance_access === true,
         })
       }
     } catch {

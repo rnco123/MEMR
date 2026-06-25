@@ -22,6 +22,11 @@ export type I693VaccinationGridRow = {
   notAgeAppropriate?: boolean
   immune?: boolean
   historyOfDisease?: boolean
+  /** Which formulation was administered (Td/Tdap row and OPV/IPV row selector checkboxes). */
+  givenTdap?: boolean
+  givenTd?: boolean
+  givenOpv?: boolean
+  givenIpv?: boolean
 }
 
 export type I693FormData = {

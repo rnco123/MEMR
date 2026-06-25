@@ -21,7 +21,7 @@ import {
   validatePatientDocumentUpload,
 } from '@/lib/security/file-upload'
 
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -113,7 +113,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
     assertI693TextractConfigured()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardI693EncounterAccess(user.id, encounterId)
 
 
     const admin = createAdminClient()

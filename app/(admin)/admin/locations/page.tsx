@@ -21,6 +21,7 @@ type LocationRow = {
   id: number
   title: string
   location_code: string | null
+  location_group: string | null
   address: string | null
   phone: string | null
   email: string | null
@@ -37,6 +38,7 @@ type LocationRow = {
 type LocationForm = {
   title: string
   tenant_id: number | null
+  location_group: string
   address: string
   phone: string
   email: string
@@ -47,6 +49,7 @@ type LocationForm = {
 const blankForm = (tenantId: number | null = null): LocationForm => ({
   title: '',
   tenant_id: tenantId,
+  location_group: '',
   address: '',
   phone: '',
   email: '',
@@ -252,6 +255,7 @@ function AdminLocationsPage() {
         body: JSON.stringify({
           title: createForm.title.trim(),
           tenant_id: createForm.tenant_id ?? null,
+          location_group: createForm.location_group.trim() || null,
           address: createForm.address.trim() || null,
           phone: createForm.phone.trim() || null,
           email: createForm.email.trim() || null,
@@ -279,6 +283,7 @@ function AdminLocationsPage() {
     setEditForm({
       title: row.title,
       tenant_id: row.tenant_id,
+      location_group: row.location_group ?? '',
       address: row.address ?? '',
       phone: row.phone ?? '',
       email: row.email ?? '',
@@ -303,6 +308,7 @@ function AdminLocationsPage() {
         body: JSON.stringify({
           title: editForm.title.trim(),
           tenant_id: editForm.tenant_id ?? null,
+          location_group: editForm.location_group.trim() || null,
           address: editForm.address.trim() || null,
           phone: editForm.phone.trim() || null,
           email: editForm.email.trim() || null,
@@ -400,6 +406,15 @@ function AdminLocationsPage() {
         ) : (
           <p className="mt-1 text-xs text-slate-400">{t('locations.code_auto_generated')}</p>
         )}
+      </div>
+      <div>
+        <label className="text-sm text-slate-700">{t('locations.group')}</label>
+        <input
+          value={form.location_group}
+          onChange={(e) => setForm((f) => ({ ...f, location_group: e.target.value }))}
+          className="mt-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
+          placeholder={t('locations.group_placeholder')}
+        />
       </div>
       <div>
         <label className="text-sm text-slate-700">{t('locations.phone')}</label>
@@ -665,6 +680,11 @@ function AdminLocationsPage() {
                                 {t('locations.disabled_badge')}
                               </span>
                             )}
+                            {row.location_group ? (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                                {t('locations.group_badge', { group: row.location_group })}
+                              </span>
+                            ) : null}
                           </div>
                           {row.location_code ? (
                             <p className="text-xs text-slate-400">{row.location_code}</p>

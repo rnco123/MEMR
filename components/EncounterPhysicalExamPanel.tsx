@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Link from 'next/link'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -179,6 +178,22 @@ export function EncounterPhysicalExamPanel({
     setRosExam(prev => ({ ...prev, exam: { ...prev.exam, [key]: value || null } }))
   }
 
+  const setAllRos = (value: SystemStatus) => {
+    setRosExam(prev => {
+      const ros = { ...prev.ros }
+      for (const row of ROS_ROWS) ros[row.key] = value
+      return { ...prev, ros }
+    })
+  }
+
+  const setAllExam = (value: SystemStatus) => {
+    setRosExam(prev => {
+      const exam = { ...prev.exam }
+      for (const row of EXAM_ROWS) exam[row.key] = value
+      return { ...prev, exam }
+    })
+  }
+
   const setRemarks = (value: string) => {
     setRosExam(prev => ({ ...prev, remarks: value || null }))
   }
@@ -208,6 +223,27 @@ export function EncounterPhysicalExamPanel({
       setSaving(false)
     }
   }
+
+  const renderBulkActions = (onAll: (value: SystemStatus) => void) => (
+    <div className="flex items-center gap-1.5">
+      <button
+        type="button"
+        disabled={locked || saving}
+        onClick={() => onAll('N')}
+        className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {t('encounter_modal.pe_all_normal')}
+      </button>
+      <button
+        type="button"
+        disabled={locked || saving}
+        onClick={() => onAll('A')}
+        className="px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-800 text-[10px] font-semibold hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        {t('encounter_modal.pe_all_abnormal')}
+      </button>
+    </div>
+  )
 
   // ── Row renderers ────────────────────────────────────────────────────────
 
@@ -283,14 +319,6 @@ export function EncounterPhysicalExamPanel({
             <p className="text-xs text-violet-700 mt-2 font-medium">{formatAudit(lastAudit)}</p>
           )}
         </div>
-        <Link
-          href="/forms/imm-physical-examination-template.pdf"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium text-[#2E6EF3] hover:underline shrink-0"
-        >
-          {t('encounter_modal.pe_view_template')}
-        </Link>
       </div>
 
       {locked && (
@@ -321,8 +349,12 @@ export function EncounterPhysicalExamPanel({
             {/* ROS */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">ROS</span>
+                  {!locked && renderBulkActions(setAllRos)}
+                </div>
                 <div className="flex items-center">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1">ROS</span>
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1" aria-hidden />
                   <span className="w-9 text-center text-[10px] font-semibold text-slate-500">N</span>
                   <span className="w-9 text-center text-[10px] font-semibold text-slate-500 mr-2">A</span>
                   <span className="text-[10px] font-semibold text-slate-500 flex-1">Findings</span>
@@ -340,8 +372,12 @@ export function EncounterPhysicalExamPanel({
             {/* EXAM */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
               <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">EXAM</span>
+                  {!locked && renderBulkActions(setAllExam)}
+                </div>
                 <div className="flex items-center">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1">EXAM</span>
+                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1" aria-hidden />
                   <span className="w-9 text-center text-[10px] font-semibold text-slate-500">N</span>
                   <span className="w-9 text-center text-[10px] font-semibold text-slate-500 mr-2">A</span>
                   <span className="text-[10px] font-semibold text-slate-500 flex-1">Findings</span>

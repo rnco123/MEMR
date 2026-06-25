@@ -78,7 +78,6 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
 
   Pt8Line1A1_TSDate: { key: 'tb_screening.quantiferon_t_spot' },
   Pt8Line1A1_QFDate: { key: 'tb_screening.quantiferon_t_spot' },
-  Pt8Line1A6_TBClassification: { key: 'tb_screening.classification' },
   Pt8Line1B1c_SyphilisScreen: { key: 'syphilis_sti.syphilis_result' },
 }
 
@@ -94,6 +93,14 @@ export const WIDGET_CHECKBOX_BINDINGS: WidgetCheckboxBinding[] = [
   { widget: 'Pt6Line1_OverallFinding', index: 2, key: 'civil_surgeon.summary_overall', when: 'class_a' },
   { widget: 'P10_Results', index: 0, key: 'civil_surgeon.vaccinations_complete', when: 'Yes' },
   { widget: 'P10_Results', index: 1, key: 'civil_surgeon.vaccinations_complete', when: 'No' },
+  // Page 7 (6) TB Classification/Findings — single-select checkbox group.
+  { widget: 'Pt8Line1A6_TBClassification', index: 0, key: 'tb_screening.classification', when: 'NOClassA' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 1, key: 'tb_screening.classification', when: 'CA' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 2, key: 'tb_screening.classification', when: 'B1Pul' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 3, key: 'tb_screening.classification', when: 'B0' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 4, key: 'tb_screening.classification', when: 'B1Extrapul' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 5, key: 'tb_screening.classification', when: 'B2 TB Latent' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 6, key: 'tb_screening.classification', when: 'Class B Other Chest ' },
 ]
 
 export function widgetShortName(fullName: string): string {

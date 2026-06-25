@@ -338,14 +338,8 @@ export function FinalReviewModal({
         if (intakeData) setIntake(intakeData as IntakeForm)
         else setIntake(null)
 
-        const [vitalsRes, soapRes, preSalesRes] = await Promise.all([
-          supabase
-            .from('vitals')
-            .select('*')
-            .eq('encounter_id', encounterId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
+        const [vitalsApiRes, soapRes, preSalesRes] = await Promise.all([
+          fetch(`/api/encounters/${encounterId}/vitals`, { credentials: 'include' }),
           supabase
             .from('ai_soapnotes')
             .select('*')
@@ -356,7 +350,8 @@ export function FinalReviewModal({
           supabase.from('pre_sales').select('id, product_id, product_quantity').eq('encounter_id', encounterId),
         ])
 
-        setVitals(vitalsRes.data as Vitals)
+        const vitalsJson = vitalsApiRes.ok ? await vitalsApiRes.json() : { data: null }
+        setVitals((vitalsJson.data as Vitals | null) ?? null)
         setSoapNotes(soapRes.data as SOAPNotes)
 
         if (encounterData?.pharmacy_id) {
@@ -821,6 +816,10 @@ export function FinalReviewModal({
         status: 'final_review',
         profileId,
       })
+
+      void fetch(`/api/encounters/${encounterId}/physician-review/ensure`, {
+        method: 'POST',
+      }).catch(err => console.error('Physician review ensure failed:', err))
 
       if (onComplete) {
         onComplete()

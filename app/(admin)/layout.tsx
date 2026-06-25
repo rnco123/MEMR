@@ -95,13 +95,31 @@ const adminNavItems = [
       </svg>
     ),
   },
+  {
+    nameKey: 'admin.nav.compliance',
+    href: '/admin/compliance',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.support',
+    href: '/admin/support',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    ),
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { user, role, loading, signOut } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
-  const { t } = useT()
+  const { t, language } = useT()
   const { profile } = useUserProfile()
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
@@ -126,7 +144,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t]
+    [t, language]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
@@ -144,14 +162,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {
         title: t('admin.nav.section.clinical'),
         items: adminNav.filter((item) =>
-          ['/admin', '/admin/flowboard', '/admin/patients-history', '/admin/i-693'].includes(item.href)
+          ['/admin', '/admin/flowboard', '/admin/patients-history', '/admin/i-693', '/admin/compliance'].includes(item.href)
         ),
       },
       {
         title: t('admin.nav.section.administration'),
         items: [
           ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies'].includes(item.href)
+            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/support'].includes(item.href)
           ),
           profileNavItem,
         ],
@@ -289,8 +307,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           }}
         />
 
-        <main className="min-w-0 flex-1 p-4 sm:p-6 text-slate-900 [color-scheme:light] bg-[#f8f4ff] overflow-y-auto rounded-xl sm:rounded-2xl">
-          {children}
+        <main className="min-w-0 flex-1 text-slate-900 [color-scheme:light] bg-[#f8f4ff] overflow-hidden flex flex-col rounded-xl sm:rounded-2xl">
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6">
+            {children}
+          </div>
         </main>
       </div>
 

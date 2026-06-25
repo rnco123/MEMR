@@ -440,43 +440,50 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[0]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "NOClassA"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[1]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "CA"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[2]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "B1Pul"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[3]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "B0"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[4]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "B1Extrapul"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[5]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "B2 TB Latent"
   },
   {
     "key": "tb_screening.classification",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[6]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "Class B Other Chest "
   },
   {
     "key": "vaccination_grid",

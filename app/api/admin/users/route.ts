@@ -7,10 +7,14 @@ import { logAuditEvent } from '@/lib/audit-server'
 import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { fetchAllLocations } from '@/lib/locations/fetch-all'
-import { ADMIN_STAFF_ROLE_VALUES, isPhysicianRole } from '@/lib/roles'
+import { ADMIN_STAFF_ROLE_VALUES, isPhysicianRole, UserRole } from '@/lib/roles'
 import { z } from 'zod'
 
 const adminStaffRoleSchema = z.enum(ADMIN_STAFF_ROLE_VALUES)
+
+function isDoctorRole(role: string): boolean {
+  return role === UserRole.DOCTOR
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +32,7 @@ const createUserSchema = z.object({
   password: passwordSchema,
   role: adminStaffRoleSchema,
   location_ids: z.array(z.number().int().positive()).optional(),
+  compliance_access: z.boolean().optional(),
 })
 
 const patchUserSchema = z
@@ -40,6 +45,7 @@ const patchUserSchema = z
     password: passwordSchema.optional(),
     location_ids: z.array(z.number().int().positive()).optional(),
     npi: z.union([z.string().max(20), z.null()]).optional(),
+    compliance_access: z.boolean().optional(),
   })
   .refine(
     (d) =>
@@ -49,7 +55,8 @@ const patchUserSchema = z
       d.active !== undefined ||
       d.password !== undefined ||
       d.location_ids !== undefined ||
-      d.npi !== undefined,
+      d.npi !== undefined ||
+      d.compliance_access !== undefined,
     { message: 'At least one field to update is required' }
   )
 
@@ -124,7 +131,7 @@ export async function GET(_req: NextRequest) {
       await Promise.all([
         admin
           .from('profiles')
-          .select('uid, role, full_name, email, active, created_at, avatar_id')
+          .select('uid, role, full_name, email, active, created_at, avatar_id, compliance_access')
           .neq('role', 'admin')
           .order('created_at', { ascending: false }),
         fetchAllLocations(admin),
@@ -155,6 +162,7 @@ export async function GET(_req: NextRequest) {
       ...p,
       email: p.email ?? null,
       active: p.active !== false,
+      compliance_access: p.compliance_access === true,
       avatar_id: p.avatar_id ?? null,
       avatar_url: resolveStaffAvatarUrl(p.avatar_id ?? null),
       assigned_locations: locationsByUser.get(p.uid) ?? [],
@@ -180,7 +188,8 @@ export async function POST(req: NextRequest) {
       throw new ValidationError('Invalid input', { issues })
     }
 
-    const { name, email, password, role, location_ids } = validated
+    const { name, email, password, role, location_ids, compliance_access } = validated
+    const grantCompliance = isDoctorRole(role) && compliance_access === true
     const admin = createAdminClient()
 
     const { data: authData, error: authErr } = await admin.auth.admin.createUser({
@@ -207,7 +216,7 @@ export async function POST(req: NextRequest) {
     if (existingProfile) {
       const { error: profileErr } = await admin
         .from('profiles')
-        .update({ role, full_name: fullName, email, active: true })
+        .update({ role, full_name: fullName, email, active: true, compliance_access: grantCompliance })
         .eq('uid', uid)
       if (profileErr) {
         console.error('[admin/users] profile update:', profileErr.message)
@@ -225,6 +234,7 @@ export async function POST(req: NextRequest) {
         full_name: fullName,
         email,
         active: true,
+        compliance_access: grantCompliance,
       })
       if (profileErr) {
         console.error('[admin/users] profile insert:', profileErr.message)
@@ -284,7 +294,7 @@ export async function PATCH(req: NextRequest) {
       throw new ValidationError('Invalid input', { issues })
     }
 
-    const { uid, full_name, email, role, active, password, location_ids, npi } = validated
+    const { uid, full_name, email, role, active, password, location_ids, npi, compliance_access } = validated
     if (uid === adminUser.id && (active === false || role)) {
       throw new ValidationError('You cannot deactivate or change your own role')
     }
@@ -292,7 +302,7 @@ export async function PATCH(req: NextRequest) {
     const admin = createAdminClient()
     const { data: targetProfile, error: targetErr } = await admin
       .from('profiles')
-      .select('uid, role, full_name, email, active')
+      .select('uid, role, full_name, email, active, compliance_access')
       .eq('uid', uid)
       .maybeSingle()
 
@@ -322,15 +332,64 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const profileUpdate: Record<string, unknown> = {}
-    if (full_name !== undefined) profileUpdate.full_name = nextName
-    if (email !== undefined) profileUpdate.email = nextEmail
-    if (role !== undefined) profileUpdate.role = nextRole
-    if (active !== undefined) profileUpdate.active = nextActive
+    if (compliance_access === true && !isDoctorRole(nextRole)) {
+      throw new ValidationError('Compliance access is only available for doctors')
+    }
 
-    if (Object.keys(profileUpdate).length > 0) {
-      const { error: profileErr } = await admin.from('profiles').update(profileUpdate).eq('uid', uid)
-      if (profileErr) throw profileErr
+    const currentCompliance = targetProfile.compliance_access === true
+    const roleChanging = role !== undefined && role !== targetProfile.role
+    const grantingCompliance = compliance_access === true && isDoctorRole(nextRole)
+    const demotingWithCompliance =
+      currentCompliance && roleChanging && !isDoctorRole(nextRole)
+    const promotingWithCompliance =
+      grantingCompliance && roleChanging && !isDoctorRole(targetProfile.role)
+
+    const buildBaseProfileUpdate = (): Record<string, unknown> => {
+      const update: Record<string, unknown> = {}
+      if (full_name !== undefined) update.full_name = nextName
+      if (email !== undefined) update.email = nextEmail
+      if (role !== undefined) update.role = nextRole
+      if (active !== undefined) update.active = nextActive
+      return update
+    }
+
+    if (demotingWithCompliance) {
+      const { error: clearErr } = await admin
+        .from('profiles')
+        .update({ compliance_access: false })
+        .eq('uid', uid)
+      if (clearErr) throw clearErr
+
+      const step2 = buildBaseProfileUpdate()
+      step2.compliance_access = false
+      if (Object.keys(step2).length > 0) {
+        const { error: profileErr } = await admin.from('profiles').update(step2).eq('uid', uid)
+        if (profileErr) throw profileErr
+      }
+    } else if (promotingWithCompliance) {
+      const step1 = buildBaseProfileUpdate()
+      if (Object.keys(step1).length > 0) {
+        const { error: profileErr } = await admin.from('profiles').update(step1).eq('uid', uid)
+        if (profileErr) throw profileErr
+      }
+
+      const { error: grantErr } = await admin
+        .from('profiles')
+        .update({ compliance_access: true })
+        .eq('uid', uid)
+      if (grantErr) throw grantErr
+    } else {
+      const profileUpdate = buildBaseProfileUpdate()
+      if (compliance_access !== undefined) {
+        profileUpdate.compliance_access = isDoctorRole(nextRole) ? compliance_access : false
+      } else if (role !== undefined && !isDoctorRole(nextRole)) {
+        profileUpdate.compliance_access = false
+      }
+
+      if (Object.keys(profileUpdate).length > 0) {
+        const { error: profileErr } = await admin.from('profiles').update(profileUpdate).eq('uid', uid)
+        if (profileErr) throw profileErr
+      }
     }
 
     let parsedNpi: string | null | undefined

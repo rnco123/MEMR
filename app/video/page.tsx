@@ -506,14 +506,11 @@ function VideoPage() {
         }
         if (intakeResult) setIntake(intakeResult)
 
-        const { data: vit } = await supabase
-          .from('vitals')
-          .select('*')
-          .eq('encounter_id', Number(encounterId))
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-        setVitals(vit as Vitals)
+        const vitalsApiRes = await fetch(`/api/encounters/${Number(encounterId)}/vitals`, {
+          credentials: 'include',
+        })
+        const vitalsJson = vitalsApiRes.ok ? await vitalsApiRes.json() : { data: null }
+        setVitals((vitalsJson.data as Vitals | null) ?? null)
 
         let soapData: SOAPNotes | null = null
         const { data: soapEnc, error: soapEncErr } = await supabase
@@ -1091,6 +1088,10 @@ function VideoPage() {
           profileId,
         })
       }
+
+      void fetch(`/api/encounters/${encounterIdNum}/physician-review/ensure`, {
+        method: 'POST',
+      }).catch(err => console.error('Physician review ensure failed:', err))
 
       const inlineItems = [...transcriptBufferRef.current]
       const transcriptIds = await flushTranscript(encounterIdNum)

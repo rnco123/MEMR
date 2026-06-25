@@ -26,6 +26,7 @@ function valueForBinding(data: I693FormData, b: (typeof PDF_FIELD_REGISTRY)[numb
   }
   const raw = getNestedValue(root, b.key)
   if (raw == null || raw === '') return ''
+  if (typeof raw === 'boolean') return raw ? 'Yes' : 'No'
   const normalized = formatI693WidgetValue(b.key, String(raw))
   if (!normalized) return ''
   if (b.format === 'date') return formatDateForPdfDisplay(normalized)
@@ -39,25 +40,28 @@ async function applyVaccinationFields(
   const fieldObjects = await pdf.getFieldObjects()
   if (!fieldObjects) return
 
-  for (const [pdfFieldName, entries] of Object.entries(fieldObjects)) {
+  for (const [pdfFieldName, rawEntries] of Object.entries(fieldObjects)) {
     const short = widgetShortName(pdfFieldName)
     if (!isVaccinationTableWidget(short) && short !== 'Pt10Line1_CompleteSeries') continue
 
-    const idx = widgetFieldIndex(pdfFieldName)
-    const val = vaccinationWidgetValue(data, short, idx)
-    const entry = (entries as { id?: string }[] | undefined)?.[idx] ?? (entries as { id?: string }[])?.[0]
-    const id = entry?.id
-    if (!id) continue
+    const entries = (rawEntries ?? []) as { id?: string }[]
+    const nameIdx = widgetFieldIndex(pdfFieldName)
+    for (let i = 0; i < entries.length; i++) {
+      const idx = entries.length > 1 ? i : nameIdx
+      const id = entries[i]?.id
+      if (!id) continue
 
-    if (typeof val === 'boolean') {
-      if (!val) continue
-      pdf.annotationStorage.setValue(id, { value: 'On', exportValue: 'Yes' })
-      continue
+      const val = vaccinationWidgetValue(data, short, idx)
+      if (typeof val === 'boolean') {
+        if (!val) continue
+        pdf.annotationStorage.setValue(id, { value: 'On', exportValue: 'Yes' })
+        continue
+      }
+
+      const text = val == null ? '' : String(val)
+      if (!text) continue
+      pdf.annotationStorage.setValue(id, { value: text, formattedValue: text })
     }
-
-    const text = val == null ? '' : String(val)
-    if (!text) continue
-    pdf.annotationStorage.setValue(id, { value: text, formattedValue: text })
   }
 }
 

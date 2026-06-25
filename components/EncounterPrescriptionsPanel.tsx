@@ -18,6 +18,8 @@ import {
 import { EncounterPharmacyEditor } from '@/components/EncounterPharmacyEditor'
 import { findPharmacyById, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatPharmEmailSentAtCentral } from '@/lib/email/format-pharm-sent-at'
+import { printUsPrescriptions } from '@/lib/prescriptions/us-prescription-print'
+import type { PrescriptionPrintContext } from '@/lib/prescriptions/load-prescription-print-context'
 
 type PrescriptionRow = {
   id: number
@@ -84,6 +86,7 @@ export function EncounterPrescriptionsPanel({
   const [dragOverPendingKey, setDragOverPendingKey] = useState<string | null>(null)
   const [sendToPharmacyEmail, setSendToPharmacyEmail] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [lastPharmEmailSend, setLastPharmEmailSend] = useState<PharmEmailLastSend | null>(null)
 
   const resolvedPharmacy = useMemo(
@@ -178,6 +181,26 @@ export function EncounterPrescriptionsPanel({
       )
     } finally {
       setSendingEmail(false)
+    }
+  }
+
+  const printCurrentPrescriptions = async () => {
+    if (rows.length === 0 || printing || saving || isEditingSaved) return
+
+    setPrinting(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/prescriptions/print-data`, {
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        throw new Error(json.error || t('encounter_modal.rx_print_failed'))
+      }
+      printUsPrescriptions(json.data as PrescriptionPrintContext)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_print_failed'))
+    } finally {
+      setPrinting(false)
     }
   }
 
@@ -375,25 +398,38 @@ export function EncounterPrescriptionsPanel({
                   compact
                   showEditButton
                 />
-                {canEmailPharmacy && rows.length > 0 && (
-                  <div className="mt-2">
+                {rows.length > 0 && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      disabled={sendingEmail || saving || isEditingSaved}
-                      onClick={() => void sendCurrentPrescriptionsToPharmacy()}
-                      className="inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                      disabled={printing || saving || isEditingSaved}
+                      onClick={() => void printCurrentPrescriptions()}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                     >
                       <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                       </svg>
-                      {sendingEmail
-                        ? t('encounter_modal.rx_send_to_pharmacy_sending')
-                        : (lastPharmEmailSend?.send_count ?? 0) > 0
-                          ? t('encounter_modal.rx_send_to_pharmacy_again')
-                          : t('encounter_modal.rx_send_to_pharmacy')}
+                      {printing ? t('encounter_modal.rx_printing') : t('encounter_modal.rx_print')}
                     </button>
-                    {lastPharmEmailSend?.sent_at && (
-                      <p className="mt-1 text-xs text-slate-400">
+                    {canEmailPharmacy && (
+                      <button
+                        type="button"
+                        disabled={sendingEmail || saving || isEditingSaved}
+                        onClick={() => void sendCurrentPrescriptionsToPharmacy()}
+                        className="inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                      >
+                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        {sendingEmail
+                          ? t('encounter_modal.rx_send_to_pharmacy_sending')
+                          : (lastPharmEmailSend?.send_count ?? 0) > 0
+                            ? t('encounter_modal.rx_send_to_pharmacy_again')
+                            : t('encounter_modal.rx_send_to_pharmacy')}
+                      </button>
+                    )}
+                    {lastPharmEmailSend?.sent_at && canEmailPharmacy && (
+                      <p className="w-full mt-1 text-xs text-slate-400">
                         {lastPharmEmailSend.sent_by_name
                           ? t('encounter_modal.rx_send_to_pharmacy_last_sent', {
                               datetime: formatPharmEmailSentAtCentral(

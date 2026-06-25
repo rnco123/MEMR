@@ -57,6 +57,7 @@ export async function GET() {
       }),
       role,
       npi,
+      compliance_access: profile?.compliance_access === true,
       avatar_id: avatarId,
       avatar_url: avatarId ? resolveStaffAvatarUrl(avatarId) : null,
       active: profile?.active !== false,

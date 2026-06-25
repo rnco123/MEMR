@@ -1,0 +1,1544 @@
+%PDF-1.3
+%ºß¬à
+3 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 612. 792.]
+/Contents 4 0 R
+>>
+endobj
+4 0 obj
+<<
+/Length 4385
+>>
+stream
+0.200025 w
+0 G
+BT
+/F2 26 Tf
+29.8999999999999986 TL
+0.18 0.431 0.953 rg
+48. 692. Td
+(MEMR Compliance Overview) Tj
+ET
+BT
+/F1 14 Tf
+16.0999999999999979 TL
+0.059 0.09 0.165 rg
+48. 664. Td
+(Encounters vs. Charts — Implementation Summary) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.392 0.455 0.545 rg
+48. 644. Td
+(MyClinicMD EMR · Meeting one-pager) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.392 0.455 0.545 rg
+48. 630. Td
+(Generated June 22, 2026) Tj
+ET
+0.91 0.94 1. rg
+54. 612. m
+558. 612. l
+561.3137084989847381 612. 564. 609.3137084989847381 564. 606. c
+564. 562. l
+564. 558.6862915010152619 560.6862915010152619 556. 558. 556. c
+54. 556. l
+50.6862915010152406 556. 48. 559.3137084989847381 48. 562. c
+48. 606. l
+48. 609.3137084989847381 51.3137084989847594 612. 54. 612. c
+h
+f
+BT
+/F2 11 Tf
+12.6499999999999986 TL
+0.059 0.09 0.165 rg
+62. 590. Td
+(Purpose) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+62. 574. Td
+(Support physician oversight of NP/PA documentation \(10% chart review\). Track audits per visit while keeping) Tj
+T* (the full patient chart available for context.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 522. Td
+(1. Encounter vs. Chart — Key Concepts) Tj
+ET
+0.95 0.96 0.98 rg
+48. 516. 516. -2. re
+f
+0.91 0.94 1. rg
+0.18 0.43 0.95 RG
+1.2 w
+74. 450. m
+262. 450. l
+265.3137084989847381 450. 268. 447.3137084989847381 268. 444. c
+268. 384. l
+268. 380.6862915010152619 264.6862915010152619 378. 262. 378. c
+74. 378. l
+70.6862915010152335 378. 68. 381.3137084989847381 68. 384. c
+68. 444. l
+68. 447.3137084989847381 71.3137084989847665 450. 74. 450. c
+h
+B
+BT
+/F2 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+136.4499999999999886 418. Td
+(ENCOUNTER) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+121.7199999999999989 404. Td
+(One visit / one day of care) Tj
+ET
+0.8 0.98 0.95 rg
+0.05 0.58 0.53 RG
+1.2 w
+350. 450. m
+538. 450. l
+541.3137084989847381 450. 544. 447.3137084989847381 544. 444. c
+544. 384. l
+544. 380.6862915010152619 540.6862915010152619 378. 538. 378. c
+350. 378. l
+346.6862915010152619 378. 344. 381.3137084989847381 344. 384. c
+344. 444. l
+344. 447.3137084989847381 347.3137084989847381 450. 350. 450. c
+h
+B
+BT
+/F2 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+395.3000000000000114 418. Td
+(CHART \(Patient File\)) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+394.7199999999999704 404. Td
+(Full patient record over time) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+268. 414. m
+344. 414. l
+S
+344. 414. m
+336.6315120479769121 410.8846532615307865 l
+S
+344. 414. m
+336.6315120479769121 417.1153467384692135 l
+S
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+275.5199999999999818 428. Td
+(Many encounters) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+281.0400000000000205 418. Td
+(build the chart) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+76. 364. Td
+(• SOAP notes) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+76. 353. Td
+(• Vitals) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+76. 342. Td
+(• Intake) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+76. 331. Td
+(• Orders) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+76. 320. Td
+(• Rooming attestations) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+352. 364. Td
+(• All encounters) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+352. 353. Td
+(• Medical history) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+352. 342. Td
+(• Medications) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+352. 331. Td
+(• Forms) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+352. 320. Td
+(• Documents) Tj
+ET
+1. 0.95 0.78 rg
+0.96 0.62 0.04 RG
+52. 298. m
+560. 298. l
+562.2091389993231587 298. 564. 296.2091389993231587 564. 294. c
+564. 266. l
+564. 263.7908610006768413 561.7908610006768413 262. 560. 262. c
+52. 262. l
+49.7908610006768271 262. 48. 264.2091389993231587 48. 266. c
+48. 294. l
+48. 296.2091389993231587 50.2091389993231729 298. 52. 298. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+60. 284. Td
+(Compliance audit unit = ONE ENCOUNTER) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+60. 272. Td
+(Physician reviews NP/PA documentation per visit — not the entire chart at once.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 250. Td
+(2. Encounter Lifecycle in MEMR) Tj
+ET
+0.95 0.96 0.98 rg
+48. 244. 516. -2. re
+f
+endstream
+endobj
+5 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 612. 792.]
+/Contents 6 0 R
+>>
+endobj
+6 0 obj
+<<
+/Length 3801
+>>
+stream
+1.5 w
+0.96 0.62 0.04 RG
+0.93 0.91 1. rg
+0.49 0.23 0.93 RG
+1.2 w
+64. 724. m
+140. 724. l
+143.3137084989847665 724. 146. 721.3137084989847381 146. 718. c
+146. 686. l
+146. 682.6862915010152619 142.6862915010152335 680. 140. 680. c
+64. 680. l
+60.6862915010152406 680. 58. 683.3137084989847381 58. 686. c
+58. 718. l
+58. 721.3137084989847381 61.3137084989847594 724. 64. 724. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+83.0999999999999943 706. Td
+(Check-in) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+64.9199999999999875 692. Td
+(Appointment initiated) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+146. 702. m
+160. 702. l
+S
+160. 702. m
+152.6315120479769121 698.8846532615308433 l
+S
+160. 702. m
+152.6315120479769121 705.1153467384691567 l
+S
+0.91 0.94 1. rg
+0.18 0.43 0.95 RG
+1.2 w
+166. 724. m
+242. 724. l
+245.3137084989847665 724. 248. 721.3137084989847381 248. 718. c
+248. 686. l
+248. 682.6862915010152619 244.6862915010152335 680. 242. 680. c
+166. 680. l
+162.6862915010152335 680. 160. 683.3137084989847381 160. 686. c
+160. 718. l
+160. 721.3137084989847381 163.3137084989847665 724. 166. 724. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+184.5149999999999864 706. Td
+(Rooming) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+169.6399999999999864 692. Td
+(Vitals + compliance) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+248. 702. m
+262. 702. l
+S
+262. 702. m
+254.6315120479769121 698.8846532615308433 l
+S
+262. 702. m
+254.6315120479769121 705.1153467384691567 l
+S
+1. 0.95 0.78 rg
+0.96 0.62 0.04 RG
+1.2 w
+268. 724. m
+344. 724. l
+347.3137084989847381 724. 350. 721.3137084989847381 350. 718. c
+350. 686. l
+350. 682.6862915010152619 346.6862915010152619 680. 344. 680. c
+268. 680. l
+264.6862915010152619 680. 262. 683.3137084989847381 262. 686. c
+262. 718. l
+262. 721.3137084989847381 265.3137084989847381 724. 268. 724. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+289.3050000000000068 706. Td
+(Consult) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+272.160000000000025 692. Td
+(Telemedicine / visit) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+350. 702. m
+364. 702. l
+S
+364. 702. m
+356.6315120479769121 698.8846532615308433 l
+S
+364. 702. m
+356.6315120479769121 705.1153467384691567 l
+S
+0.8 0.98 0.95 rg
+0.05 0.58 0.53 RG
+1.2 w
+370. 724. m
+446. 724. l
+449.3137084989847381 724. 452. 721.3137084989847381 452. 718. c
+452. 686. l
+452. 682.6862915010152619 448.6862915010152619 680. 446. 680. c
+370. 680. l
+366.6862915010152619 680. 364. 683.3137084989847381 364. 686. c
+364. 718. l
+364. 721.3137084989847381 367.3137084989847381 724. 370. 724. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+380.8199999999999932 706. Td
+(Final Review) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+369.8000000000000114 692. Td
+(SOAP documentation) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+452. 702. m
+466. 702. l
+S
+466. 702. m
+458.6315120479769121 698.8846532615308433 l
+S
+466. 702. m
+458.6315120479769121 705.1153467384691567 l
+S
+0.82 0.98 0.9 rg
+0.06 0.73 0.51 RG
+1.2 w
+472. 724. m
+548. 724. l
+551.3137084989847381 724. 554. 721.3137084989847381 554. 718. c
+554. 686. l
+554. 682.6862915010152619 550.6862915010152619 680. 548. 680. c
+472. 680. l
+468.6862915010152619 680. 466. 683.3137084989847381 466. 686. c
+466. 718. l
+466. 721.3137084989847381 469.3137084989847381 724. 472. 724. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+486.8249999999999886 706. Td
+(Completed) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+489.8799999999999955 692. Td
+(Visit closed) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 656. Td
+(Each encounter moves through this workflow independently. Status is tracked on the encounter record; timeline) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 643. Td
+(events are logged for audit.) Tj
+ET
+endstream
+endobj
+7 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 612. 792.]
+/Contents 8 0 R
+>>
+endobj
+8 0 obj
+<<
+/Length 5112
+>>
+stream
+1.2 w
+0.06 0.73 0.51 RG
+BT
+/F2 18 Tf
+20.6999999999999993 TL
+0.059 0.09 0.165 rg
+48. 744. Td
+(Implementation Details) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.392 0.455 0.545 rg
+48. 718. Td
+(How encounters, charts, and compliance connect in the current build) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 700. Td
+(3. Data Model) Tj
+ET
+0.95 0.96 0.98 rg
+48. 694. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 678. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 678. Td
+(encounters — one row per visit; status workflow, documenting_user_id \(NP/PA who documented\)) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 661. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 661. Td
+(encounter_physician_reviews — one audit row per encounter when NP/PA documentation requires MD oversight) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 644. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 644. Td
+(Patient File \(chart\) — aggregates all encounters, history, meds, forms, and uploaded documents for one patient) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 627. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 627. Td
+( R e v i e w   s t a t u s e s :   p e n d i n g  !’   r e v i e w e d   |   c o n s u l t _ c o n c l u d e d   |   p h y s i c i a n _ s i g n e d   \( M D - o n l y   v i s i t s :   n o t _ r e q u i r e d \)) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 610. Td
+(4. When Audit Rows Are Created) Tj
+ET
+0.95 0.96 0.98 rg
+48. 604. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 588. Td
+(When an FNP or PA finishes encounter documentation \(encounter completed, final review, or telemedicine wrap-up\),) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 575. Td
+(the system:) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 558. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 558. Td
+(Identifies the documenting provider from encounter assignment and role) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 541. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 541. Td
+(Sets documenting_user_id on the encounter) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 524. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 524. Td
+(Creates a pending review row if one does not already exist) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 507. Td
+(MD-documented visits do not create audit rows.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 490. Td
+(5. Compliance Dashboard) Tj
+ET
+0.95 0.96 0.98 rg
+48. 484. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 468. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 468. Td
+(Routes: /admin/compliance and /dashboard/compliance) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 451. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 451. Td
+(KPIs: total NP/PA encounters, required reviews \(10%\), completed, remaining, compliance %, pending, overdue) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 434. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 434. Td
+(Provider table: per-NP/PA breakdown by clinic) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 417. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 417. Td
+(Pending queue: patient, encounter date, days pending \(overdue after 7 days\), chief complaint) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 400. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 400. Td
+(Review drawer: full SOAP, audit notes, findings, mark review complete) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 383. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 383. Td
+(Link to Patient File for full chart review beyond that visit) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 366. Td
+(6. 10% Compliance Rule) Tj
+ET
+0.95 0.96 0.98 rg
+48. 360. 516. -2. re
+f
+0.95 0.96 0.98 rg
+52. 344. m
+560. 344. l
+562.2091389993231587 344. 564. 342.2091389993231587 564. 340. c
+564. 304. l
+564. 301.7908610006768413 561.7908610006768413 300. 560. 300. c
+52. 300. l
+49.7908610006768271 300. 48. 302.2091389993231587 48. 304. c
+48. 340. l
+48. 342.2091389993231587 50.2091389993231729 344. 52. 344. c
+h
+f
+BT
+/F5 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+60. 328. Td
+(Required  = ceil\(NP/PA encounters in period × 10%\)) Tj
+ET
+BT
+/F5 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+60. 316. Td
+(Completed = reviews marked reviewed / consult_concluded / physician_signed) Tj
+ET
+BT
+/F5 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+60. 304. Td
+(Compliance % = completed ÷ required) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 288. Td
+(7. Rooming & Compliance \(per encounter\)) Tj
+ET
+0.95 0.96 0.98 rg
+48. 282. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 266. Td
+(Separate from the 10% audit — rooming attestations captured on each encounter: identity verified, prescribing) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 253. Td
+(location, MA supervision, ready for doctor, pharmacy, consent timestamps, MA exam findings.) Tj
+ET
+endstream
+endobj
+9 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 612. 792.]
+/Contents 10 0 R
+>>
+endobj
+10 0 obj
+<<
+/Length 7354
+>>
+stream
+1.2 w
+0.06 0.73 0.51 RG
+BT
+/F2 18 Tf
+20.6999999999999993 TL
+0.059 0.09 0.165 rg
+48. 744. Td
+(Review Workflow & Access) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 718. Td
+(8. Physician Review Flow) Tj
+ET
+0.95 0.96 0.98 rg
+48. 712. 516. -2. re
+f
+0.91 0.94 1. rg
+0.18 0.43 0.95 RG
+1.2 w
+237. 696. m
+375. 696. l
+378.3137084989847381 696. 381. 693.3137084989847381 381. 690. c
+381. 650. l
+381. 646.6862915010152619 377.6862915010152619 644. 375. 644. c
+237. 644. l
+233.6862915010152335 644. 231. 647.3137084989847381 231. 650. c
+231. 690. l
+231. 693.3137084989847381 234.3137084989847665 696. 237. 696. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+268.9200000000000159 674. Td
+(NP/PA completes) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+261.1999999999999886 660. Td
+(encounter documentation) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+306. 644. m
+306. 616. l
+S
+306. 616. m
+302.8846532615307865 623.3684879520230879 l
+S
+306. 616. m
+309.1153467384692135 623.3684879520230879 l
+S
+1. 0.95 0.78 rg
+0.96 0.62 0.04 RG
+1.2 w
+237. 616. m
+375. 616. l
+378.3137084989847381 616. 381. 613.3137084989847381 381. 610. c
+381. 570. l
+381. 566.6862915010152619 377.6862915010152619 564. 375. 564. c
+237. 564. l
+233.6862915010152335 564. 231. 567.3137084989847381 231. 570. c
+231. 610. l
+231. 613.3137084989847381 234.3137084989847665 616. 237. 616. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+268.1100000000000136 594. Td
+(Audit row created) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+279.0400000000000205 580. Td
+(status: pending) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+306. 564. m
+306. 536. l
+S
+306. 536. m
+302.8846532615307865 543.3684879520230879 l
+S
+306. 536. m
+309.1153467384692135 543.3684879520230879 l
+S
+0.82 0.98 0.9 rg
+0.06 0.73 0.51 RG
+1.2 w
+227. 536. m
+385. 536. l
+388.3137084989847381 536. 391. 533.3137084989847381 391. 530. c
+391. 490. l
+391. 486.6862915010152619 387.6862915010152619 484. 385. 484. c
+227. 484. l
+223.6862915010152335 484. 221. 487.3137084989847381 221. 490. c
+221. 530. l
+221. 533.3137084989847381 224.3137084989847665 536. 227. 536. c
+h
+B
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+249.3899999999999864 514. Td
+(MD reviews in Compliance) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+263.0799999999999841 500. Td
+(SOAP + notes + sign-off) Tj
+ET
+0.28 0.33 0.41 RG
+1.5 w
+306. 464. m
+226. 424. l
+S
+226. 424. m
+231.1973505647048341 430.081738822702107 l
+S
+226. 424. m
+233.9838013969846031 424.5088371581426259 l
+S
+0.28 0.33 0.41 RG
+1.5 w
+306. 464. m
+386. 424. l
+S
+386. 424. m
+378.0161986030153685 424.5088371581426259 l
+S
+386. 424. m
+380.8026494352951659 430.081738822702107 l
+S
+0.82 0.98 0.9 rg
+0.06 0.73 0.51 RG
+1.2 w
+182. 424. m
+290. 424. l
+293.3137084989847381 424. 296. 421.3137084989847381 296. 418. c
+296. 390. l
+296. 386.6862915010152619 292.6862915010152619 384. 290. 384. c
+182. 384. l
+178.6862915010152335 384. 176. 387.3137084989847381 176. 390. c
+176. 418. l
+176. 421.3137084989847381 179.3137084989847665 424. 182. 424. c
+h
+B
+BT
+/F2 8 Tf
+9.1999999999999993 TL
+0.059 0.09 0.165 rg
+203.6800000000000068 408. Td
+(Review complete) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+208.8400000000000034 394. Td
+(10% numerator) Tj
+ET
+0.8 0.98 0.95 rg
+0.05 0.58 0.53 RG
+1.2 w
+322. 424. m
+430. 424. l
+433.3137084989847381 424. 436. 421.3137084989847381 436. 418. c
+436. 390. l
+436. 386.6862915010152619 432.6862915010152619 384. 430. 384. c
+322. 384. l
+318.6862915010152619 384. 316. 387.3137084989847381 316. 390. c
+316. 418. l
+316. 421.3137084989847381 319.3137084989847381 424. 322. 424. c
+h
+B
+BT
+/F2 8 Tf
+9.1999999999999993 TL
+0.059 0.09 0.165 rg
+343.4399999999999977 408. Td
+(Open Patient File) Tj
+ET
+BT
+/F1 8 Tf
+9.1999999999999993 TL
+0.392 0.455 0.545 rg
+347. 394. Td
+(full chart context) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 364. Td
+(9. Who Can Access Compliance) Tj
+ET
+0.95 0.96 0.98 rg
+48. 358. 516. -2. re
+f
+0.18 0.43 0.95 rg
+48. 342. 516. -26. re
+f
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+54. 325. Td
+(Role) Tj
+ET
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+154. 325. Td
+(Dashboard) Tj
+ET
+BT
+/F2 9 Tf
+10.3499999999999996 TL
+1. g
+374. 325. Td
+(Can complete reviews) Tj
+ET
+0.95 0.96 0.98 rg
+48. 316. 516. -22. re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+54. 301. Td
+(Admin) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+154. 301. Td
+(Yes — all locations) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+374. 301. Td
+(Yes) Tj
+ET
+0.95 0.96 0.98 rg
+48. 294. 516. -22. re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+54. 279. Td
+(Doctor \(MD\)) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+154. 279. Td
+(Yes — if compliance_access enabled) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+374. 279. Td
+(Yes \(intended reviewer\)) Tj
+ET
+0.95 0.96 0.98 rg
+48. 272. 516. -22. re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+54. 257. Td
+(FNP / PA) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+154. 257. Td
+(Yes — if compliance_access enabled) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+374. 257. Td
+(Yes \(typically view own metrics\)) Tj
+ET
+0.95 0.96 0.98 rg
+48. 250. 516. -22. re
+f
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+54. 235. Td
+(Nurse) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+154. 235. Td
+(No) Tj
+ET
+BT
+/F1 9 Tf
+10.3499999999999996 TL
+0.059 0.09 0.165 rg
+374. 235. Td
+(No) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 216. Td
+(10. Encounter vs Chart — Discussion Points) Tj
+ET
+0.95 0.96 0.98 rg
+48. 210. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 194. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 194. Td
+(An encounter is the unit of clinical workflow and documentation for a single visit.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 177. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 177. Td
+(A chart is the longitudinal patient record — many encounters plus static history and documents.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 160. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 160. Td
+(Compliance selects which encounters need MD review; Patient File provides full chart context.) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 143. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 143. Td
+(Additive design: legacy encounters unchanged; audit is a parallel track on new NP/PA visits.) Tj
+ET
+BT
+/F2 13 Tf
+14.9499999999999993 TL
+0.18 0.431 0.953 rg
+48. 126. Td
+(11. Demo Path \(2 minutes\)) Tj
+ET
+0.95 0.96 0.98 rg
+48. 120. 516. -2. re
+f
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 104. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 104. Td
+( C o m p l e t e   a n   e n c o u n t e r   a s   N P / P A  !’   p e n d i n g   r e v i e w   r o w   a p p e a r s) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 87. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 87. Td
+( O p e n   C o m p l i a n c e  !’   s e e   K P I s   a n d   p e n d i n g   q u e u e) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 70. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 70. Td
+( R e v i e w   e n c o u n t e r  !’   r e a d   S O A P ,   a d d   n o t e s ,   m a r k   c o m p l e t e) Tj
+ET
+endstream
+endobj
+11 0 obj
+<</Type /Page
+/Parent 1 0 R
+/Resources 2 0 R
+/MediaBox [0 0 612. 792.]
+/Contents 12 0 R
+>>
+endobj
+12 0 obj
+<<
+/Length 414
+>>
+stream
+1.2 w
+0.05 0.58 0.53 RG
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+48. 744. Td
+(•) Tj
+ET
+BT
+/F1 10 Tf
+11.5 TL
+0.059 0.09 0.165 rg
+60. 744. Td
+( O p e n   P a t i e n t   F i l e  !’   f u l l   c h a r t   f o r   s a m e   p a t i e n t) Tj
+ET
+BT
+/F3 9 Tf
+10.3499999999999996 TL
+0.392 0.455 0.545 rg
+48. 727. Td
+(MEMR v3.3 · Migration 089 \(encounter_physician_reviews\) · Migration 092 \(compliance_access\)) Tj
+ET
+endstream
+endobj
+1 0 obj
+<</Type /Pages
+/Kids [3 0 R 5 0 R 7 0 R 9 0 R 11 0 R ]
+/Count 5
+>>
+endobj
+13 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+14 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+15 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+16 0 obj
+<<
+/Type /Font
+/BaseFont /Helvetica-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+17 0 obj
+<<
+/Type /Font
+/BaseFont /Courier
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+18 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+19 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-Oblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+20 0 obj
+<<
+/Type /Font
+/BaseFont /Courier-BoldOblique
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+21 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Roman
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+22 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Bold
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+23 0 obj
+<<
+/Type /Font
+/BaseFont /Times-Italic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+24 0 obj
+<<
+/Type /Font
+/BaseFont /Times-BoldItalic
+/Subtype /Type1
+/Encoding /WinAnsiEncoding
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+25 0 obj
+<<
+/Type /Font
+/BaseFont /ZapfDingbats
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+26 0 obj
+<<
+/Type /Font
+/BaseFont /Symbol
+/Subtype /Type1
+/FirstChar 32
+/LastChar 255
+>>
+endobj
+2 0 obj
+<<
+/ProcSet [/PDF /Text /ImageB /ImageC /ImageI]
+/Font <<
+/F1 13 0 R
+/F2 14 0 R
+/F3 15 0 R
+/F4 16 0 R
+/F5 17 0 R
+/F6 18 0 R
+/F7 19 0 R
+/F8 20 0 R
+/F9 21 0 R
+/F10 22 0 R
+/F11 23 0 R
+/F12 24 0 R
+/F13 25 0 R
+/F14 26 0 R
+>>
+/XObject <<
+>>
+>>
+endobj
+27 0 obj
+<<
+/Producer (jsPDF 4.2.1)
+/CreationDate (D:20260622194607+05'00')
+>>
+endobj
+28 0 obj
+<<
+/Type /Catalog
+/Pages 1 0 R
+/OpenAction [3 0 R /FitH null]
+/PageLayout /OneColumn
+>>
+endobj
+xref
+0 29
+0000000000 65535 f 
+0000021870 00000 n 
+0000023717 00000 n 
+0000000015 00000 n 
+0000000120 00000 n 
+0000004557 00000 n 
+0000004662 00000 n 
+0000008515 00000 n 
+0000008620 00000 n 
+0000013784 00000 n 
+0000013890 00000 n 
+0000021297 00000 n 
+0000021404 00000 n 
+0000021952 00000 n 
+0000022078 00000 n 
+0000022209 00000 n 
+0000022343 00000 n 
+0000022481 00000 n 
+0000022605 00000 n 
+0000022734 00000 n 
+0000022866 00000 n 
+0000023002 00000 n 
+0000023130 00000 n 
+0000023257 00000 n 
+0000023386 00000 n 
+0000023519 00000 n 
+0000023621 00000 n 
+0000023970 00000 n 
+0000024056 00000 n 
+trailer
+<<
+/Size 29
+/Root 28 0 R
+/Info 27 0 R
+/ID [ <E22DB90D76C1CE399FC42D0714B4516C> <E22DB90D76C1CE399FC42D0714B4516C> ]
+>>
+startxref
+24160
+%%EOF

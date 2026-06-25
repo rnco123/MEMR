@@ -1,10 +1,25 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { getClinicTodayDateString } from '@/lib/datetime/clinic-timezone'
 import {
   getLocationScopeForUser,
   isAllowedByLocationScope,
   resolveEffectiveLocationId,
   type LocationScope,
 } from '@/lib/locations/scope'
+
+/**
+ * Flowboard hides only past appointments that are completed.
+ * Today/future and any non-completed row (including stale in-progress visits) stay visible.
+ */
+export function isActiveFlowboardRow(
+  appointmentDate: string | null | undefined,
+  encounterStatus: string | null | undefined,
+  todayDate = getClinicTodayDateString()
+): boolean {
+  const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
+  if (!dateKey || dateKey >= todayDate) return true
+  return encounterStatus !== 'completed'
+}
 
 export type FlowboardRow = {
   id: number
@@ -113,6 +128,8 @@ export async function buildFlowboardRows(
     }
 
     const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
+
+    if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) continue
 
     if (options.mode === 'doctor') {
       if (options.doctorId == null) continue

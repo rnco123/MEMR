@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { isActiveFlowboardRow } from '@/lib/locations/flowboard-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,11 +44,12 @@ export async function GET(_req: NextRequest) {
         .in('appointment_id', appointmentIds),
     ])
 
-    const rows = appointments.map((appointment) => {
+    const rows = appointments.flatMap((appointment) => {
       const patient = patients?.find((p) => p.id === appointment.patient_id)
       const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
+      if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) return []
       const effectiveLocationId = patient?.location_id ?? appointment.location_id ?? null
-      return {
+      return [{
         ...appointment,
         location_id: effectiveLocationId,
         location_title:
@@ -67,7 +69,7 @@ export async function GET(_req: NextRequest) {
           : null,
         encounter_status: encounter?.status ?? null,
         encounter_id: encounter?.id ?? null,
-      }
+      }]
     })
 
     return NextResponse.json({ data: rows, locations: allLocations ?? [] })
