@@ -10,10 +10,8 @@ import {
 import { suggestIcdCodesFromSubjective } from '@/lib/icd-suggestions/suggest-icd-openai'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import { canViewClinicalEncounterContent } from '@/lib/roles'
 export const dynamic = 'force-dynamic'
-
-const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
 
 async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
   try {
@@ -27,8 +25,7 @@ async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
     }
 
     const roleInfo = await fetchUserRole(supabaseAuth, user.id)
-    const role = roleInfo?.role?.toLowerCase()
-    if (!role || !ALLOWED_ROLES.has(role)) {
+    if (!canViewClinicalEncounterContent(roleInfo?.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

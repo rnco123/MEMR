@@ -10,10 +10,11 @@ import {
 } from '@/lib/api-error-handler'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import {
+  canEditClinicalEncounterContent,
+  canViewClinicalEncounterContent,
+} from '@/lib/roles'
 export const dynamic = 'force-dynamic'
-
-const CLINICAL_ROLES = CLINICAL_STAFF_ROLE_SET
 
 function parseEncounterId(raw: string | undefined): number {
   const id = Number(raw)
@@ -32,8 +33,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!roleInfo?.role || !CLINICAL_ROLES.has(roleInfo.role)) {
-      throw new AuthorizationError('Doctors and nurses only')
+    if (!canViewClinicalEncounterContent(roleInfo?.role)) {
+      throw new AuthorizationError('Clinical staff only')
     }
 
     await guardEncounterAccess(user.id, encounterId)

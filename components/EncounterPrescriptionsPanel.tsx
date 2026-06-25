@@ -50,6 +50,10 @@ type PharmEmailLastSend = {
 type Props = {
   encounterId: number
   encounterStatus: string
+  /** Add/edit/remove prescription rows */
+  canEdit?: boolean
+  /** Assign pharmacy or add to registry (admin + clinical staff) */
+  canManagePharmacy?: boolean
   hasDoctor: boolean
   hasPharmacy: boolean
   pharmacyId: number | null
@@ -66,6 +70,8 @@ function newPendingRow(): PendingRow {
 export function EncounterPrescriptionsPanel({
   encounterId,
   encounterStatus,
+  canEdit = true,
+  canManagePharmacy: canManagePharmacyProp,
   hasDoctor,
   hasPharmacy,
   pharmacyId,
@@ -75,7 +81,9 @@ export function EncounterPrescriptionsPanel({
   onPharmaciesReload,
 }: Props) {
   const { t, language } = useT()
-  const editable = canEditEncounterPrescriptions(encounterStatus)
+  const canManagePharmacy = canManagePharmacyProp ?? canEdit
+  const editable = canEdit && canEditEncounterPrescriptions(encounterStatus)
+  const rxLocked = !canEditEncounterPrescriptions(encounterStatus)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<PrescriptionRow[]>([])
@@ -135,7 +143,12 @@ export function EncounterPrescriptionsPanel({
   const hasPending = pendingRows.length > 0
   const isEditingSaved = editingId !== null
   const showTableShell =
-    rows.length > 0 || hasPending || isEditingSaved || canSaveNew || pharmacyId != null
+    rows.length > 0 ||
+    hasPending ||
+    isEditingSaved ||
+    canSaveNew ||
+    pharmacyId != null ||
+    canManagePharmacy
   const showRowControls = editable && (rows.length > 0 || hasPending || isEditingSaved)
 
   const updatePendingRow = (key: string, form: StructuredRxForm) => {
@@ -359,7 +372,7 @@ export function EncounterPrescriptionsPanel({
       </h3>
       <p className="text-sm text-slate-600 mb-3">{t('encounter_modal.rx_subtitle')}</p>
 
-      {!editable && (
+      {rxLocked && (
         <p className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
           {t('encounter_modal.rx_locked_completed')}
         </p>
@@ -392,13 +405,13 @@ export function EncounterPrescriptionsPanel({
                   pharmacyId={pharmacyId}
                   assignedPharmacy={resolvedPharmacy}
                   pharmacies={pharmacies}
-                  editable={true}
+                  editable={canManagePharmacy}
                   onUpdated={onPharmacyUpdated}
                   onPharmaciesReload={onPharmaciesReload}
                   compact
                   showEditButton
                 />
-                {rows.length > 0 && (
+                {rows.length > 0 && (editable || canManagePharmacy) && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
@@ -411,7 +424,7 @@ export function EncounterPrescriptionsPanel({
                       </svg>
                       {printing ? t('encounter_modal.rx_printing') : t('encounter_modal.rx_print')}
                     </button>
-                    {canEmailPharmacy && (
+                    {editable && canEmailPharmacy && (
                       <button
                         type="button"
                         disabled={sendingEmail || saving || isEditingSaved}
@@ -428,7 +441,7 @@ export function EncounterPrescriptionsPanel({
                             : t('encounter_modal.rx_send_to_pharmacy')}
                       </button>
                     )}
-                    {lastPharmEmailSend?.sent_at && canEmailPharmacy && (
+                    {editable && lastPharmEmailSend?.sent_at && canEmailPharmacy && (
                       <p className="w-full mt-1 text-xs text-slate-400">
                         {lastPharmEmailSend.sent_by_name
                           ? t('encounter_modal.rx_send_to_pharmacy_last_sent', {

@@ -31,7 +31,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!isPhysicianRole(roleInfo?.role) && roleInfo?.role !== 'admin') {
+    if (!isPhysicianRole(roleInfo?.role)) {
       throw new AuthorizationError('Only physicians can complete encounters')
     }
 

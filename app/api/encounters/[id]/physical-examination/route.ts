@@ -15,7 +15,7 @@ import {
 } from '@/lib/encounter/physical-examination-store'
 import { normalizePhysicalExamination, normalizeRosExamData } from '@/lib/encounter/physical-examination'
 import { assertEncounterAccess } from '@/lib/encounters/assert-access'
-import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, canEditClinicalEncounterContent } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -68,6 +68,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const role = roleInfo?.role
     if (!role || !VIEWER_ROLES.has(role)) {
       throw new AuthorizationError('You are not allowed to update this physical examination')
+    }
+    if (!canEditClinicalEncounterContent(role)) {
+      throw new AuthorizationError('Doctors and nurses only')
     }
 
     let body: unknown

@@ -27,6 +27,7 @@ interface EncounterRooming {
 interface Props {
   encounterId: number
   encounter: EncounterRooming
+  readOnly?: boolean
   onUpdated: () => void
 }
 
@@ -42,13 +43,14 @@ const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
   { key: 'ma_supervision', labelKey: 'encounter_modal.consent_ma_supervision' },
 ]
 
-export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Props) {
+export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false, onUpdated }: Props) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
 
   const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
 
   const patchRooming = async (body: Record<string, unknown>) => {
+    if (readOnly) return
     setSaving(true)
     try {
       const res = await fetch(`/api/encounters/${encounterId}/rooming`, {
@@ -69,6 +71,7 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
   }
 
   const toggleConsent = (key: ConsentKey, checked: boolean) => {
+    if (readOnly) return
     const next = { ...ack }
     if (checked) next[key] = new Date().toISOString()
     else delete next[key]
@@ -106,12 +109,14 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
         {workflowRows.map((row) => (
           <label
             key={row.k}
-            className="flex items-center gap-3 p-3 rounded-xl bg-[#f9fbff] border border-slate-200 cursor-pointer hover:bg-slate-50 transition-colors"
+            className={`flex items-center gap-3 p-3 rounded-xl bg-[#f9fbff] border border-slate-200 transition-colors ${
+              readOnly ? '' : 'cursor-pointer hover:bg-slate-50'
+            }`}
           >
             <input
               type="checkbox"
               checked={!!row.at}
-              disabled={saving}
+              disabled={saving || readOnly}
               onChange={(e) => void patchRooming({ [row.k]: e.target.checked })}
               className="rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]/35"
             />
@@ -128,7 +133,7 @@ export function EncounterRoomingPanel({ encounterId, encounter, onUpdated }: Pro
               <input
                 type="checkbox"
                 checked={!!ack[key]}
-                disabled={saving}
+                disabled={saving || readOnly}
                 onChange={(e) => toggleConsent(key, e.target.checked)}
                 className="rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]/35"
               />

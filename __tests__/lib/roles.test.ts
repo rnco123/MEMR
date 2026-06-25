@@ -7,6 +7,9 @@ import {
   isClinicalStaffRole,
   isClinicalStaffWithAdminRole,
   isPhysicianNurseAdminRole,
+  canViewClinicalEncounterContent,
+  canEditClinicalEncounterContent,
+  canManageEncounterPharmacy,
   CLINICAL_STAFF_ROLE_SET,
 } from '@/lib/roles'
 
@@ -101,6 +104,21 @@ describe('Role utilities', () => {
     test('CLINICAL_STAFF_ROLE_SET includes fnp and pa', () => {
       expect(CLINICAL_STAFF_ROLE_SET.has('fnp')).toBe(true)
       expect(CLINICAL_STAFF_ROLE_SET.has('pa')).toBe(true)
+    })
+
+    test('canViewClinicalEncounterContent includes admin', () => {
+      expect(canViewClinicalEncounterContent('admin')).toBe(true)
+      expect(canViewClinicalEncounterContent('nurse')).toBe(true)
+    })
+
+    test('canEditClinicalEncounterContent excludes admin', () => {
+      expect(canEditClinicalEncounterContent('admin')).toBe(false)
+      expect(canEditClinicalEncounterContent('nurse')).toBe(true)
+    })
+
+    test('canManageEncounterPharmacy includes admin', () => {
+      expect(canManageEncounterPharmacy('admin')).toBe(true)
+      expect(canManageEncounterPharmacy('nurse')).toBe(true)
     })
   })
 

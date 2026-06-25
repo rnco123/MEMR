@@ -16,11 +16,12 @@ import {
   selectPrescriptionsForEncounter,
 } from '@/lib/prescriptions/encounter-prescriptions'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import {
+  canEditClinicalEncounterContent,
+  canViewClinicalEncounterContent,
+} from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
-
-const CLINICAL_ROLES = CLINICAL_STAFF_ROLE_SET
 
 function parseEncounterId(raw: string | undefined): number {
   const id = Number(raw)
@@ -28,12 +29,20 @@ function parseEncounterId(raw: string | undefined): number {
   return id
 }
 
-async function requireClinicalUser(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function requireEncounterViewer(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
-  if (!roleInfo?.role || !CLINICAL_ROLES.has(roleInfo.role)) {
+  if (!canViewClinicalEncounterContent(roleInfo?.role)) {
+    throw new AuthorizationError('Clinical staff only')
+  }
+  return roleInfo!.role!
+}
+
+async function requireEncounterEditor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+  const roleInfo = await fetchUserRole(supabase, userId)
+  if (!canEditClinicalEncounterContent(roleInfo?.role)) {
     throw new AuthorizationError('Doctors and nurses only')
   }
-  return roleInfo.role
+  return roleInfo!.role!
 }
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
@@ -46,7 +55,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requireClinicalUser(supabase, user.id)
+    await requireEncounterViewer(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
     await loadEncounterForRx(supabase, encounterId)
 
@@ -67,7 +76,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requireClinicalUser(supabase, user.id)
+    await requireEncounterEditor(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown

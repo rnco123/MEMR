@@ -1,14 +1,29 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { roomingPatchSchema } from '@/lib/validation'
-import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
+import { handleApiError, AuthenticationError, ValidationError, AuthorizationError } from '@/lib/api-error-handler'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { fetchUserRole } from '@/lib/fetch-user-role'
 import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isImmigrationEncounter } from '@/lib/i693/types'
 import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
+import { canEditClinicalEncounterContent, canManageEncounterPharmacy } from '@/lib/roles'
+import type { RoomingPatchInput } from '@/lib/validation'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
+
+function isPharmacyOnlyRoomingPatch(patch: RoomingPatchInput): boolean {
+  return (
+    patch.pharmacy_id !== undefined &&
+    patch.identity_verified === undefined &&
+    patch.prescribing_location_ack === undefined &&
+    patch.ma_supervision_ack === undefined &&
+    patch.ready_for_doctor === undefined &&
+    patch.ma_exam_findings === undefined &&
+    patch.consent_ack === undefined
+  )
+}
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -33,6 +48,17 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!parsed.success) throw parsed.error
 
     const v = parsed.data
+
+    const roleInfo = await fetchUserRole(supabase, user.id)
+    const role = roleInfo?.role
+    const pharmacyOnly = isPharmacyOnlyRoomingPatch(v)
+    if (pharmacyOnly) {
+      if (!canManageEncounterPharmacy(role)) {
+        throw new AuthorizationError('Doctors and nurses only')
+      }
+    } else if (!canEditClinicalEncounterContent(role)) {
+      throw new AuthorizationError('Doctors and nurses only')
+    }
 
     const { data: existing, error: fetchError } = await supabase
       .from('encounters')

@@ -16,11 +16,9 @@ import {
   updatePrescriptionRow,
 } from '@/lib/prescriptions/encounter-prescriptions'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import { canEditClinicalEncounterContent } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
-
-const CLINICAL_ROLES = CLINICAL_STAFF_ROLE_SET
 
 function parseId(raw: string | undefined, label: string): number {
   const id = Number(raw)
@@ -28,9 +26,9 @@ function parseId(raw: string | undefined, label: string): number {
   return id
 }
 
-async function requireClinicalUser(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function requireEncounterEditor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
-  if (!roleInfo?.role || !CLINICAL_ROLES.has(roleInfo.role)) {
+  if (!canEditClinicalEncounterContent(roleInfo?.role)) {
     throw new AuthorizationError('Doctors and nurses only')
   }
 }
@@ -60,7 +58,7 @@ export async function PATCH(
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requireClinicalUser(supabase, user.id)
+    await requireEncounterEditor(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown
@@ -129,7 +127,7 @@ export async function DELETE(
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requireClinicalUser(supabase, user.id)
+    await requireEncounterEditor(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
 
     const encounter = await loadEncounterForRx(supabase, encounterId)

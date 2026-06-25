@@ -197,7 +197,7 @@ const EDITABLE_STATUSES: EncounterStatus[] = [
   'in_consultation',
 ]
 
-const EDITOR_ROLES = new Set(['nurse', 'staff', 'admin'])
+const EDITOR_ROLES = new Set(['nurse', 'staff'])
 
 export function canEditPhysicalExamination(
   status: string | null | undefined,

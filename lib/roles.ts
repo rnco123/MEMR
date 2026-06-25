@@ -140,6 +140,21 @@ export function isClinicalStaffWithAdminRole(role: string | null | undefined): b
   return CLINICAL_STAFF_WITH_ADMIN_ROLE_SET.has(String(role).trim().toLowerCase())
 }
 
+/** Read encounter modal + clinical APIs (includes admin). */
+export function canViewClinicalEncounterContent(role: string | null | undefined): boolean {
+  return isClinicalStaffWithAdminRole(role)
+}
+
+/** Mutate encounter workflow (SOAP, Rx, rooming, etc.) — excludes admin. */
+export function canEditClinicalEncounterContent(role: string | null | undefined): boolean {
+  return isClinicalStaffRole(role)
+}
+
+/** Assign or create pharmacy on an encounter (includes admin). */
+export function canManageEncounterPharmacy(role: string | null | undefined): boolean {
+  return isClinicalStaffWithAdminRole(role)
+}
+
 export function isPhysicianNurseAdminRole(role: string | null | undefined): boolean {
   if (role == null) return false
   return PHYSICIAN_NURSE_ADMIN_ROLE_SET.has(String(role).trim().toLowerCase())

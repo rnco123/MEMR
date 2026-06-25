@@ -11,11 +11,9 @@ import {
 import { pharmacyRegistryCreateSchema } from '@/lib/validation'
 import { loadEncounterForRx } from '@/lib/prescriptions/encounter-prescriptions'
 import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
-import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { canManageEncounterPharmacy } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
-
-const CLINICAL_ROLES = CLINICAL_STAFF_WITH_ADMIN_ROLE_SET
 
 export async function POST(request: Request) {
   try {
@@ -27,7 +25,7 @@ export async function POST(request: Request) {
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!roleInfo?.role || !CLINICAL_ROLES.has(roleInfo.role)) {
+    if (!canManageEncounterPharmacy(roleInfo?.role)) {
       throw new AuthorizationError('Doctors and nurses only')
     }
 
