@@ -9,6 +9,7 @@ import {
   PRESCRIPTION_SELECT_LEGACY,
   type EncounterRxRow,
 } from '@/lib/prescriptions/encounter-prescriptions'
+import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
 
 export type PrescriptionPrintPatient = {
   name: string
@@ -101,20 +102,31 @@ export async function loadPrescriptionPrintContext(
     throw new ValidationError('One or more prescriptions could not be found for this encounter')
   }
 
+  const { data: encounterMeta, error: encounterMetaError } = await admin
+    .from('encounters')
+    .select('appointment_id, patient_id')
+    .eq('id', encounterId)
+    .maybeSingle()
+
+  if (encounterMetaError) throw encounterMetaError
+
+  const resolvedPatientId = await resolveEncounterPatientId(admin, {
+    patient_id: encounterMeta?.patient_id ?? encounter.patient_id,
+    appointment_id: encounterMeta?.appointment_id ?? null,
+  })
+
+  if (resolvedPatientId == null) {
+    throw new ValidationError('Patient not found for this encounter')
+  }
+
   const { data: patient, error: patientError } = await admin
     .from('patients')
     .select('first_name, last_name, date_of_birth, phone, street_address, state, zip_code')
-    .eq('id', encounter.patient_id)
+    .eq('id', resolvedPatientId)
     .maybeSingle()
 
   if (patientError) throw patientError
   if (!patient) throw new ValidationError('Patient not found')
-
-  const { data: encounterMeta } = await admin
-    .from('encounters')
-    .select('appointment_id')
-    .eq('id', encounterId)
-    .maybeSingle()
 
   let appointmentDate: string | null = null
   if (encounterMeta?.appointment_id != null) {
@@ -128,7 +140,7 @@ export async function loadPrescriptionPrintContext(
 
   const { doctor, clinic } = await resolvePharmEmailDoctorAndClinic(admin, {
     encounterId,
-    patientId: encounter.patient_id,
+    patientId: resolvedPatientId,
     doctorId: encounter.doctor_id,
     appointmentId: (encounterMeta?.appointment_id as number | null) ?? null,
   })

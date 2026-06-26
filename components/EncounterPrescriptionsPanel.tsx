@@ -209,7 +209,10 @@ export function EncounterPrescriptionsPanel({
       if (!res.ok) {
         throw new Error(json.error || t('encounter_modal.rx_print_failed'))
       }
-      printUsPrescriptions(json.data as PrescriptionPrintContext)
+      const opened = printUsPrescriptions(json.data as PrescriptionPrintContext)
+      if (!opened) {
+        throw new Error(t('encounter_modal.rx_print_popup_blocked'))
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_print_failed'))
     } finally {

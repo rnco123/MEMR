@@ -213,11 +213,12 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
 }
 
 /** Opens a print dialog with a U.S.-format prescription sheet (fax-style layout). */
-export function printUsPrescriptions(ctx: PrescriptionPrintContext): void {
+export function printUsPrescriptions(ctx: PrescriptionPrintContext): boolean {
   const html = buildUsPrescriptionPrintHtml(ctx)
   const printWindow = window.open('', '_blank', 'noopener,noreferrer')
-  if (!printWindow) return
+  if (!printWindow) return false
   printWindow.document.open()
   printWindow.document.write(html)
   printWindow.document.close()
+  return true
 }

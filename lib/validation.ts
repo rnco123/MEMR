@@ -427,3 +427,19 @@ export const tenantCreateSchema = z.object({
 })
 
 export type TenantCreateInput = z.infer<typeof tenantCreateSchema>
+
+export const consentFormCreateSchema = z.object({
+  tenant_id: z.number().int().positive(),
+  name: z.string().min(1).max(200).trim(),
+  is_active: z.boolean().optional().default(true),
+  html: z.string().min(1).max(500_000),
+})
+
+export const consentFormUpdateSchema = z.object({
+  name: z.string().min(1).max(200).trim().optional(),
+  is_active: z.boolean().optional(),
+  html: z.string().min(1).max(500_000).optional(),
+})
+
+export type ConsentFormCreateInput = z.infer<typeof consentFormCreateSchema>
+export type ConsentFormUpdateInput = z.infer<typeof consentFormUpdateSchema>

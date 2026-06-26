@@ -133,3 +133,23 @@ select option:checked {
   background-color: #eef3ff;
   color: #0f172a;
 }
+
+/* TipTap consent form editor (admin) */
+.consent-form-tiptap .ProseMirror {
+  outline: none;
+}
+
+.consent-form-tiptap .ProseMirror p {
+  margin: 0.5em 0;
+}
+
+.consent-form-tiptap .ProseMirror ul,
+.consent-form-tiptap .ProseMirror ol {
+  margin: 0.5em 0;
+  padding-left: 1.5em;
+}
+
+.consent-form-tiptap .ProseMirror strong {
+  font-weight: 600;
+}
+

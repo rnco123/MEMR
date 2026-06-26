@@ -16,6 +16,13 @@ import {
 } from '@/components/I693AiDraftPdfReview'
 import { I693SplitView } from '@/components/I693SplitView'
 import {
+  type I693SplitViewSource,
+  type PatientChartDocumentRef,
+  isPreviewablePatientChartDocument,
+  localFileToSplitItem,
+  patientChartDocToSplitItem,
+} from '@/lib/i693/split-view-document'
+import {
   applyI693FormToPdfDocument,
   extractI693FormFromPdfDocument,
 } from '@/lib/i693/pdfjs-form-bridge'
@@ -192,6 +199,10 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [supportingFiles, setSupportingFiles] = useState<File[]>([])
   const [splitViewOpen, setSplitViewOpen] = useState(false)
   const [splitDocIndex, setSplitDocIndex] = useState(0)
+  const [splitViewSource, setSplitViewSource] = useState<I693SplitViewSource>('supporting')
+  const [patientId, setPatientId] = useState<number | null>(null)
+  const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
+  const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
   const [supportingLoading, setSupportingLoading] = useState(false)
   const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
   const [locationAutofillLoading, setLocationAutofillLoading] = useState(false)
@@ -252,6 +263,8 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     )
     commitAnnotations(loadedAnnotations)
     setDirty(false)
+    const pid = Number(json.patient_id)
+    setPatientId(Number.isFinite(pid) && pid > 0 ? pid : null)
   }, [commitAnnotations, encounterId])
 
   const updateCombField = useCallback(async (key: string, value: string) => {
@@ -769,6 +782,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     }
     setSupportingFiles(supported)
     setSplitDocIndex(0)
+    setSplitViewSource('supporting')
     setSplitViewOpen(pdfs.length > 0)
     setAiDraft(null)
   }, [])
@@ -777,13 +791,69 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     setSplitViewOpen(false)
   }, [])
 
+  const loadPatientChartDocuments = useCallback(async (): Promise<PatientChartDocumentRef[]> => {
+    if (patientId == null) return []
+    setPatientChartDocsLoading(true)
+    try {
+      const res = await fetch(`/api/patients/${patientId}/documents`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || t('i693.splitview_patient_chart_load_failed'))
+      const docs = (json.documents ?? []) as PatientChartDocumentRef[]
+      const previewable = docs.filter(isPreviewablePatientChartDocument)
+      setPatientChartDocs(previewable)
+      return previewable
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('i693.splitview_patient_chart_load_failed'))
+      setPatientChartDocs([])
+      return []
+    } finally {
+      setPatientChartDocsLoading(false)
+    }
+  }, [patientId, t])
+
+  const openPatientChartSplitView = useCallback(async () => {
+    const docs = patientChartDocs.length > 0 ? patientChartDocs : await loadPatientChartDocuments()
+    if (docs.length === 0) {
+      toast.message(t('i693.splitview_patient_chart_empty'))
+      return
+    }
+    setSplitViewSource('patient_chart')
+    setSplitDocIndex(0)
+    setSplitViewOpen(true)
+  }, [loadPatientChartDocuments, patientChartDocs, t])
+
+  const onSplitViewSourceChange = useCallback(
+    async (source: I693SplitViewSource) => {
+      setSplitViewSource(source)
+      setSplitDocIndex(0)
+      if (source === 'patient_chart' && patientChartDocs.length === 0) {
+        const docs = await loadPatientChartDocuments()
+        if (docs.length === 0) {
+          toast.message(t('i693.splitview_patient_chart_empty'))
+          setSplitViewSource('supporting')
+        }
+      }
+    },
+    [loadPatientChartDocuments, patientChartDocs.length, t]
+  )
+
+  const splitViewItems = useMemo(() => {
+    if (splitViewSource === 'patient_chart') {
+      return patientChartDocs.map(patientChartDocToSplitItem)
+    }
+    return supportingFiles.map(localFileToSplitItem)
+  }, [patientChartDocs, splitViewSource, supportingFiles])
+
   const removeSupportingDocument = useCallback((index: number) => {
     setSupportingFiles((prev) => {
       const next = prev.filter((_, fileIndex) => fileIndex !== index)
       if (next.length === 0) {
-        setSplitViewOpen(false)
         setSplitDocIndex(0)
         if (supportingInputRef.current) supportingInputRef.current.value = ''
+        setSplitViewOpen((open) => (splitViewSource === 'supporting' ? false : open))
         return next
       }
 
@@ -794,7 +864,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       })
       return next
     })
-  }, [])
+  }, [splitViewSource])
 
   const supportingPdfFiles = useMemo(
     () =>
@@ -1533,7 +1603,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                 <div
                   key={`${file.name}-${file.size}-${index}`}
                   className={`inline-flex max-w-full items-center gap-1 rounded-lg border pl-2.5 pr-1 py-1 text-xs font-medium ${
-                    splitViewOpen && splitDocIndex === index
+                    splitViewOpen && splitViewSource === 'supporting' && splitDocIndex === index
                       ? 'border-violet-300 bg-violet-50 text-violet-800'
                       : 'border-slate-200 bg-slate-50 text-slate-700'
                   }`}
@@ -1541,6 +1611,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                   <button
                     type="button"
                     onClick={() => {
+                      setSplitViewSource('supporting')
                       setSplitDocIndex(index)
                       setSplitViewOpen(true)
                     }}
@@ -1574,6 +1645,27 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
             {supportingFiles.length > 0 && (
               <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-semibold leading-none text-white">
                 {supportingFiles.length}
+              </span>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={() => void openPatientChartSplitView()}
+            disabled={
+              patientId == null ||
+              patientChartDocsLoading ||
+              supportingLoading ||
+              saving ||
+              previewLoading
+            }
+            className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50"
+          >
+            {patientChartDocsLoading
+              ? t('i693.splitview_patient_chart_loading')
+              : t('i693.splitview_patient_chart_btn')}
+            {patientChartDocs.length > 0 && (
+              <span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-violet-600 px-1.5 text-[11px] font-semibold leading-none text-white">
+                {patientChartDocs.length}
               </span>
             )}
           </button>
@@ -1647,13 +1739,17 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
         {(splitViewOpen || aiDraft) && (
           <div className="flex min-w-0 flex-col gap-4">
-            {splitViewOpen && supportingFiles.length > 0 ? (
+            {splitViewOpen && splitViewItems.length > 0 ? (
               <I693SplitView
-                files={supportingFiles}
+                items={splitViewItems}
                 activeIndex={splitDocIndex}
                 onActiveIndexChange={setSplitDocIndex}
                 onClosePanel={hideSplitView}
                 onRemoveDocument={removeSupportingDocument}
+                removable={splitViewSource === 'supporting'}
+                source={splitViewSource}
+                onSourceChange={(next) => void onSplitViewSourceChange(next)}
+                showSourceToggle={patientId != null}
               />
             ) : null}
             {aiDraft ? (

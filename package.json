@@ -27,7 +27,9 @@
         "test:i693-acroform": "tsx scripts/test-i693-acroform-fill.mjs",
         "audit:i693-registry": "tsx scripts/audit-i693-registry.mjs",
         "generate:i693-pdf-registry": "tsx scripts/generate-i693-pdf-field-registry.mjs",
-        "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs"
+        "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs",
+        "sync:staging-to-prod": "node scripts/sync-staging-to-production.mjs",
+        "sync:staging-to-prod:dry": "node scripts/sync-staging-to-production.mjs --dry-run"
     },
     "dependencies": {
         "@ai-sdk/openai": "^3.0.67",
@@ -35,6 +37,9 @@
         "@daily-co/daily-js": "^0.83.1",
         "@sentry/nextjs": "^10.38.0",
         "@supabase/ssr": "^0.8.0",
+        "@tiptap/pm": "^3.27.1",
+        "@tiptap/react": "^3.27.1",
+        "@tiptap/starter-kit": "^3.27.1",
         "ai": "^6.0.195",
         "framer-motion": "^12.40.0",
         "jspdf": "^4.2.1",

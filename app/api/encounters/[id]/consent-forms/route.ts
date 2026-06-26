@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { renderConsentFormHtml } from '@/lib/forms/render-consent-html'
+import { resolveEncounterTenantId } from '@/lib/forms/resolve-encounter-tenant'
 import {
   normalizeStoragePath,
   parseFormPathsRaw,
@@ -157,9 +158,12 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       }
     }
 
+    const tenantId = await resolveEncounterTenantId(admin, enc)
+
     const { data: formRows, error: formsErr } = await admin
       .from('forms')
       .select('id, name, content, created_at')
+      .eq('tenant_id', tenantId)
       .eq('is_active', true)
       .order('id', { ascending: true })
 
@@ -194,6 +198,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       patientName,
       dateDisplay,
       dateOfBirthDisplay,
+      tenantId,
       signaturePaths: { patient: patientPath, physician: physicianPath },
       forms,
     })

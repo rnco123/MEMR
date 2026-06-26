@@ -2,65 +2,82 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import {
+  type I693SplitViewItem,
+  type I693SplitViewSource,
+  isSplitViewImage,
+  isSplitViewPdf,
+  readSplitViewBytes,
+} from '@/lib/i693/split-view-document'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
 import { useT } from '@/lib/i18n'
 
 const SPLIT_VIEW_SCALE = 1.05
 
 type Props = {
-  files: File[]
+  items: I693SplitViewItem[]
   activeIndex: number
   onActiveIndexChange: (index: number) => void
   onClosePanel: () => void
-  onRemoveDocument: (index: number) => void
-}
-
-function isPdfFile(file: File): boolean {
-  return file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')
-}
-
-function isImageFile(file: File): boolean {
-  return file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(file.name)
+  onRemoveDocument?: (index: number) => void
+  removable?: boolean
+  source?: I693SplitViewSource
+  onSourceChange?: (source: I693SplitViewSource) => void
+  showSourceToggle?: boolean
 }
 
 export function I693SplitView({
-  files,
+  items,
   activeIndex,
   onActiveIndexChange,
   onClosePanel,
   onRemoveDocument,
+  removable = false,
+  source = 'supporting',
+  onSourceChange,
+  showSourceToggle = false,
 }: Props) {
   const { t } = useT()
   const hostRef = useRef<HTMLDivElement>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const file = files[activeIndex] ?? null
+  const item = items[activeIndex] ?? null
 
   const renderDocument = useCallback(async () => {
     const host = hostRef.current
-    if (!host || !file) return
+    if (!host || !item) return
 
     setLoading(true)
     setError(null)
     host.innerHTML = ''
 
     try {
-      if (isImageFile(file)) {
-        const url = URL.createObjectURL(file)
-        const img = document.createElement('img')
-        img.src = url
-        img.alt = file.name
-        img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
-        img.onload = () => URL.revokeObjectURL(url)
-        host.appendChild(img)
-        return
+      if (isSplitViewImage(item)) {
+        if (item.file) {
+          const url = URL.createObjectURL(item.file)
+          const img = document.createElement('img')
+          img.src = url
+          img.alt = item.name
+          img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
+          img.onload = () => URL.revokeObjectURL(url)
+          host.appendChild(img)
+          return
+        }
+        if (item.url) {
+          const img = document.createElement('img')
+          img.src = item.url
+          img.alt = item.name
+          img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
+          host.appendChild(img)
+          return
+        }
       }
 
-      if (!isPdfFile(file)) {
+      if (!isSplitViewPdf(item)) {
         throw new Error(t('i693.splitview_unsupported'))
       }
 
-      const bytes = clonePdfBytes(new Uint8Array(await file.arrayBuffer()))
+      const bytes = clonePdfBytes(await readSplitViewBytes(item))
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
       const pdf = await loadPdfJsDocument(pdfjs, bytes)
@@ -91,32 +108,34 @@ export function I693SplitView({
     } finally {
       setLoading(false)
     }
-  }, [file, t])
+  }, [item, t])
 
   useEffect(() => {
     void renderDocument()
   }, [renderDocument])
 
-  if (files.length === 0 || !file) return null
+  if (items.length === 0 || !item) return null
 
   return (
     <aside className="flex min-h-0 min-w-0 flex-col rounded-2xl border border-violet-200 bg-white shadow-sm lg:sticky lg:top-4 lg:max-h-[calc(100vh-10rem)] lg:self-start">
       <div className="flex items-start justify-between gap-3 border-b border-violet-100 px-4 py-3">
         <div className="min-w-0">
           <h3 className="text-sm font-semibold text-violet-900">{t('i693.splitview_title')}</h3>
-          <p className="mt-0.5 truncate text-xs text-slate-500" title={file.name}>
-            {file.name}
+          <p className="mt-0.5 truncate text-xs text-slate-500" title={item.name}>
+            {item.name}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => onRemoveDocument(activeIndex)}
-            className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-            title={t('i693.splitview_remove_document')}
-          >
-            {t('i693.splitview_remove_document')}
-          </button>
+          {removable && onRemoveDocument ? (
+            <button
+              type="button"
+              onClick={() => onRemoveDocument(activeIndex)}
+              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+              title={t('i693.splitview_remove_document')}
+            >
+              {t('i693.splitview_remove_document')}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onClosePanel}
@@ -129,11 +148,38 @@ export function I693SplitView({
         </div>
       </div>
 
-      {files.length > 1 ? (
+      {showSourceToggle && onSourceChange ? (
         <div className="flex flex-wrap gap-2 border-b border-violet-50 px-4 py-2">
-          {files.map((item, index) => (
+          <button
+            type="button"
+            onClick={() => onSourceChange('supporting')}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+              source === 'supporting'
+                ? 'bg-violet-600 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {t('i693.splitview_source_supporting')}
+          </button>
+          <button
+            type="button"
+            onClick={() => onSourceChange('patient_chart')}
+            className={`rounded-lg px-2.5 py-1 text-xs font-medium ${
+              source === 'patient_chart'
+                ? 'bg-violet-600 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {t('i693.splitview_source_patient_chart')}
+          </button>
+        </div>
+      ) : null}
+
+      {items.length > 1 ? (
+        <div className="flex flex-wrap gap-2 border-b border-violet-50 px-4 py-2">
+          {items.map((doc, index) => (
             <div
-              key={`${item.name}-${item.size}-${index}`}
+              key={doc.key}
               className={`inline-flex max-w-full items-center gap-1 rounded-lg pl-2.5 pr-1 py-1 text-xs font-medium ${
                 index === activeIndex
                   ? 'bg-violet-600 text-white'
@@ -144,21 +190,23 @@ export function I693SplitView({
                 type="button"
                 onClick={() => onActiveIndexChange(index)}
                 className="max-w-[180px] truncate text-left"
-                title={item.name}
+                title={doc.name}
               >
-                {item.name}
+                {doc.name}
               </button>
-              <button
-                type="button"
-                onClick={() => onRemoveDocument(index)}
-                className={`inline-flex h-5 w-5 items-center justify-center rounded ${
-                  index === activeIndex ? 'hover:bg-violet-700' : 'hover:bg-slate-200'
-                }`}
-                title={t('i693.splitview_remove_document')}
-                aria-label={t('i693.splitview_remove_document')}
-              >
-                ✕
-              </button>
+              {removable && onRemoveDocument ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveDocument(index)}
+                  className={`inline-flex h-5 w-5 items-center justify-center rounded ${
+                    index === activeIndex ? 'hover:bg-violet-700' : 'hover:bg-slate-200'
+                  }`}
+                  title={t('i693.splitview_remove_document')}
+                  aria-label={t('i693.splitview_remove_document')}
+                >
+                  ✕
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
