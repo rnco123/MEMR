@@ -16,6 +16,8 @@ import {
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
+import { BatchAssignProviderModal } from '@/components/BatchAssignProviderModal'
+import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
@@ -146,6 +148,9 @@ function NurseFlowboardPage() {
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
+  const [selectedAppointmentIds, setSelectedAppointmentIds] = useState<Set<number>>(new Set())
+  const [showBatchAssignModal, setShowBatchAssignModal] = useState(false)
+  const [batchAssigning, setBatchAssigning] = useState(false)
   const initialLoadDone = useRef(false)
   const supabase = useMemo(() => createClient(), [])
 
@@ -319,6 +324,72 @@ function NurseFlowboardPage() {
   }, [filteredAppointments, page, pageSize])
 
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
+
+  const isAppointmentAssignable = useCallback((appointment: Appointment) => {
+    return !appointment.assigned_doctor && availableDoctors.length > 0
+  }, [availableDoctors.length])
+
+  const selectableOnPage = useMemo(
+    () => paginatedAppointments.filter(isAppointmentAssignable),
+    [paginatedAppointments, isAppointmentAssignable]
+  )
+
+  const toggleAppointmentSelection = useCallback((appointmentId: number, checked: boolean) => {
+    setSelectedAppointmentIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(appointmentId)
+      else next.delete(appointmentId)
+      return next
+    })
+  }, [])
+
+  const selectAllAssignableOnPage = useCallback(() => {
+    setSelectedAppointmentIds(new Set(selectableOnPage.map((a) => a.id)))
+  }, [selectableOnPage])
+
+  const clearAppointmentSelection = useCallback(() => {
+    setSelectedAppointmentIds(new Set())
+  }, [])
+
+  const batchAssignProvider = async (doctorId: string, appointmentDate: string, appointmentTime: string) => {
+    const ids = [...selectedAppointmentIds]
+    if (ids.length === 0 || batchAssigning) return
+
+    setBatchAssigning(true)
+    try {
+      const res = await fetch('/api/nurse/batch-assign-provider', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointment_ids: ids,
+          doctor_id: Number(doctorId),
+          appointment_date: appointmentDate || null,
+          appointment_time: appointmentTime || null,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to assign provider')
+      }
+      if (json.failed > 0) {
+        alert(
+          t('flow.batch_assign_result', {
+            assigned: json.assigned ?? 0,
+            failed: json.failed ?? 0,
+          })
+        )
+      }
+      setShowBatchAssignModal(false)
+      clearAppointmentSelection()
+      await fetchAllAppointments()
+      await fetchAvailableDoctors()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to assign provider')
+    } finally {
+      setBatchAssigning(false)
+    }
+  }
 
   const assignDoctorToAppointment = async (appointmentId: number, doctorId: string, appointmentDate?: string, appointmentTime?: string) => {
     setAssigningDoctor(appointmentId.toString())
@@ -720,7 +791,23 @@ function NurseFlowboardPage() {
           />
         ) : (
           <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+            {displayMode === 'list' && (
+              <div className="px-6 pt-4">
+                <FlowboardBatchActionBar
+                  selectedCount={selectedAppointmentIds.size}
+                  totalSelectableOnPage={selectableOnPage.length}
+                  onSelectAllPage={selectAllAssignableOnPage}
+                  onClear={clearAppointmentSelection}
+                  actionLabel={t('flow.batch_assign_provider')}
+                  actionLoadingLabel={t('flow.batch_assigning')}
+                  isLoading={batchAssigning}
+                  onAction={() => setShowBatchAssignModal(true)}
+                  disabled={availableDoctors.length === 0}
+                />
+              </div>
+            )}
             <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              <div className="col-span-1" />
               <div className="col-span-3">{t('flow.col_patient')}</div>
               <div className="col-span-2">{t('flow.col_status')}</div>
               <div className="col-span-2">{t('flow.col_appointment')}</div>
@@ -754,6 +841,20 @@ function NurseFlowboardPage() {
                     aria-hidden
                   />
                   <div className="grid flex-1 grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 min-w-0">
+                  <div
+                    className="lg:col-span-1 flex items-center"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {isAppointmentAssignable(appointment) ? (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+                        checked={selectedAppointmentIds.has(appointment.id)}
+                        onChange={(e) => toggleAppointmentSelection(appointment.id, e.target.checked)}
+                        aria-label={t('flow.batch_select_page')}
+                      />
+                    ) : null}
+                  </div>
                   <div className="lg:col-span-3 flex items-center gap-3">
                     <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 text-sm">
                       {appointment.patient?.first_name?.charAt(0) || '?'}{appointment.patient?.last_name?.charAt(0) || ''}
@@ -947,6 +1048,20 @@ function NurseFlowboardPage() {
           }}
           onClose={() => setShowAssignModal(null)}
         />
+        )}
+
+        {showBatchAssignModal && (
+          <BatchAssignProviderModal
+            appointmentIds={[...selectedAppointmentIds]}
+            availableDoctors={availableDoctors}
+            isSubmitting={batchAssigning}
+            onAssign={(doctorId, appointmentDate, appointmentTime) => {
+              void batchAssignProvider(doctorId, appointmentDate, appointmentTime)
+            }}
+            onClose={() => {
+              if (!batchAssigning) setShowBatchAssignModal(false)
+            }}
+          />
         )}
 
         {/* Encounter Detail Modal */}

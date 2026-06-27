@@ -2,7 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole, UserRole } from '@/lib/roles'
+import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole, isPhysicianRole, UserRole } from '@/lib/roles'
 import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -36,6 +36,8 @@ import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
+import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -117,6 +119,8 @@ function FlowboardPage() {
     encounterStatus?: string
   } | null>(null)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
+  const [selectedEncounterIds, setSelectedEncounterIds] = useState<Set<number>>(new Set())
+  const [batchCompleting, setBatchCompleting] = useState(false)
   const initialLoadDone = useRef(false)
 
   useEffect(() => {
@@ -289,6 +293,70 @@ function FlowboardPage() {
   }, [filteredAppointments, page, pageSize])
 
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
+
+  const canBatchComplete = isPhysicianRole(role)
+
+  const isEncounterCompletable = useCallback((appointment: Appointment) => {
+    return Boolean(
+      appointment.encounter_id && canDoctorCompleteEncounter(appointment.encounter_status)
+    )
+  }, [])
+
+  const selectableOnPage = useMemo(
+    () => paginatedAppointments.filter(isEncounterCompletable),
+    [paginatedAppointments, isEncounterCompletable]
+  )
+
+  const toggleEncounterSelection = useCallback((encounterId: number, checked: boolean) => {
+    setSelectedEncounterIds((prev) => {
+      const next = new Set(prev)
+      if (checked) next.add(encounterId)
+      else next.delete(encounterId)
+      return next
+    })
+  }, [])
+
+  const selectAllCompletableOnPage = useCallback(() => {
+    setSelectedEncounterIds(new Set(selectableOnPage.map((a) => a.encounter_id!)))
+  }, [selectableOnPage])
+
+  const clearEncounterSelection = useCallback(() => {
+    setSelectedEncounterIds(new Set())
+  }, [])
+
+  const batchCompleteEncounters = useCallback(async () => {
+    const ids = [...selectedEncounterIds]
+    if (ids.length === 0 || batchCompleting) return
+    if (!window.confirm(t('flow.batch_complete_confirm', { count: ids.length }))) return
+
+    setBatchCompleting(true)
+    try {
+      const res = await fetch('/api/encounters/batch-complete', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encounter_ids: ids }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.error || t('encounter_modal.complete_failed'))
+      }
+      if (json.failed > 0) {
+        alert(
+          t('flow.batch_complete_result', {
+            completed: json.completed ?? 0,
+            failed: json.failed ?? 0,
+          })
+        )
+      }
+      clearEncounterSelection()
+      refreshData()
+    } catch (err) {
+      alert(err instanceof Error ? err.message : t('encounter_modal.complete_failed'))
+    } finally {
+      setBatchCompleting(false)
+    }
+  }, [selectedEncounterIds, batchCompleting, t, clearEncounterSelection, refreshData])
 
   const refreshAction = (
     <button
@@ -501,6 +569,18 @@ function FlowboardPage() {
           />
         ) : (
           <div className="space-y-3">
+            {canBatchComplete && displayMode === 'list' && (
+              <FlowboardBatchActionBar
+                selectedCount={selectedEncounterIds.size}
+                totalSelectableOnPage={selectableOnPage.length}
+                onSelectAllPage={selectAllCompletableOnPage}
+                onClear={clearEncounterSelection}
+                actionLabel={t('flow.batch_complete_encounters')}
+                actionLoadingLabel={t('flow.batch_completing')}
+                isLoading={batchCompleting}
+                onAction={() => void batchCompleteEncounters()}
+              />
+            )}
             {paginatedAppointments.map((appointment) => (
               <div
                 key={appointment.id}
@@ -516,6 +596,22 @@ function FlowboardPage() {
                 }}
                 className="flex rounded-2xl overflow-hidden border border-slate-200 bg-white hover:border-[#2E6EF3]/40 hover:shadow-[0_8px_24px_rgba(30,64,175,0.06)] transition-all cursor-pointer"
               >
+                {canBatchComplete && isEncounterCompletable(appointment) && (
+                  <div
+                    className="flex items-center pl-4 pr-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+                      checked={selectedEncounterIds.has(appointment.encounter_id!)}
+                      onChange={(e) =>
+                        toggleEncounterSelection(appointment.encounter_id!, e.target.checked)
+                      }
+                      aria-label={t('flow.batch_select_page')}
+                    />
+                  </div>
+                )}
                 <div
                   className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
                   title={getStatusInfo(appointment.encounter_status as EncounterStatus)?.label ?? 'Status'}
