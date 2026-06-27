@@ -129,7 +129,7 @@ export function parsePatientSearchLocally(
         last_name: null,
         email: null,
         phone: null,
-        dob_year: dateParts.year,
+        dob_year: dateParts.year ?? null,
         dob_month: dateParts.month ?? null,
         dob_day: dateParts.day ?? null,
         provider_name: null,

@@ -2,6 +2,10 @@ export type PatientSearchDobFilter = {
   eq?: string
   gte?: string
   lte?: string
+  /** Birth month (01–12) in any year. */
+  anyYearMonth?: string
+  /** Birth month+day in any year. */
+  anyYearMonthDay?: { month: string; day: string }
 }
 
 export type ParsedPatientSearch = {

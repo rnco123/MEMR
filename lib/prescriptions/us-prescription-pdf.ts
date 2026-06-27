@@ -25,148 +25,211 @@ function formatUsDate(dateString: string | null | undefined): string {
 export async function buildUsPrescriptionPdfBlob(ctx: PrescriptionPrintContext): Promise<Blob> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
-  const left = 43
-  const maxW = 530
-  const right = left + maxW
-  const bottom = 748
-  let y = 43
+
+  const margin = 54
+  const pageW = 612
+  const contentW = pageW - margin * 2
+  const left = margin
+  const right = left + contentW
+  const bottom = 756
+  const colGap = 16
+  const colW = (contentW - colGap) / 2
+  const col2X = left + colW + colGap
+  const labelW = 58
+
+  let y = margin
 
   const newPageIfNeeded = (height: number) => {
     if (y + height > bottom) {
       doc.addPage()
-      y = 43
+      y = margin
     }
   }
 
-  const writeLine = (text: string, fontSize: number, style: 'normal' | 'bold' = 'normal') => {
-    doc.setFont('times', style)
+  const hr = (yPos: number, x1 = left, x2 = right, weight = 0.75) => {
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(weight)
+    doc.line(x1, yPos, x2, yPos)
+  }
+
+  const writeWrapped = (
+    text: string,
+    x: number,
+    startY: number,
+    width: number,
+    fontSize: number,
+    style: 'normal' | 'bold' = 'normal'
+  ): number => {
+    doc.setFont('helvetica', style)
     doc.setFontSize(fontSize)
     doc.setTextColor(0, 0, 0)
-    const lines = doc.splitTextToSize(text, maxW)
+    const lines = doc.splitTextToSize(text, width)
+    let cy = startY
     for (const line of lines) {
       newPageIfNeeded(fontSize + 4)
-      doc.text(line, left, y)
-      y += fontSize + 3
+      doc.text(line, x, cy)
+      cy += fontSize + 4
     }
+    return cy
   }
 
-  const writeField = (label: string, value: string) => {
-    writeLine(`${label} ${textOrDash(value)}`, 10.5)
+  const writeColumnHeader = (x: number, width: number, title: string, startY: number): number => {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9)
+    doc.setTextColor(0, 0, 0)
+    doc.text(title.toUpperCase(), x, startY)
+    const lineY = startY + 4
+    hr(lineY, x, x + width, 0.5)
+    return lineY + 14
   }
 
-  const writeSectionTitle = (title: string) => {
-    newPageIfNeeded(18)
-    doc.setDrawColor(153, 153, 153)
-    doc.line(left, y, right, y)
-    y += 10
-    doc.setFont('times', 'bold')
+  const writeColumnField = (
+    x: number,
+    width: number,
+    label: string,
+    value: string,
+    startY: number
+  ): number => {
+    doc.setFont('helvetica', 'bold')
     doc.setFontSize(10)
-    doc.text(title.toUpperCase(), left, y)
+    doc.text(label, x, startY)
+    doc.setFont('helvetica', 'normal')
+    const valueX = x + labelW
+    const valueW = width - labelW
+    const lines = doc.splitTextToSize(textOrDash(value), valueW)
+    doc.text(lines, valueX, startY)
+    return startY + Math.max(lines.length * 13, 15)
+  }
+
+  // ── Clinic header ──
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(18)
+  doc.text(textOrDash(ctx.clinic.name || 'Clinic'), left, y)
+  y += 22
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  const clinicLines: string[] = []
+  if (ctx.clinic.address?.trim()) clinicLines.push(ctx.clinic.address.trim())
+  if (ctx.clinic.phone?.trim()) clinicLines.push(`Tel: ${ctx.clinic.phone.trim()}`)
+  if (ctx.clinic.email?.trim()) clinicLines.push(ctx.clinic.email.trim())
+  for (const line of clinicLines) {
+    doc.text(line, left, y)
+    y += 13
+  }
+
+  y += 6
+  hr(y, left, right, 1.5)
+  y += 20
+
+  // ── Title row ──
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.text('PRESCRIPTION', left, y)
+  const dateLabel = 'Date written:'
+  const dateValue = formatUsDate(ctx.appointmentDate ?? ctx.printedAt.slice(0, 10))
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(10)
+  const dateStr = `${dateLabel} ${dateValue}`
+  const dateW = doc.getTextWidth(dateStr)
+  doc.text(dateStr, right - dateW, y)
+  y += 22
+
+  // ── Patient | Prescriber (aligned columns) ──
+  const blockStartY = y
+  let patientY = writeColumnHeader(left, colW, 'Patient', blockStartY)
+  patientY = writeColumnField(left, colW, 'Name:', ctx.patient.name ?? '', patientY)
+  patientY = writeColumnField(left, colW, 'DOB:', formatUsDate(ctx.patient.date_of_birth), patientY)
+  if (ctx.patient.phone?.trim()) {
+    patientY = writeColumnField(left, colW, 'Phone:', ctx.patient.phone, patientY)
+  }
+  if (ctx.patient.address?.trim()) {
+    patientY = writeColumnField(left, colW, 'Address:', ctx.patient.address, patientY)
+  }
+
+  let prescriberY = writeColumnHeader(col2X, colW, 'Prescriber', blockStartY)
+  prescriberY = writeColumnField(col2X, colW, 'Provider:', ctx.doctor.name ?? '', prescriberY)
+  prescriberY = writeColumnField(col2X, colW, 'NPI:', ctx.doctor.npi ?? '', prescriberY)
+  if (ctx.doctor.specialty?.trim()) {
+    prescriberY = writeColumnField(col2X, colW, 'Specialty:', ctx.doctor.specialty, prescriberY)
+  }
+  if (ctx.doctor.phone?.trim()) {
+    prescriberY = writeColumnField(col2X, colW, 'Phone:', ctx.doctor.phone, prescriberY)
+  }
+
+  y = Math.max(patientY, prescriberY) + 10
+  hr(y)
+  y += 16
+
+  // ── Pharmacy ──
+  if (ctx.pharmacy) {
+    y = writeColumnHeader(left, contentW, 'Pharmacy', y)
+    y = writeColumnField(left, contentW, 'Name:', ctx.pharmacy.name ?? '', y)
+    if (ctx.pharmacy.address?.trim()) {
+      y = writeColumnField(left, contentW, 'Address:', ctx.pharmacy.address, y)
+    }
+    if (ctx.pharmacy.phone?.trim()) {
+      y = writeColumnField(left, contentW, 'Phone:', ctx.pharmacy.phone, y)
+    }
+    y += 4
+    hr(y)
+    y += 16
+  }
+
+  // ── Medications ──
+  y = writeColumnHeader(left, contentW, 'Medications', y)
+
+  for (const [index, rx] of ctx.prescriptions.entries()) {
+    newPageIfNeeded(100)
+    const boxTop = y
+    y += 10
+
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(80, 80, 80)
+    doc.text(`Rx ${index + 1}`, left + 10, y)
+
+    y += 14
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(12)
+    doc.setTextColor(0, 0, 0)
+    y = writeWrapped(formatUsRxMedicationLine(rx), left + 10, y, contentW - 20, 12, 'bold') + 2
+
+    y = writeColumnField(left + 10, contentW - 20, 'Sig:', formatUsRxSig(rx), y)
+    y = writeColumnField(left + 10, contentW - 20, 'Dispense:', formatUsRxDispense(rx), y)
+    y = writeColumnField(left + 10, contentW - 20, 'Refills:', String(rx.refills ?? 0), y)
+    if (rx.notes?.trim()) {
+      y = writeColumnField(left + 10, contentW - 20, 'Notes:', rx.notes.trim(), y)
+    }
+
+    y += 6
+    doc.setDrawColor(0, 0, 0)
+    doc.setLineWidth(0.75)
+    doc.rect(left, boxTop, contentW, y - boxTop)
     y += 12
   }
 
-  doc.setFont('times', 'bold')
-  doc.setFontSize(16)
-  doc.text(textOrDash(ctx.clinic.name || 'Clinic'), left, y)
-  y += 18
-
-  doc.setFont('times', 'normal')
-  doc.setFontSize(10.5)
-  if (ctx.clinic.address?.trim()) {
-    writeLine(ctx.clinic.address.trim(), 10.5)
-  }
-  if (ctx.clinic.phone?.trim()) {
-    writeLine(`Phone: ${ctx.clinic.phone.trim()}`, 10.5)
-  }
-  if (ctx.clinic.email?.trim()) {
-    writeLine(`Email: ${ctx.clinic.email.trim()}`, 10.5)
-  }
-
+  // ── Signature ──
   y += 4
-  doc.setDrawColor(0, 0, 0)
-  doc.setLineWidth(1.5)
-  doc.line(left, y, right, y)
+  newPageIfNeeded(50)
+  hr(y)
   y += 16
-
-  writeLine('Prescription — U.S. Format', 13, 'bold')
-  y += 2
-  writeField('Date written:', formatUsDate(ctx.appointmentDate ?? ctx.printedAt.slice(0, 10)))
-  writeField('Encounter #:', String(ctx.encounterId))
-  y += 6
-
-  const patientStartY = y
-  writeSectionTitle('Patient')
-  writeField('Name:', ctx.patient.name)
-  writeField('DOB:', formatUsDate(ctx.patient.date_of_birth))
-  if (ctx.patient.phone?.trim()) writeField('Phone:', ctx.patient.phone)
-  if (ctx.patient.address?.trim()) writeField('Address:', ctx.patient.address)
-  const patientEndY = y
-
-  y = patientStartY
-  const prescriberX = left + maxW / 2 + 12
-  doc.setFont('times', 'bold')
+  doc.setFont('helvetica', 'normal')
   doc.setFontSize(10)
-  doc.text('PRESCRIBER', prescriberX, y)
-  y += 10
-  doc.setDrawColor(153, 153, 153)
-  doc.line(prescriberX, y, right, y)
-  y += 12
-
-  const writePrescriberField = (label: string, value: string) => {
-    doc.setFont('times', 'bold')
-    doc.setFontSize(10.5)
-    doc.text(`${label}`, prescriberX, y)
-    doc.setFont('times', 'normal')
-    const lines = doc.splitTextToSize(textOrDash(value), maxW / 2 - 12)
-    doc.text(lines, prescriberX + 52, y)
-    y += Math.max(lines.length * 12, 12)
+  doc.text(`Electronically prescribed by: ${textOrDash(ctx.doctor.name)}`, left, y)
+  if (ctx.doctor.npi?.trim()) {
+    const npiStr = `NPI: ${ctx.doctor.npi.trim()}`
+    const npiW = doc.getTextWidth(npiStr)
+    doc.text(npiStr, right - npiW, y)
   }
-
-  writePrescriberField('Provider:', ctx.doctor.name ?? '')
-  writePrescriberField('NPI:', ctx.doctor.npi ?? '')
-  if (ctx.doctor.specialty?.trim()) writePrescriberField('Specialty:', ctx.doctor.specialty)
-  if (ctx.doctor.phone?.trim()) writePrescriberField('Phone:', ctx.doctor.phone)
-  const prescriberEndY = y
-
-  y = Math.max(patientEndY, prescriberEndY) + 8
-
-  if (ctx.pharmacy) {
-    writeSectionTitle('Pharmacy')
-    writeField('Name:', ctx.pharmacy.name ?? '')
-    if (ctx.pharmacy.address?.trim()) writeField('Address:', ctx.pharmacy.address)
-    if (ctx.pharmacy.phone?.trim()) writeField('Phone:', ctx.pharmacy.phone)
-    y += 4
-  }
-
-  writeSectionTitle('Medications')
-
-  for (const [index, rx] of ctx.prescriptions.entries()) {
-    newPageIfNeeded(90)
-    y += 2
-    writeLine(`Rx ${index + 1}`, 10, 'bold')
-    writeLine(formatUsRxMedicationLine(rx), 13, 'bold')
-    writeField('Sig:', formatUsRxSig(rx))
-    writeField('Dispense:', formatUsRxDispense(rx))
-    writeField('Refills:', String(rx.refills ?? 0))
-    if (rx.notes?.trim()) writeField('Notes:', rx.notes.trim())
-    y += 8
-  }
-
-  y += 8
-  newPageIfNeeded(40)
-  doc.setDrawColor(153, 153, 153)
-  doc.line(left, y, right, y)
-  y += 14
-  writeField('Electronically prescribed by:', ctx.doctor.name ?? '')
-  if (ctx.doctor.npi?.trim()) writeField('NPI:', ctx.doctor.npi)
 
   const pageCount = doc.getNumberOfPages()
   for (let page = 1; page <= pageCount; page += 1) {
     doc.setPage(page)
-    doc.setFont('times', 'normal')
-    doc.setFontSize(9)
-    doc.setTextColor(85, 85, 85)
-    doc.text('Generated from MyclinicMD EMR.', left, 769)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8)
+    doc.setTextColor(120, 120, 120)
+    doc.text('Generated from MyclinicMD EMR', left, 774)
   }
 
   return doc.output('blob')

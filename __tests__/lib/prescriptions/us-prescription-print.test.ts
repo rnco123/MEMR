@@ -85,6 +85,6 @@ describe('buildUsPrescriptionPrintHtml', () => {
     expect(html).toContain('Amoxicillin 500 mg')
     expect(html).toContain('Sig:')
     expect(html).toContain('Oral TID for 10 days')
-    expect(html).toContain('Prescription — U.S. Format')
+    expect(html).toContain('Prescription')
   })
 })

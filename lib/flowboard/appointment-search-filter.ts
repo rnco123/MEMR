@@ -30,7 +30,8 @@ export function appointmentMatchesSearchQuery(
 
   const dateParts = parseSearchDateParts(query)
   if (dateParts) {
-    return patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)
+    if (patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)) return true
+    if (dateParts.year) return false
   }
 
   const patientMatch = patientMatchesFreeText(

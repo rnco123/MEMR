@@ -22,6 +22,17 @@ export function patientDobMatchesFilter(
   filter: PatientSearchDobFilter | null | undefined
 ): boolean {
   if (!dateOfBirth || !filter) return false
+  if (filter.anyYearMonthDay) {
+    const [, m, d] = dateOfBirth.split('-')
+    return (
+      m === filter.anyYearMonthDay.month.padStart(2, '0') &&
+      d === filter.anyYearMonthDay.day.padStart(2, '0')
+    )
+  }
+  if (filter.anyYearMonth) {
+    const [, m] = dateOfBirth.split('-')
+    return m === filter.anyYearMonth.padStart(2, '0')
+  }
   if (filter.eq) return dateOfBirth === filter.eq
   if (filter.gte && filter.lte) {
     return dateOfBirth >= filter.gte && dateOfBirth <= filter.lte
@@ -33,6 +44,9 @@ export function patientDobMatchesSearchParts(
   dateOfBirth: string | null | undefined,
   parts: SearchDateParts
 ): boolean {
+  if (!parts.year) {
+    return matchDobParts(dateOfBirth, '', parts.month ?? '', parts.day ?? '')
+  }
   const filter = buildPatientDobFilter(parts.year, parts.month ?? '', parts.day ?? '')
   return patientDobMatchesFilter(dateOfBirth, filter)
 }

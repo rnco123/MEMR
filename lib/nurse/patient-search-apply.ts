@@ -1,5 +1,6 @@
 import {
   buildPatientDobFilter,
+  isPartialDobFilter,
   parseSearchDateParts,
   sanitizePatientSearchTerm,
 } from '@/lib/nurse/patient-search-query'
@@ -33,14 +34,55 @@ function patientFullName(patient: PatientLike): string {
   return `${patient.first_name ?? ''} ${patient.last_name ?? ''}`.trim()
 }
 
+function patientMatchesNameText(patient: PatientLike, raw: string): boolean {
+  const text = sanitizePatientSearchTerm(raw)
+  if (!text) return true
+
+  const q = text.toLowerCase()
+  const patientId = patient.id ?? patient.patient_id
+  const fullName = patientFullName(patient).toLowerCase()
+  const haystack = [
+    String(patientId ?? ''),
+    (patient.first_name ?? '').toLowerCase(),
+    (patient.last_name ?? '').toLowerCase(),
+    fullName,
+    (patient.email ?? '').toLowerCase(),
+    patient.phone ?? '',
+  ].join(' ')
+
+  const tokens = q.split(/\s+/).filter(Boolean)
+  if (tokens.length >= 2) {
+    return tokens.every((token) => haystack.includes(token))
+  }
+
+  return (
+    String(patientId ?? '').includes(q) ||
+    (patient.first_name ?? '').toLowerCase().includes(q) ||
+    (patient.last_name ?? '').toLowerCase().includes(q) ||
+    fullName.includes(q) ||
+    (patient.email ?? '').toLowerCase().includes(q) ||
+    (patient.phone ?? '').includes(q) ||
+    haystack.includes(q)
+  )
+}
+
 export function patientMatchesFreeText(patient: PatientLike, raw: string): boolean {
   const text = sanitizePatientSearchTerm(raw)
   if (!text) return true
 
   const dateParts = parseSearchDateParts(text)
   if (dateParts) {
-    const filter = buildPatientDobFilter(dateParts.year, dateParts.month ?? '', dateParts.day ?? '')
+    const filter = buildPatientDobFilter(
+      dateParts.year ?? '',
+      dateParts.month ?? '',
+      dateParts.day ?? ''
+    )
     if (filter && patientDobMatchesFilter(patient.date_of_birth, filter)) return true
+    if (!dateParts.year) {
+      if (patientMatchesNameText(patient, text)) return true
+    } else if (dateParts.year && (dateParts.month || dateParts.day)) {
+      return false
+    }
   }
 
   const q = text.toLowerCase()
@@ -87,7 +129,11 @@ export function patientMatchesParsedSearch(
   if (!parsed.raw.trim()) return true
 
   if (parsed.dobFilter) {
-    return patientDobMatchesFilter(patient.date_of_birth, parsed.dobFilter)
+    if (patientDobMatchesFilter(patient.date_of_birth, parsed.dobFilter)) return true
+    if (isPartialDobFilter(parsed.dobFilter)) {
+      return patientMatchesNameText(patient, parsed.raw)
+    }
+    return false
   }
 
   const patientId = patient.id ?? patient.patient_id
@@ -163,6 +209,23 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
 ): T {
   if (!parsed.raw.trim()) return query
 
+  if (parsed.dobFilter?.anyYearMonthDay) {
+    const { month, day } = parsed.dobFilter.anyYearMonthDay
+    const term = escapePostgrestFilterValue(sanitizePatientSearchTerm(parsed.raw))
+    const ilikeTerm = `%${term}%`
+    return query.or(
+      `date_of_birth.ilike.%-${month}-${day},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+    )
+  }
+  if (parsed.dobFilter?.anyYearMonth) {
+    const m = parsed.dobFilter.anyYearMonth
+    const term = escapePostgrestFilterValue(sanitizePatientSearchTerm(parsed.raw))
+    const ilikeTerm = `%${term}%`
+    return query.or(
+      `date_of_birth.ilike.%-${m}-%,first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+    )
+  }
+
   if (parsed.dobFilter?.eq) {
     return query.eq('date_of_birth', parsed.dobFilter.eq)
   }
@@ -200,10 +263,30 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
   if (!hasStructured && text) {
     const dateParts = parseSearchDateParts(text)
     if (dateParts) {
-      const filter = buildPatientDobFilter(dateParts.year, dateParts.month ?? '', dateParts.day ?? '')
+      const filter = buildPatientDobFilter(
+        dateParts.year ?? '',
+        dateParts.month ?? '',
+        dateParts.day ?? ''
+      )
       if (filter?.eq) return query.eq('date_of_birth', filter.eq)
       if (filter?.gte && filter.lte) {
         return query.gte('date_of_birth', filter.gte).lte('date_of_birth', filter.lte)
+      }
+      if (filter?.anyYearMonthDay) {
+        const { month, day } = filter.anyYearMonthDay
+        const term = escapePostgrestFilterValue(text)
+        const ilikeTerm = `%${term}%`
+        return query.or(
+          `date_of_birth.ilike.%-${month}-${day},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+        )
+      }
+      if (filter?.anyYearMonth) {
+        const m = filter.anyYearMonth
+        const term = escapePostgrestFilterValue(text)
+        const ilikeTerm = `%${term}%`
+        return query.or(
+          `date_of_birth.ilike.%-${m}-%,first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+        )
       }
     }
 

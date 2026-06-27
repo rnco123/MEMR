@@ -200,6 +200,17 @@ export function EncounterPrescriptionsPanel({
   const printCurrentPrescriptions = async () => {
     if (rows.length === 0 || printing || saving || isEditingSaved) return
 
+    // Open the print tab synchronously within the click handler so the browser
+    // keeps the user-gesture and does not block it as a popup. It is filled in
+    // once the PDF is built (or closed if anything fails).
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(
+        '<!DOCTYPE html><html><head><title>Preparing prescription…</title></head>' +
+          '<body style="font-family:sans-serif;color:#444;padding:24px">Preparing prescription…</body></html>'
+      )
+    }
+
     setPrinting(true)
     try {
       const res = await fetch(`/api/encounters/${encounterId}/prescriptions/print-data`, {
@@ -209,11 +220,21 @@ export function EncounterPrescriptionsPanel({
       if (!res.ok) {
         throw new Error(json.error || t('encounter_modal.rx_print_failed'))
       }
-      const opened = await printUsPrescriptions(json.data as PrescriptionPrintContext)
+      const opened = await printUsPrescriptions(
+        json.data as PrescriptionPrintContext,
+        printWindow
+      )
       if (!opened) {
         throw new Error(t('encounter_modal.rx_print_popup_blocked'))
       }
     } catch (err) {
+      if (printWindow && !printWindow.closed) {
+        try {
+          printWindow.close()
+        } catch {
+          /* ignore */
+        }
+      }
       toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_print_failed'))
     } finally {
       setPrinting(false)

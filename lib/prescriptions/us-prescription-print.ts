@@ -30,6 +30,10 @@ function formatUsDate(dateString: string | null | undefined): string {
   })
 }
 
+function fieldRow(label: string, value: string | null | undefined): string {
+  return `<div class="field-row"><span class="field-label">${escapeHtml(label)}</span><span class="field-value">${cell(value)}</span></div>`
+}
+
 function prescriptionBlocksHtml(ctx: PrescriptionPrintContext): string {
   return ctx.prescriptions
     .map((rx, index) => {
@@ -39,17 +43,17 @@ function prescriptionBlocksHtml(ctx: PrescriptionPrintContext): string {
       <section class="rx-block">
         <div class="rx-number">Rx ${index + 1}</div>
         <div class="rx-med">${cell(formatUsRxMedicationLine(rx))}</div>
-        <div class="rx-line"><span class="label">Sig:</span> ${cell(sig)}</div>
-        <div class="rx-line"><span class="label">Dispense:</span> ${cell(formatUsRxDispense(rx))}</div>
-        <div class="rx-line"><span class="label">Refills:</span> ${escapeHtml(String(rx.refills ?? 0))}</div>
-        ${notes ? `<div class="rx-line"><span class="label">Notes:</span> ${cell(notes)}</div>` : ''}
+        ${fieldRow('Sig:', sig)}
+        ${fieldRow('Dispense:', formatUsRxDispense(rx))}
+        ${fieldRow('Refills:', String(rx.refills ?? 0))}
+        ${notes ? fieldRow('Notes:', notes) : ''}
       </section>`
     })
     .join('')
 }
 
 export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): string {
-  const title = `Prescription — ${ctx.patient.name} — Encounter #${ctx.encounterId}`
+  const title = `Prescription — ${ctx.patient.name}`
   const dateWritten = formatUsDate(ctx.appointmentDate ?? ctx.printedAt.slice(0, 10))
 
   return `<!DOCTYPE html>
@@ -58,103 +62,152 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
     <meta charset="utf-8" />
     <title>${cell(title)}</title>
     <style>
-      @page { size: letter; margin: 0.6in; }
-      * { box-sizing: border-box; }
+      @page { size: letter; margin: 0.65in; }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
-        margin: 0;
-        font-family: "Times New Roman", Times, serif;
-        color: #111;
-        font-size: 12pt;
-        line-height: 1.35;
+        font-family: Helvetica, Arial, sans-serif;
+        color: #000;
+        font-size: 10pt;
+        line-height: 1.4;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
       }
       .sheet {
-        max-width: 7.5in;
+        max-width: 7.25in;
         margin: 0 auto;
       }
-      .sheet-body {
-        flex: 1 1 auto;
-      }
+      .sheet-body { flex: 1 1 auto; }
+
+      /* ── Clinic header ── */
       .header {
-        border-bottom: 2px solid #111;
-        padding-bottom: 10px;
-        margin-bottom: 14px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 12px;
+        margin-bottom: 18px;
       }
       .clinic-name {
-        font-size: 16pt;
+        font-size: 18pt;
         font-weight: 700;
-        letter-spacing: 0.02em;
+        letter-spacing: 0.01em;
+        margin-bottom: 4px;
       }
-      .clinic-meta, .meta-row {
-        font-size: 10.5pt;
+      .clinic-meta {
+        font-size: 10pt;
         color: #222;
+        line-height: 1.5;
+      }
+
+      /* ── Title row ── */
+      .title-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        margin-bottom: 18px;
       }
       .title-bar {
-        margin: 14px 0 10px;
-        font-size: 13pt;
+        font-size: 12pt;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+      }
+      .date-written {
+        font-size: 10pt;
+        white-space: nowrap;
+      }
+      .date-written .label { font-weight: 700; }
+
+      /* ── Two-column info grid ── */
+      .info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0 24px;
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #000;
+      }
+      .info-col { min-width: 0; }
+
+      .section-title {
+        font-size: 9pt;
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.08em;
+        border-bottom: 0.5px solid #000;
+        padding-bottom: 3px;
+        margin-bottom: 10px;
       }
-      .grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px 24px;
-        margin-bottom: 16px;
-      }
-      .section-title {
+
+      .field-row {
+        display: flex;
+        gap: 6px;
+        margin-bottom: 5px;
         font-size: 10pt;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        border-bottom: 1px solid #999;
-        margin: 0 0 6px;
-        padding-bottom: 2px;
       }
-      .field { margin: 2px 0; }
-      .label {
+      .field-label {
+        flex: 0 0 58px;
         font-weight: 700;
       }
+      .field-value {
+        flex: 1;
+        min-width: 0;
+        word-break: break-word;
+      }
+
+      /* ── Pharmacy block ── */
+      .pharmacy-block {
+        margin-bottom: 18px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid #000;
+      }
+
+      /* ── Medications ── */
+      .meds-section { margin-bottom: 18px; }
       .rx-block {
-        border: 1px solid #333;
-        padding: 10px 12px;
+        border: 1px solid #000;
+        padding: 10px 12px 12px;
         margin-bottom: 10px;
         page-break-inside: avoid;
       }
       .rx-number {
-        font-size: 10pt;
+        font-size: 8pt;
         font-weight: 700;
         text-transform: uppercase;
-        margin-bottom: 4px;
-      }
-      .rx-med {
-        font-size: 13pt;
-        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #444;
         margin-bottom: 6px;
       }
-      .rx-line { margin: 3px 0; }
+      .rx-med {
+        font-size: 12pt;
+        font-weight: 700;
+        margin-bottom: 8px;
+        line-height: 1.3;
+      }
+      .rx-block .field-row { margin-bottom: 4px; }
+      .rx-block .field-label { flex: 0 0 62px; }
+
+      /* ── Signature ── */
       .signature-block {
-        margin-top: 24px;
-        padding-top: 12px;
-        border-top: 1px solid #999;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 16px;
+        padding-top: 14px;
+        border-top: 1px solid #000;
+        font-size: 10pt;
       }
+
       .footer {
-        margin-top: 18px;
-        font-size: 9pt;
-        color: #555;
+        margin-top: 24px;
+        font-size: 8pt;
+        color: #666;
       }
+
       @media print {
-        html, body {
-          height: 100%;
-        }
-        body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        html, body { height: 100%; }
         .sheet {
           min-height: 100%;
           display: flex;
           flex-direction: column;
         }
-        .footer {
-          margin-top: auto;
-        }
+        .footer { margin-top: auto; }
       }
     </style>
   </head>
@@ -165,75 +218,68 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
         <div class="clinic-name">${cell(ctx.clinic.name || 'Clinic')}</div>
         <div class="clinic-meta">
           ${ctx.clinic.address ? `<div>${cell(ctx.clinic.address)}</div>` : ''}
-          ${ctx.clinic.phone ? `<div>Phone: ${cell(ctx.clinic.phone)}</div>` : ''}
-          ${ctx.clinic.email ? `<div>Email: ${cell(ctx.clinic.email)}</div>` : ''}
+          ${ctx.clinic.phone ? `<div>Tel: ${cell(ctx.clinic.phone)}</div>` : ''}
+          ${ctx.clinic.email ? `<div>${cell(ctx.clinic.email)}</div>` : ''}
         </div>
       </header>
 
-      <div class="title-bar">Prescription — U.S. Format</div>
-      <div class="meta-row"><span class="label">Date written:</span> ${cell(dateWritten)}</div>
-      <div class="meta-row"><span class="label">Encounter #:</span> ${escapeHtml(String(ctx.encounterId))}</div>
+      <div class="title-row">
+        <div class="title-bar">Prescription</div>
+        <div class="date-written"><span class="label">Date written:</span> ${cell(dateWritten)}</div>
+      </div>
 
-      <div class="grid">
-        <div>
+      <div class="info-grid">
+        <div class="info-col">
           <div class="section-title">Patient</div>
-          <div class="field"><span class="label">Name:</span> ${cell(ctx.patient.name)}</div>
-          <div class="field"><span class="label">DOB:</span> ${cell(formatUsDate(ctx.patient.date_of_birth))}</div>
-          ${ctx.patient.phone ? `<div class="field"><span class="label">Phone:</span> ${cell(ctx.patient.phone)}</div>` : ''}
-          ${ctx.patient.address ? `<div class="field"><span class="label">Address:</span> ${cell(ctx.patient.address)}</div>` : ''}
+          ${fieldRow('Name:', ctx.patient.name)}
+          ${fieldRow('DOB:', formatUsDate(ctx.patient.date_of_birth))}
+          ${ctx.patient.phone ? fieldRow('Phone:', ctx.patient.phone) : ''}
+          ${ctx.patient.address ? fieldRow('Address:', ctx.patient.address) : ''}
         </div>
-        <div>
+        <div class="info-col">
           <div class="section-title">Prescriber</div>
-          <div class="field"><span class="label">Provider:</span> ${cell(ctx.doctor.name)}</div>
-          <div class="field"><span class="label">NPI:</span> ${cell(ctx.doctor.npi)}</div>
-          ${ctx.doctor.specialty ? `<div class="field"><span class="label">Specialty:</span> ${cell(ctx.doctor.specialty)}</div>` : ''}
-          ${ctx.doctor.phone ? `<div class="field"><span class="label">Phone:</span> ${cell(ctx.doctor.phone)}</div>` : ''}
+          ${fieldRow('Provider:', ctx.doctor.name)}
+          ${fieldRow('NPI:', ctx.doctor.npi)}
+          ${ctx.doctor.specialty ? fieldRow('Specialty:', ctx.doctor.specialty) : ''}
+          ${ctx.doctor.phone ? fieldRow('Phone:', ctx.doctor.phone) : ''}
         </div>
       </div>
 
       ${
         ctx.pharmacy
-          ? `<div style="margin-bottom:14px;">
+          ? `<div class="pharmacy-block">
           <div class="section-title">Pharmacy</div>
-          <div class="field"><span class="label">Name:</span> ${cell(ctx.pharmacy.name)}</div>
-          ${ctx.pharmacy.address ? `<div class="field"><span class="label">Address:</span> ${cell(ctx.pharmacy.address)}</div>` : ''}
-          ${ctx.pharmacy.phone ? `<div class="field"><span class="label">Phone:</span> ${cell(ctx.pharmacy.phone)}</div>` : ''}
+          ${fieldRow('Name:', ctx.pharmacy.name)}
+          ${ctx.pharmacy.address ? fieldRow('Address:', ctx.pharmacy.address) : ''}
+          ${ctx.pharmacy.phone ? fieldRow('Phone:', ctx.pharmacy.phone) : ''}
         </div>`
           : ''
       }
 
-      <div class="section-title">Medications</div>
-      ${prescriptionBlocksHtml(ctx)}
+      <div class="meds-section">
+        <div class="section-title">Medications</div>
+        ${prescriptionBlocksHtml(ctx)}
+      </div>
 
       <div class="signature-block">
-        <div class="field"><span class="label">Electronically prescribed by:</span> ${cell(ctx.doctor.name)}</div>
-        ${ctx.doctor.npi ? `<div class="field"><span class="label">NPI:</span> ${cell(ctx.doctor.npi)}</div>` : ''}
+        <div><span class="label">Electronically prescribed by:</span> ${cell(ctx.doctor.name)}</div>
+        ${ctx.doctor.npi ? `<div><span class="label">NPI:</span> ${cell(ctx.doctor.npi)}</div>` : ''}
       </div>
       </div>
 
-      <div class="footer">Generated from MyclinicMD EMR.</div>
+      <div class="footer">Generated from MyclinicMD EMR</div>
     </div>
   </body>
 </html>`
 }
 
-function schedulePrint(target: Window): void {
-  const run = () => {
-    try {
-      target.focus()
-      target.print()
-    } catch {
-      // User can print manually from the preview tab.
-    }
-  }
-  if (target.document.readyState === 'complete') {
-    setTimeout(run, 400)
-  } else {
-    target.addEventListener('load', () => setTimeout(run, 400), { once: true })
-  }
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
 }
 
-const PRESCRIPTION_PRINT_STORAGE_PREFIX = 'prescription-print:'
+function scheduleRevokeObjectUrl(url: string): void {
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+}
 
 function removePrintIframe(iframe: HTMLIFrameElement): void {
   try {
@@ -243,18 +289,72 @@ function removePrintIframe(iframe: HTMLIFrameElement): void {
   }
 }
 
-function scheduleRevokeObjectUrl(url: string): void {
-  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+/**
+ * Full-page HTML wrapper that embeds the PDF in a 100%-sized iframe and triggers
+ * the print dialog once it loads. A zero-size iframe renders blank in Chrome, so
+ * the viewer must be full-size.
+ */
+function buildPdfViewerHtml(blobUrl: string, title: string): string {
+  const safeTitle = escapeHtml(title)
+  const safeSrc = escapeAttr(blobUrl)
+  return `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>${safeTitle}</title>
+    <style>
+      html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #525659; }
+      iframe { width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe id="rx-frame" src="${safeSrc}" title="${safeTitle}"></iframe>
+    <script>
+      var frame = document.getElementById('rx-frame');
+      function triggerPrint() {
+        setTimeout(function () {
+          try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+          } catch (e) {
+            try { window.focus(); window.print(); } catch (err) {}
+          }
+        }, 500);
+      }
+      if (frame.contentWindow && frame.contentWindow.document
+          && frame.contentWindow.document.readyState === 'complete') {
+        triggerPrint();
+      } else {
+        frame.addEventListener('load', triggerPrint, { once: true });
+      }
+    </script>
+  </body>
+</html>`
 }
 
-function printPdfBlob(blob: Blob): boolean {
-  const blobUrl = URL.createObjectURL(blob)
-  scheduleRevokeObjectUrl(blobUrl)
+/** Writes the PDF viewer into an already-opened (user-gesture) window. */
+function renderInWindow(target: Window, blobUrl: string, title: string): void {
+  try {
+    target.document.open()
+    target.document.write(buildPdfViewerHtml(blobUrl, title))
+    target.document.close()
+  } catch {
+    // Cross-origin or closed window — point it straight at the PDF instead.
+    try {
+      target.location.href = blobUrl
+    } catch {
+      /* nothing else we can do */
+    }
+  }
+}
 
+/** Fallback when no pre-opened window exists: print via a full-size offscreen iframe. */
+function printViaHiddenIframe(blobUrl: string): boolean {
   const iframe = document.createElement('iframe')
   iframe.setAttribute('title', 'Prescription print')
+  // Off-screen but full-size so Chrome's PDF viewer actually renders it.
   iframe.style.cssText =
-    'position:fixed;width:0;height:0;border:0;clip:rect(0,0,0,0);overflow:hidden'
+    'position:fixed;left:-10000px;top:0;width:800px;height:1130px;border:0;visibility:hidden'
   iframe.src = blobUrl
   document.body.appendChild(iframe)
 
@@ -266,7 +366,14 @@ function printPdfBlob(blob: Blob): boolean {
         removePrintIframe(iframe)
         return
       }
-      schedulePrint(frameWin)
+      window.setTimeout(() => {
+        try {
+          frameWin.focus()
+          frameWin.print()
+        } catch {
+          /* user can print manually */
+        }
+      }, 500)
       window.setTimeout(() => removePrintIframe(iframe), 60_000)
     },
     { once: true }
@@ -275,23 +382,39 @@ function printPdfBlob(blob: Blob): boolean {
   return true
 }
 
-/** Opens a print dialog with a U.S.-format prescription sheet (fax-style layout). */
-export async function printUsPrescriptions(ctx: PrescriptionPrintContext): Promise<boolean> {
+/**
+ * Opens a print dialog with a U.S.-format prescription PDF.
+ *
+ * `targetWindow` should be a window opened *synchronously* in the click handler
+ * (before any `await`) so the browser does not block it as a non-user-initiated
+ * popup. If omitted, falls back to an offscreen iframe in the current document.
+ */
+export async function printUsPrescriptions(
+  ctx: PrescriptionPrintContext,
+  targetWindow?: Window | null
+): Promise<boolean> {
+  let blobUrl: string
   try {
     const blob = await buildUsPrescriptionPdfBlob(ctx)
-    return printPdfBlob(blob)
+    blobUrl = URL.createObjectURL(blob)
+    scheduleRevokeObjectUrl(blobUrl)
   } catch {
-    /* fall through to HTML print tab */
-  }
-
-  try {
-    const storageKey = `${PRESCRIPTION_PRINT_STORAGE_PREFIX}${Date.now()}`
-    sessionStorage.setItem(storageKey, JSON.stringify(ctx))
-    const printUrl = new URL('/print/prescription', window.location.origin)
-    printUrl.searchParams.set('key', storageKey)
-    const printWindow = window.open(printUrl.toString(), '_blank')
-    return printWindow != null
-  } catch {
+    if (targetWindow && !targetWindow.closed) {
+      try {
+        targetWindow.close()
+      } catch {
+        /* ignore */
+      }
+    }
     return false
   }
+
+  const title = `Prescription — ${ctx.patient.name}`
+
+  if (targetWindow && !targetWindow.closed) {
+    renderInWindow(targetWindow, blobUrl, title)
+    return true
+  }
+
+  return printViaHiddenIframe(blobUrl)
 }

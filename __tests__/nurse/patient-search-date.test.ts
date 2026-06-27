@@ -53,6 +53,20 @@ describe('patient search date parsing', () => {
   it('parses year-only DOB into a range filter', () => {
     expect(buildPatientDobFilter('1993')).toEqual({ gte: '1993-01-01', lte: '1993-12-31' })
   })
+
+  it('parses month name only (any year)', () => {
+    expect(parseSearchDateParts('june')).toEqual({ month: '06' })
+    expect(parseSearchDateParts('juner')).toEqual({ month: '06' })
+    expect(buildPatientDobFilter('', 'june')).toEqual({ anyYearMonth: '06' })
+  })
+
+  it('parses day+month without year', () => {
+    expect(parseSearchDateParts('15 june')).toEqual({ month: '06', day: '15' })
+    expect(parseSearchDateParts('june 15')).toEqual({ month: '06', day: '15' })
+    expect(buildPatientDobFilter('', 'june', '15')).toEqual({
+      anyYearMonthDay: { month: '06', day: '15' },
+    })
+  })
 })
 
 describe('patient dob filter matching', () => {
@@ -66,6 +80,21 @@ describe('patient dob filter matching', () => {
     const filter = buildPatientDobFilter('1993', '06')
     expect(patientDobMatchesFilter('1993-06-08', filter)).toBe(true)
     expect(patientDobMatchesFilter('1993-07-01', filter)).toBe(false)
+  })
+
+  it('matches birth month across any year', () => {
+    const filter = buildPatientDobFilter('', 'june')
+    expect(patientDobMatchesFilter('1993-06-08', filter)).toBe(true)
+    expect(patientDobMatchesFilter('2001-06-15', filter)).toBe(true)
+    expect(patientDobMatchesFilter('1993-07-01', filter)).toBe(false)
+  })
+
+  it('matches birth day+month across any year', () => {
+    const filter = buildPatientDobFilter('', 'june', '15')
+    expect(patientDobMatchesFilter('1993-06-15', filter)).toBe(true)
+    expect(patientDobMatchesFilter('2001-06-15', filter)).toBe(true)
+    expect(patientDobMatchesFilter('1993-06-16', filter)).toBe(false)
+    expect(patientDobMatchesFilter('1993-07-15', filter)).toBe(false)
   })
 })
 
@@ -97,6 +126,39 @@ describe('patient search matching', () => {
     expect(patientMatchesFreeText(patient, '1993')).toBe(true)
     expect(patientMatchesFreeText(patient, '06081993')).toBe(true)
     expect(patientMatchesFreeText(patient, '1993-06-08')).toBe(true)
+  })
+
+  it('matches month name as DOB month and as patient name', () => {
+    expect(patientMatchesFreeText(patient, 'june')).toBe(true)
+    expect(patientMatchesFreeText(patient, 'juner')).toBe(true)
+    expect(
+      patientMatchesFreeText(
+        { ...patient, first_name: 'June', date_of_birth: '1980-03-01' },
+        'june'
+      )
+    ).toBe(true)
+    expect(
+      patientMatchesFreeText(
+        { ...patient, first_name: 'Maria', date_of_birth: '1980-07-01' },
+        'june'
+      )
+    ).toBe(false)
+  })
+
+  it('matches day+month across years', () => {
+    expect(patientMatchesFreeText(patient, '15 june')).toBe(false)
+    expect(
+      patientMatchesFreeText(
+        { ...patient, date_of_birth: '1993-06-15' },
+        '15 june'
+      )
+    ).toBe(true)
+    expect(
+      patientMatchesFreeText(
+        { ...patient, date_of_birth: '2005-06-15' },
+        '15 june'
+      )
+    ).toBe(true)
   })
 
   it('matches split names and phone digits', () => {

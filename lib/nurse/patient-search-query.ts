@@ -1,10 +1,12 @@
+import type { PatientSearchDobFilter } from '@/lib/nurse/patient-search-types'
+
 /** Sanitize free-text for PostgREST `.or()` — commas break the filter syntax. */
 export function sanitizePatientSearchTerm(raw: string): string {
   return raw.replace(/[,()]/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
 export type SearchDateParts = {
-  year: string
+  year?: string
   month?: string
   day?: string
 }
@@ -66,7 +68,26 @@ export function resolveMonthToken(raw: string): string | null {
   }
 
   const key = trimmed.toLowerCase().replace(/\./g, '')
-  return MONTH_NAME_TO_NUMBER[key] ?? null
+  const exact = MONTH_NAME_TO_NUMBER[key]
+  if (exact) return exact
+
+  // Prefix match for partial typing (e.g. "jun", "juner" → June).
+  if (key.length >= 3) {
+    const prefix = key.slice(0, 3)
+    const matchedNumbers = new Set<string>()
+    for (const [name, num] of Object.entries(MONTH_NAME_TO_NUMBER)) {
+      if (name.startsWith(prefix) || key.startsWith(name.slice(0, Math.min(key.length, name.length)))) {
+        matchedNumbers.add(num)
+      }
+    }
+    if (matchedNumbers.size === 1) return [...matchedNumbers][0]!
+    if (matchedNumbers.size > 1) {
+      const nums = [...matchedNumbers]
+      if (nums.every((n) => n === nums[0])) return nums[0]!
+    }
+  }
+
+  return null
 }
 
 function parseNamedMonthDate(trimmed: string): SearchDateParts | null {
@@ -189,6 +210,57 @@ function parseWithNativeDate(trimmed: string): SearchDateParts | null {
   )
 }
 
+/** Month name or day+month without year (e.g. "june", "15 june"). */
+function parsePartialNamedMonthDate(trimmed: string): SearchDateParts | null {
+  const dayMonthSpaced = trimmed.match(/^(\d{1,2})\s+([a-zA-Z\u00C0-\u024F]+)$/i)
+  if (dayMonthSpaced) {
+    const month = resolveMonthToken(dayMonthSpaced[2] ?? '')
+    const dayNum = Number(dayMonthSpaced[1])
+    if (month && Number.isFinite(dayNum) && dayNum >= 1 && dayNum <= 31) {
+      return { month, day: String(dayNum).padStart(2, '0') }
+    }
+  }
+
+  const monthDaySpaced = trimmed.match(/^([a-zA-Z\u00C0-\u024F]+)\s+(\d{1,2})$/i)
+  if (monthDaySpaced) {
+    const month = resolveMonthToken(monthDaySpaced[1] ?? '')
+    const dayNum = Number(monthDaySpaced[2])
+    if (month && Number.isFinite(dayNum) && dayNum >= 1 && dayNum <= 31) {
+      return { month, day: String(dayNum).padStart(2, '0') }
+    }
+  }
+
+  const dayMonthSep = trimmed.match(
+    new RegExp(`^(\\d{1,2})${DATE_SEP}([a-zA-Z\u00C0-\u024F]+)$`, 'i')
+  )
+  if (dayMonthSep) {
+    const month = resolveMonthToken(dayMonthSep[2] ?? '')
+    const dayNum = Number(dayMonthSep[1])
+    if (month && Number.isFinite(dayNum) && dayNum >= 1 && dayNum <= 31) {
+      return { month, day: String(dayNum).padStart(2, '0') }
+    }
+  }
+
+  const monthDaySep = trimmed.match(
+    new RegExp(`^([a-zA-Z\u00C0-\u024F]+)${DATE_SEP}(\\d{1,2})$`, 'i')
+  )
+  if (monthDaySep) {
+    const month = resolveMonthToken(monthDaySep[1] ?? '')
+    const dayNum = Number(monthDaySep[2])
+    if (month && Number.isFinite(dayNum) && dayNum >= 1 && dayNum <= 31) {
+      return { month, day: String(dayNum).padStart(2, '0') }
+    }
+  }
+
+  const monthOnly = trimmed.match(/^([a-zA-Z\u00C0-\u024F]+)$/i)
+  if (monthOnly) {
+    const month = resolveMonthToken(monthOnly[1] ?? '')
+    if (month) return { month }
+  }
+
+  return null
+}
+
 /** Parse free-text into year/month/day parts for DOB search (supports many formats). */
 export function parseSearchDateParts(raw: string): SearchDateParts | null {
   const trimmed = raw.trim()
@@ -230,6 +302,9 @@ export function parseSearchDateParts(raw: string): SearchDateParts | null {
   const namedMonthParsed = parseNamedMonthDate(trimmed)
   if (namedMonthParsed) return namedMonthParsed
 
+  const partialNamed = parsePartialNamedMonthDate(trimmed)
+  if (partialNamed) return partialNamed
+
   if (/\d/.test(trimmed) && /[a-zA-Z]/.test(trimmed)) {
     return parseWithNativeDate(trimmed)
   }
@@ -244,10 +319,10 @@ export function parseSearchDateParts(raw: string): SearchDateParts | null {
   return null
 }
 
-/** Full DOB match as YYYY-MM-DD when month and day are present. */
+/** Full DOB match as YYYY-MM-DD when year, month, and day are present. */
 export function parseSearchDateToIso(raw: string): string | null {
   const parts = parseSearchDateParts(raw)
-  if (!parts?.month || !parts.day) return null
+  if (!parts?.year || !parts.month || !parts.day) return null
   return `${parts.year}-${parts.month}-${parts.day}`
 }
 
@@ -272,31 +347,45 @@ export function looksLikeDateSearchInput(raw: string): boolean {
 }
 
 export function buildPatientDobFilter(
-  year: string,
+  year = '',
   month = '',
   day = ''
-): { eq?: string; gte?: string; lte?: string } | null {
-  if (!year) return null
+): PatientSearchDobFilter | null {
   const resolvedMonth = month ? resolveMonthToken(month) : null
   if (month && !resolvedMonth) return null
   const monthValue = resolvedMonth ?? ''
-  if (monthValue && day) {
+  const dayValue =
+    day && Number(day) >= 1 && Number(day) <= 31 ? String(Number(day)).padStart(2, '0') : ''
+
+  if (!year && monthValue && dayValue) {
+    return { anyYearMonthDay: { month: monthValue, day: dayValue } }
+  }
+  if (!year && monthValue) {
+    return { anyYearMonth: monthValue }
+  }
+  if (!year) return null
+
+  if (monthValue && dayValue) {
     return {
-      eq: `${year}-${monthValue.padStart(2, '0')}-${day.padStart(2, '0')}`,
+      eq: `${year}-${monthValue}-${dayValue}`,
     }
   }
   if (monthValue) {
     const lastDay = new Date(Number(year), Number(monthValue), 0).getDate()
     return {
-      gte: `${year}-${monthValue.padStart(2, '0')}-01`,
-      lte: `${year}-${monthValue.padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`,
+      gte: `${year}-${monthValue}-01`,
+      lte: `${year}-${monthValue}-${String(lastDay).padStart(2, '0')}`,
     }
   }
   return { gte: `${year}-01-01`, lte: `${year}-12-31` }
 }
 
-export function buildDobFilterFromSearch(raw: string): { eq?: string; gte?: string; lte?: string } | null {
+export function buildDobFilterFromSearch(raw: string): PatientSearchDobFilter | null {
   const parts = parseSearchDateParts(raw.trim())
   if (!parts) return null
-  return buildPatientDobFilter(parts.year, parts.month ?? '', parts.day ?? '')
+  return buildPatientDobFilter(parts.year ?? '', parts.month ?? '', parts.day ?? '')
+}
+
+export function isPartialDobFilter(filter: PatientSearchDobFilter | null | undefined): boolean {
+  return Boolean(filter?.anyYearMonth || filter?.anyYearMonthDay)
 }
