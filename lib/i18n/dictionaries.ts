@@ -1210,7 +1210,7 @@ const en: Dictionary = {
   'encounter_modal.rx_send_to_pharmacy_sending': 'Sending…',
   'encounter_modal.rx_send_to_pharmacy_last_sent': 'Last sent {datetime} · by {name}',
   'encounter_modal.rx_send_to_pharmacy_last_sent_no_name': 'Last sent {datetime}',
-  'encounter_modal.rx_print': 'Print prescription (U.S. format)',
+  'encounter_modal.rx_print': 'Print prescription',
   'encounter_modal.rx_printing': 'Preparing print…',
   'encounter_modal.rx_print_failed': 'Could not prepare prescription for printing.',
   'encounter_modal.rx_pharmacy_picker_no_matches': 'No matches',
@@ -2733,7 +2733,7 @@ const es: Dictionary = {
   'encounter_modal.rx_send_to_pharmacy_sending': 'Enviando…',
   'encounter_modal.rx_send_to_pharmacy_last_sent': 'Último envío: {datetime} · por {name}',
   'encounter_modal.rx_send_to_pharmacy_last_sent_no_name': 'Último envío: {datetime}',
-  'encounter_modal.rx_print': 'Imprimir receta (formato EE. UU.)',
+  'encounter_modal.rx_print': 'Imprimir receta',
   'encounter_modal.rx_printing': 'Preparando impresión…',
   'encounter_modal.rx_print_failed': 'Could not prepare prescription for printing.',
   'encounter_modal.rx_print_popup_blocked':

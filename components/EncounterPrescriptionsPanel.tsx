@@ -436,7 +436,7 @@ export function EncounterPrescriptionsPanel({
                   showEditButton
                 />
                 {rows.length > 0 && (editable || canManagePharmacy) && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <button
                       type="button"
                       disabled={printing || saving || isEditingSaved}
