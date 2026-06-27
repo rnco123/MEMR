@@ -807,7 +807,6 @@ function NurseFlowboardPage() {
               </div>
             )}
             <div className="hidden lg:grid lg:grid-cols-12 gap-4 px-6 py-3 bg-slate-50 border-b border-slate-200 text-xs font-semibold text-slate-500 uppercase tracking-wide">
-              <div className="col-span-1" />
               <div className="col-span-3">{t('flow.col_patient')}</div>
               <div className="col-span-2">{t('flow.col_status')}</div>
               <div className="col-span-2">{t('flow.col_appointment')}</div>
@@ -841,21 +840,19 @@ function NurseFlowboardPage() {
                     aria-hidden
                   />
                   <div className="grid flex-1 grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 min-w-0">
-                  <div
-                    className="lg:col-span-1 flex items-center"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="lg:col-span-3 flex items-center gap-3">
                     {isAppointmentAssignable(appointment) ? (
                       <input
                         type="checkbox"
-                        className="h-4 w-4 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+                        className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
                         checked={selectedAppointmentIds.has(appointment.id)}
                         onChange={(e) => toggleAppointmentSelection(appointment.id, e.target.checked)}
+                        onClick={(e) => e.stopPropagation()}
                         aria-label={t('flow.batch_select_page')}
                       />
-                    ) : null}
-                  </div>
-                  <div className="lg:col-span-3 flex items-center gap-3">
+                    ) : (
+                      <span className="hidden lg:block w-4 shrink-0" aria-hidden />
+                    )}
                     <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 text-sm">
                       {appointment.patient?.first_name?.charAt(0) || '?'}{appointment.patient?.last_name?.charAt(0) || ''}
                     </div>

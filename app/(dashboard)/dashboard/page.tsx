@@ -11,6 +11,7 @@ import { useT } from '@/lib/i18n'
 import { formatClinicDateOnly, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { AssignedLocationsPanel } from '@/components/AssignedLocationsPanel'
+import { getStatusBadgeClasses, getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 
 interface UpcomingAppointment {
   id: string
@@ -506,11 +507,23 @@ function DashboardPage() {
                         )}
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          {!appt.status || appt.status === 'scheduled'
+                        {(() => {
+                          const isScheduled = !appt.status || appt.status === 'scheduled'
+                          const statusLabel = isScheduled
                             ? t('common.scheduled')
-                            : appt.status.charAt(0).toUpperCase() + appt.status.slice(1)}
-                        </span>
+                            : getStatusInfo(appt.status as EncounterStatus)?.label ??
+                              appt.status.replace(/_/g, ' ')
+                          const badgeClass = isScheduled
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : getStatusBadgeClasses(appt.status)
+                          return (
+                            <span
+                              className={`px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass}`}
+                            >
+                              {statusLabel}
+                            </span>
+                          )
+                        })()}
                         <button
                           type="button"
                           onClick={() => void startConsultation(appt)}
