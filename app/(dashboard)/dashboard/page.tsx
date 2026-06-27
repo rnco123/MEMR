@@ -509,13 +509,14 @@ function DashboardPage() {
                       <div className="flex items-center gap-2">
                         {(() => {
                           const isScheduled = !appt.status || appt.status === 'scheduled'
+                          const encounterStatus = appt.status ?? ''
                           const statusLabel = isScheduled
                             ? t('common.scheduled')
-                            : getStatusInfo(appt.status as EncounterStatus)?.label ??
-                              appt.status.replace(/_/g, ' ')
+                            : getStatusInfo(encounterStatus as EncounterStatus)?.label ??
+                              encounterStatus.replace(/_/g, ' ')
                           const badgeClass = isScheduled
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : getStatusBadgeClasses(appt.status)
+                            : getStatusBadgeClasses(encounterStatus)
                           return (
                             <span
                               className={`px-2.5 py-1 rounded-full text-xs font-medium border ${badgeClass}`}
