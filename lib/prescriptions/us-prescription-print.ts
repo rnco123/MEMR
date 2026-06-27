@@ -3,6 +3,7 @@ import {
   formatUsRxMedicationLine,
   formatUsRxSig,
 } from '@/lib/prescriptions/format-us-rx-sig'
+import { buildUsPrescriptionPdfBlob } from '@/lib/prescriptions/us-prescription-pdf'
 import type { PrescriptionPrintContext } from '@/lib/prescriptions/load-prescription-print-context'
 
 function escapeHtml(value: string): string {
@@ -70,6 +71,9 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
         max-width: 7.5in;
         margin: 0 auto;
       }
+      .sheet-body {
+        flex: 1 1 auto;
+      }
       .header {
         border-bottom: 2px solid #111;
         padding-bottom: 10px;
@@ -133,25 +137,30 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
         padding-top: 12px;
         border-top: 1px solid #999;
       }
-      .signature-line {
-        margin-top: 28px;
-        border-top: 1px solid #111;
-        width: 280px;
-        padding-top: 4px;
-        font-size: 10.5pt;
-      }
       .footer {
         margin-top: 18px;
         font-size: 9pt;
         color: #555;
       }
       @media print {
+        html, body {
+          height: 100%;
+        }
         body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+        .sheet {
+          min-height: 100%;
+          display: flex;
+          flex-direction: column;
+        }
+        .footer {
+          margin-top: auto;
+        }
       }
     </style>
   </head>
   <body>
     <div class="sheet">
+      <div class="sheet-body">
       <header class="header">
         <div class="clinic-name">${cell(ctx.clinic.name || 'Clinic')}</div>
         <div class="clinic-meta">
@@ -179,7 +188,6 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
           <div class="field"><span class="label">NPI:</span> ${cell(ctx.doctor.npi)}</div>
           ${ctx.doctor.specialty ? `<div class="field"><span class="label">Specialty:</span> ${cell(ctx.doctor.specialty)}</div>` : ''}
           ${ctx.doctor.phone ? `<div class="field"><span class="label">Phone:</span> ${cell(ctx.doctor.phone)}</div>` : ''}
-          ${ctx.doctor.email ? `<div class="field"><span class="label">Email:</span> ${cell(ctx.doctor.email)}</div>` : ''}
         </div>
       </div>
 
@@ -200,25 +208,90 @@ export function buildUsPrescriptionPrintHtml(ctx: PrescriptionPrintContext): str
       <div class="signature-block">
         <div class="field"><span class="label">Electronically prescribed by:</span> ${cell(ctx.doctor.name)}</div>
         ${ctx.doctor.npi ? `<div class="field"><span class="label">NPI:</span> ${cell(ctx.doctor.npi)}</div>` : ''}
-        <div class="signature-line">Prescriber signature</div>
+      </div>
       </div>
 
-      <div class="footer">
-        Generated from clinic EMR. For pharmacy fulfillment — U.S. prescription format with SIG, NPI, and full medication details.
-      </div>
+      <div class="footer">Generated from MyclinicMD EMR.</div>
     </div>
-    <script>window.onload = function () { window.print(); };</script>
   </body>
 </html>`
 }
 
-/** Opens a print dialog with a U.S.-format prescription sheet (fax-style layout). */
-export function printUsPrescriptions(ctx: PrescriptionPrintContext): boolean {
-  const html = buildUsPrescriptionPrintHtml(ctx)
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer')
-  if (!printWindow) return false
-  printWindow.document.open()
-  printWindow.document.write(html)
-  printWindow.document.close()
+function schedulePrint(target: Window): void {
+  const run = () => {
+    try {
+      target.focus()
+      target.print()
+    } catch {
+      // User can print manually from the preview tab.
+    }
+  }
+  if (target.document.readyState === 'complete') {
+    setTimeout(run, 400)
+  } else {
+    target.addEventListener('load', () => setTimeout(run, 400), { once: true })
+  }
+}
+
+const PRESCRIPTION_PRINT_STORAGE_PREFIX = 'prescription-print:'
+
+function removePrintIframe(iframe: HTMLIFrameElement): void {
+  try {
+    document.body.removeChild(iframe)
+  } catch {
+    /* already removed */
+  }
+}
+
+function scheduleRevokeObjectUrl(url: string): void {
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+}
+
+function printPdfBlob(blob: Blob): boolean {
+  const blobUrl = URL.createObjectURL(blob)
+  scheduleRevokeObjectUrl(blobUrl)
+
+  const iframe = document.createElement('iframe')
+  iframe.setAttribute('title', 'Prescription print')
+  iframe.style.cssText =
+    'position:fixed;width:0;height:0;border:0;clip:rect(0,0,0,0);overflow:hidden'
+  iframe.src = blobUrl
+  document.body.appendChild(iframe)
+
+  iframe.addEventListener(
+    'load',
+    () => {
+      const frameWin = iframe.contentWindow
+      if (!frameWin) {
+        removePrintIframe(iframe)
+        return
+      }
+      schedulePrint(frameWin)
+      window.setTimeout(() => removePrintIframe(iframe), 60_000)
+    },
+    { once: true }
+  )
+
   return true
+}
+
+/** Opens a print dialog with a U.S.-format prescription sheet (fax-style layout). */
+export async function printUsPrescriptions(ctx: PrescriptionPrintContext): Promise<boolean> {
+  try {
+    const blob = await buildUsPrescriptionPdfBlob(ctx)
+    return printPdfBlob(blob)
+  } catch {
+    /* fall through to HTML print tab */
+  }
+
+  try {
+    const storageKey = `${PRESCRIPTION_PRINT_STORAGE_PREFIX}${Date.now()}`
+    sessionStorage.setItem(storageKey, JSON.stringify(ctx))
+    const printUrl = new URL('/print/prescription', window.location.origin)
+    printUrl.searchParams.set('key', storageKey)
+    const printWindow = window.open(printUrl.toString(), '_blank')
+    return printWindow != null
+  } catch {
+    return false
+  }
 }

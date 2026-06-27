@@ -9,6 +9,7 @@ import {
   PRESCRIPTION_SELECT_LEGACY,
   type EncounterRxRow,
 } from '@/lib/prescriptions/encounter-prescriptions'
+import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
 import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
 
 export type PrescriptionPrintPatient = {
@@ -154,14 +155,12 @@ export async function loadPrescriptionPrintContext(
       .maybeSingle()
 
     if (pharmacyRow) {
-      const fallbackAddress = [pharmacyRow.city, pharmacyRow.state, pharmacyRow.zip_code]
-        .filter(Boolean)
-        .join(', ')
+      const normalized = normalizePharmacyRow(pharmacyRow as Record<string, unknown>)
       pharmacy = {
-        name: (pharmacyRow.name as string | null) ?? null,
-        address: ((pharmacyRow.address as string | null) ?? fallbackAddress) || null,
-        phone: ((pharmacyRow.phone ?? pharmacyRow.phone_number) as string | null) ?? null,
-        email: (pharmacyRow.email as string | null) ?? null,
+        name: normalized.name,
+        address: normalized.address,
+        phone: normalized.phone,
+        email: normalized.email,
       }
     }
   }

@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
 import { fetchProfileFields } from '@/lib/fetch-user-role'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { toDateInputValue } from '@/lib/datetime/date-input'
+import { normalizePatientGender } from '@/lib/encounter/patient-gender'
 import {
   canEditEncounterSoap,
   canEditSoapByRole,
@@ -72,8 +74,8 @@ export function normalizePatientRow(row: Record<string, unknown>): EncounterPati
     last_name: String(row.last_name ?? '').trim(),
     email: normalizeNullable(row.email as string | null),
     phone: normalizeNullable(row.phone as string | null),
-    gender: normalizeNullable(row.gender as string | null),
-    date_of_birth: row.date_of_birth ? String(row.date_of_birth).slice(0, 10) : null,
+    gender: normalizePatientGender(row.gender as string | null),
+    date_of_birth: row.date_of_birth ? toDateInputValue(String(row.date_of_birth)) || null : null,
     street_address: normalizeNullable(row.street_address as string | null),
     state: normalizeNullable(row.state as string | null),
     zip_code: normalizeNullable(row.zip_code as string | null),
@@ -199,8 +201,8 @@ export async function saveEncounterPatientInfo(
     last_name: args.payload.last_name.trim(),
     email: normalizeNullable(args.payload.email),
     phone: normalizeNullable(args.payload.phone),
-    gender: normalizeNullable(args.payload.gender),
-    date_of_birth: args.payload.date_of_birth?.trim() || null,
+    gender: normalizePatientGender(args.payload.gender),
+    date_of_birth: args.payload.date_of_birth ? toDateInputValue(args.payload.date_of_birth) || null : null,
     street_address: normalizeNullable(args.payload.street_address),
     state: normalizeNullable(args.payload.state),
     zip_code: normalizeNullable(args.payload.zip_code),

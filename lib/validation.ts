@@ -406,9 +406,15 @@ export type DoctorSoapSaveInput = z.infer<typeof doctorSoapSaveSchema>
 export const patientInfoSaveSchema = z.object({
   first_name: z.string().min(1, 'First name is required').max(100).trim(),
   last_name: z.string().min(1, 'Last name is required').max(100).trim(),
-  email: z.union([z.string().email(), z.literal(''), z.null()]).optional(),
+  email: z.union([z.string().max(200), z.literal(''), z.null()]).optional(),
   phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
-  gender: z.union([z.enum(['male', 'female', 'other']), z.literal(''), z.null()]).optional(),
+  gender: z
+    .union([
+      z.enum(['male', 'female', 'other', 'Male', 'Female', 'Other', 'M', 'F']),
+      z.literal(''),
+      z.null(),
+    ])
+    .optional(),
   date_of_birth: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),
   street_address: z.union([z.string().max(500), z.literal(''), z.null()]).optional(),
   state: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),

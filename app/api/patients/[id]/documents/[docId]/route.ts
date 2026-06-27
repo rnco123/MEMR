@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { requireClinicalRole } from '@/lib/locations/scope'
 import { guardPatientAccess } from '@/lib/encounters/guard'
+import { handleApiError } from '@/lib/api-error-handler'
 import { NextRequest, NextResponse } from 'next/server'
 
 // Force dynamic rendering since we use cookies for authentication
@@ -37,9 +37,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    await guardPatientAccess(user.id, patientId)
-
-    const supabaseAdmin = createAdminClient()
+    const supabaseAdmin = await guardPatientAccess(user.id, patientId)
 
     const { data: document, error: fetchError } = await supabaseAdmin
       .from('patient_documents')
@@ -78,7 +76,6 @@ export async function DELETE(
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error in DELETE /api/patients/[id]/documents/[docId]:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }

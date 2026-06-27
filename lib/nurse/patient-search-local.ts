@@ -35,6 +35,23 @@ function normalizeNullableString(value: string | null | undefined): string | nul
   return trimmed.length > 0 ? trimmed : null
 }
 
+function looksLikePhoneInput(trimmed: string): boolean {
+  const digits = trimmed.replace(/\D/g, '')
+  if (digits.length < 10 || digits.length > 11) return false
+  if (parseSearchDateParts(trimmed)) return false
+  return /[\s().+-]/.test(trimmed) || digits.length >= 10
+}
+
+function parsePersonName(trimmed: string): { first: string; last: string } | null {
+  const parts = trimmed.split(/\s+/).filter(Boolean)
+  if (parts.length < 2 || parts.length > 4) return null
+  if (!parts.every((part) => /^[\p{L}'-]+$/u.test(part))) return null
+  return {
+    first: parts[0]!,
+    last: parts.slice(1).join(' '),
+  }
+}
+
 export function parsedPatientSearchFromFields(
   raw: string,
   output: LocalParseInput,
@@ -144,8 +161,7 @@ export function parsePatientSearchLocally(
     )
   }
 
-  const digitsOnly = trimmed.replace(/\D/g, '')
-  if (digitsOnly.length >= 10 && digitsOnly.length <= 11 && /[\d\s().+-]/.test(trimmed)) {
+  if (looksLikePhoneInput(trimmed)) {
     return parsedPatientSearchFromFields(
       trimmed,
       {
@@ -167,7 +183,7 @@ export function parsePatientSearchLocally(
   }
 
   const asInt = Number(trimmed)
-  if (Number.isInteger(asInt) && asInt > 0 && /^\d+$/.test(trimmed)) {
+  if (Number.isInteger(asInt) && asInt > 0 && /^\d+$/.test(trimmed) && !/^0/.test(trimmed)) {
     return parsedPatientSearchFromFields(
       trimmed,
       {
@@ -175,6 +191,28 @@ export function parsePatientSearchLocally(
         patient_id: asInt,
         first_name: null,
         last_name: null,
+        email: null,
+        phone: null,
+        dob_year: null,
+        dob_month: null,
+        dob_day: null,
+        provider_name: null,
+        general_query: null,
+      },
+      'local',
+      includeProvider
+    )
+  }
+
+  const personName = parsePersonName(trimmed)
+  if (personName) {
+    return parsedPatientSearchFromFields(
+      trimmed,
+      {
+        search_intent: 'person_name',
+        patient_id: null,
+        first_name: personName.first,
+        last_name: personName.last,
         email: null,
         phone: null,
         dob_year: null,

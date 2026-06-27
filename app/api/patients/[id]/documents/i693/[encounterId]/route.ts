@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { mergeI693Form } from '@/lib/i693/types'
@@ -10,6 +9,7 @@ import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
 import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
+import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -35,7 +35,9 @@ export async function GET(
     const roleInfo = await fetchUserRole(supabase, user.id)
     if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
 
-    const admin = createAdminClient()
+    // Location-scoped access check: prevents fetching another clinic's I-693 PDF
+    // by guessing patientId + encounterId. Returns admin client after the check.
+    const admin = await guardI693EncounterAccess(user.id, encounterId)
     const { data: sub, error } = await admin
       .from('i693_submissions')
       .select('form_data, pdf_storage_path, patient_id, annotations')

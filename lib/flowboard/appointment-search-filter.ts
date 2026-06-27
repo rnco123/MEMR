@@ -1,7 +1,8 @@
-import { matchDob } from '@/components/SearchByDobDropdowns'
+import { patientDobMatchesSearchParts } from '@/lib/nurse/patient-dob-match'
 import { parseSearchDateParts } from '@/lib/nurse/patient-search-query'
 import {
   appointmentMatchesParsedSearch,
+  patientMatchesFreeText,
   patientMatchesParsedSearch,
 } from '@/lib/nurse/patient-search-apply'
 import type { ParsedPatientSearch } from '@/lib/nurse/patient-search-types'
@@ -29,26 +30,22 @@ export function appointmentMatchesSearchQuery(
 
   const dateParts = parseSearchDateParts(query)
   if (dateParts) {
-    return matchDob(
-      appointment.patient?.date_of_birth,
-      dateParts.year,
-      dateParts.month ?? '',
-      dateParts.day ?? ''
-    )
+    return patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)
   }
 
-  const q = query.toLowerCase()
-  const patient = appointment.patient
-
-  return (
-    appointment.patient_id.toString().includes(q) ||
-    (patient?.first_name ?? '').toLowerCase().includes(q) ||
-    (patient?.last_name ?? '').toLowerCase().includes(q) ||
-    (patient?.email ?? '').toLowerCase().includes(q) ||
-    (patient?.phone ?? '').includes(q) ||
-    (Boolean(options?.includeProvider) &&
-      (appointment.assigned_doctor?.full_name ?? '').toLowerCase().includes(q))
+  const patientMatch = patientMatchesFreeText(
+    {
+      id: appointment.patient_id,
+      ...appointment.patient,
+    },
+    query
   )
+  if (patientMatch) return true
+
+  if (options?.includeProvider) {
+    return (appointment.assigned_doctor?.full_name ?? '').toLowerCase().includes(query.toLowerCase())
+  }
+  return false
 }
 
 export function appointmentMatchesParsedPatientSearch(

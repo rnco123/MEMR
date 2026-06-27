@@ -6,6 +6,7 @@ import {
   parsePatientSearchLocally,
   parsedPatientSearchFromFields,
 } from '@/lib/nurse/patient-search-local'
+import { parseSearchDateParts } from '@/lib/nurse/patient-search-query'
 import { emptyParsedPatientSearch, type ParsedPatientSearch } from '@/lib/nurse/patient-search-types'
 
 export { parsePatientSearchLocally } from '@/lib/nurse/patient-search-local'
@@ -95,7 +96,7 @@ async function parsePatientSearchWithOpenAI(
   )
 }
 
-/** OpenAI tool parse with local regex fallback. */
+/** OpenAI tool parse first, then local regex/heuristic fallback. */
 export async function resolvePatientSearch(
   raw: string,
   options: { includeProvider?: boolean } = {}
@@ -105,7 +106,32 @@ export async function resolvePatientSearch(
 
   try {
     const aiParsed = await parsePatientSearchWithOpenAI(trimmed, options)
-    if (aiParsed) return aiParsed
+    if (aiParsed) {
+      if (!aiParsed.dobFilter) {
+        const dateParts = parseSearchDateParts(trimmed)
+        if (dateParts) {
+          return parsedPatientSearchFromFields(
+            trimmed,
+            {
+              search_intent: 'date_of_birth',
+              patient_id: null,
+              first_name: null,
+              last_name: null,
+              email: null,
+              phone: null,
+              dob_year: dateParts.year,
+              dob_month: dateParts.month ?? null,
+              dob_day: dateParts.day ?? null,
+              provider_name: null,
+              general_query: null,
+            },
+            'local',
+            Boolean(options.includeProvider)
+          )
+        }
+      }
+      return aiParsed
+    }
   } catch (err) {
     console.warn('[resolvePatientSearch] OpenAI parse failed, using local fallback:', err)
   }

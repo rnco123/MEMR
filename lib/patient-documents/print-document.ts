@@ -12,39 +12,75 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-/** Opens the browser print dialog for a patient document (PDF or image). */
-export function printPatientDocument(doc: PrintablePatientDocument): void {
-  const url = doc.file_url?.trim()
-  if (!url) return
+function escapeAttr(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+}
 
-  const fileType = doc.file_type || ''
+function scheduleRevokeObjectUrl(url: string): void {
+  window.setTimeout(() => URL.revokeObjectURL(url), 120_000)
+}
 
-  if (fileType === 'application/pdf') {
-    const printWindow = window.open(url, '_blank', 'noopener,noreferrer')
-    if (!printWindow) return
-
-    const triggerPrint = () => {
-      try {
-        printWindow.focus()
-        printWindow.print()
-      } catch {
-        // Browser PDF viewer may block programmatic print; user can print manually.
-      }
-    }
-
-    printWindow.addEventListener('load', triggerPrint)
-    window.setTimeout(triggerPrint, 1500)
-    return
+function isSameOriginDocumentUrl(url: string): boolean {
+  if (url.startsWith('/')) return true
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin
+  } catch {
+    return false
   }
+}
 
-  if (fileType.startsWith('image/')) {
-    const printWindow = window.open('', '_blank', 'noopener,noreferrer')
-    if (!printWindow) return
+async function fetchDocumentBlob(url: string): Promise<Response> {
+  const init: RequestInit | undefined = isSameOriginDocumentUrl(url)
+    ? { credentials: 'include' }
+    : undefined
+  return fetch(url, init)
+}
 
-    const safeTitle = escapeHtml(doc.document_name)
-    const safeUrl = url.replace(/"/g, '&quot;')
+function openPrintWindow(html: string): Window | null {
+  const printWindow = window.open('', '_blank')
+  if (!printWindow) return null
+  printWindow.document.open()
+  printWindow.document.write(html)
+  printWindow.document.close()
+  return printWindow
+}
 
-    printWindow.document.write(`<!DOCTYPE html>
+function buildPdfPrintHtml(blobUrl: string, title: string): string {
+  const safeTitle = escapeHtml(title)
+  const safeSrc = escapeAttr(blobUrl)
+  return `<!DOCTYPE html>
+<html>
+  <head>
+    <title>${safeTitle}</title>
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; }
+      iframe { width: 100%; height: 100%; border: 0; }
+    </style>
+  </head>
+  <body>
+    <iframe id="print-frame" src="${safeSrc}"></iframe>
+    <script>
+      var frame = document.getElementById('print-frame');
+      frame.onload = function () {
+        setTimeout(function () {
+          try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+          } catch (e) {
+            window.focus();
+            window.print();
+          }
+        }, 400);
+      };
+    </script>
+  </body>
+</html>`
+}
+
+function buildImagePrintHtml(blobUrl: string, title: string): string {
+  const safeTitle = escapeHtml(title)
+  const safeSrc = escapeAttr(blobUrl)
+  return `<!DOCTYPE html>
 <html>
   <head>
     <title>${safeTitle}</title>
@@ -55,12 +91,50 @@ export function printPatientDocument(doc: PrintablePatientDocument): void {
     </style>
   </head>
   <body>
-    <img src="${safeUrl}" alt="${safeTitle}" onload="window.print()" />
+    <img src="${safeSrc}" alt="${safeTitle}" onload="setTimeout(function(){ window.focus(); window.print(); }, 100)" />
   </body>
-</html>`)
-    printWindow.document.close()
-    return
-  }
+</html>`
+}
 
-  window.open(url, '_blank', 'noopener,noreferrer')
+/** Opens the browser print dialog for a patient document (PDF or image). */
+export async function printPatientDocument(doc: PrintablePatientDocument): Promise<boolean> {
+  const url = doc.file_url?.trim()
+  if (!url) return false
+
+  const fileType = doc.file_type || ''
+
+  try {
+    const response = await fetchDocumentBlob(url)
+    if (!response.ok) {
+      return openDirectUrl(url)
+    }
+
+    const blob = await response.blob()
+    const blobUrl = URL.createObjectURL(blob)
+    scheduleRevokeObjectUrl(blobUrl)
+
+    const resolvedType = fileType || blob.type || ''
+    const isPdf = resolvedType === 'application/pdf' || blob.type === 'application/pdf'
+    const isImage = resolvedType.startsWith('image/') || blob.type.startsWith('image/')
+
+    if (isPdf) {
+      const win = openPrintWindow(buildPdfPrintHtml(blobUrl, doc.document_name))
+      return win != null
+    }
+
+    if (isImage) {
+      const win = openPrintWindow(buildImagePrintHtml(blobUrl, doc.document_name))
+      return win != null
+    }
+
+    const win = window.open(blobUrl, '_blank')
+    return win != null
+  } catch {
+    return openDirectUrl(url)
+  }
+}
+
+function openDirectUrl(url: string): boolean {
+  const win = window.open(url, '_blank', 'noopener,noreferrer')
+  return win != null
 }

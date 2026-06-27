@@ -1,6 +1,7 @@
 'use client'
 
 import { useT } from '@/lib/i18n'
+import { matchDobParts } from '@/lib/nurse/patient-dob-match'
 
 const CURRENT_YEAR = new Date().getFullYear()
 const YEARS = Array.from({ length: CURRENT_YEAR - 1919 }, (_, i) => CURRENT_YEAR - i)
@@ -116,11 +117,5 @@ export function matchDob(
   month: string,
   day: string
 ): boolean {
-  if (!dateOfBirth) return false
-  const [y, m, d] = dateOfBirth.split('-')
-  if (!y) return false
-  if (year && y !== year) return false
-  if (month && m !== month) return false
-  if (day && d !== day) return false
-  return true
+  return matchDobParts(dateOfBirth, year, month, day)
 }

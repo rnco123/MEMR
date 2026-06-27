@@ -211,6 +211,12 @@ export function parseSearchDateParts(raw: string): SearchDateParts | null {
   const slashParsed = parseSlashSeparatedDate(trimmed)
   if (slashParsed) return slashParsed
 
+  const isoCompact = trimmed.match(/^(\d{4})(\d{2})(\d{2})$/)
+  if (isoCompact && isValidYear(isoCompact[1] ?? '')) {
+    const parsed = normalizeDateParts(isoCompact[1] ?? '', isoCompact[2], isoCompact[3])
+    if (parsed) return parsed
+  }
+
   const compactMdy = trimmed.match(/^(\d{1,2})(\d{2})(\d{4})$/)
   if (compactMdy) {
     return normalizeDateParts(compactMdy[3] ?? '', compactMdy[1], compactMdy[2])
@@ -253,6 +259,7 @@ export function looksLikeDateSearchInput(raw: string): boolean {
   if (new RegExp(`^\\d{1,2}${DATE_SEP}\\d{1,2}(${DATE_SEP}\\d{0,4})?$`).test(trimmed)) return true
   if (new RegExp(`^\\d{1,2}${DATE_SEP}\\d{2,4}$`).test(trimmed)) return true
   if (/^(\d{1,2})(\d{2})(\d{0,4})$/.test(trimmed)) return true
+  if (/^(\d{4})(\d{2})(\d{2})$/.test(trimmed)) return true
   if (/^[a-zA-Z\u00C0-\u024F]+\s+\d/.test(trimmed)) return true
   if (/^\d{1,2}\s+[a-zA-Z\u00C0-\u024F]+\s+\d/.test(trimmed)) return true
   if (

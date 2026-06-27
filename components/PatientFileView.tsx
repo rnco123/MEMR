@@ -720,14 +720,16 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
         const data = await response.json()
         setDocuments(data.documents || [])
       } else {
-        console.error('Failed to fetch documents')
+        const err = await response.json().catch(() => ({}))
+        console.error('Failed to fetch documents', err)
+        alert(err.error || t('patient_file.alert_load_docs_failed'))
       }
     } catch (error) {
       console.error('Error fetching documents:', error)
     } finally {
       setLoadingDocuments(false)
     }
-  }, [patientId])
+  }, [patientId, t])
 
   // Load documents when documents tab is active
   useEffect(() => {
@@ -801,7 +803,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
 
       if (response.ok) {
         const data = await response.json()
-        setDocuments([data.document, ...documents])
+        setDocuments((prev) => [data.document, ...prev])
         setShowUploadModal(false)
         setUploadForm({
           file: null,
@@ -830,14 +832,17 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     setShowDeleteConfirm(true)
   }
 
-  const handlePrintDocument = useCallback((doc: PatientDocument) => {
+  const handlePrintDocument = useCallback(async (doc: PatientDocument) => {
     if (!doc.file_url) return
-    printPatientDocument({
+    const ok = await printPatientDocument({
       file_url: doc.file_url,
       file_type: doc.file_type || 'application/pdf',
       document_name: doc.document_name,
     })
-  }, [])
+    if (!ok) {
+      alert(t('patient_file.print_popup_blocked'))
+    }
+  }, [t])
 
   // Handle document deletion
   const handleDeleteDocument = async () => {
@@ -851,7 +856,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       })
 
       if (response.ok) {
-        setDocuments(documents.filter((doc) => doc.id !== documentToDelete))
+        setDocuments((prev) => prev.filter((doc) => doc.id !== documentToDelete))
         setShowDeleteConfirm(false)
         setDocumentToDelete(null)
       } else {

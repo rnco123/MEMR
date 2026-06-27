@@ -1,11 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getI693BasePath } from '@/lib/i693/paths'
 import { listImmigrationDocumentsForPatient } from '@/lib/patient-documents/immigration-docs'
 import { requireClinicalRole } from '@/lib/locations/scope'
 import { guardPatientAccess } from '@/lib/encounters/guard'
+import { handleApiError } from '@/lib/api-error-handler'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -34,10 +34,10 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    await guardPatientAccess(user.id, patientId)
+    const supabaseAdmin = await guardPatientAccess(user.id, patientId)
 
-    // Fetch documents
-    const { data: documents, error } = await supabase
+    // Service role after access check — JWT RLS omits admin/fnp/pa.
+    const { data: documents, error } = await supabaseAdmin
       .from('patient_documents')
       .select('*')
       .eq('patient_id', patientId)
@@ -50,8 +50,6 @@ export async function GET(
       )
     }
 
-    // Use admin client for storage so bucket RLS cannot block listing/signed URLs
-    const supabaseAdmin = createAdminClient()
     const getDocumentUrl = async (filePath: string, bucket = 'patient-documents'): Promise<string> => {
       const { data } = await supabaseAdmin.storage
         .from(bucket)
@@ -67,11 +65,11 @@ export async function GET(
         // Use signed URL (1h) so doc opens in viewer even when bucket is private
         const fileUrl = doc.file_path ? await getDocumentUrl(doc.file_path) : ''
 
-        // Fetch uploader name from profiles
-        let uploadedByName = null
+        // Fetch uploader name from profiles, or use stored name (e.g. patient intake uploads)
+        let uploadedByName: string | null = doc.uploaded_by_name ?? null
         if (doc.uploaded_by) {
           try {
-            const { data: profile, error: profileError } = await supabase
+            const { data: profile, error: profileError } = await supabaseAdmin
               .from('profiles')
               .select('full_name, email')
               .eq('uid', doc.uploaded_by)
@@ -116,8 +114,7 @@ export async function GET(
 
     return NextResponse.json({ documents: merged })
   } catch (error) {
-    console.error('Error in GET /api/patients/[id]/documents:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }
 
@@ -149,7 +146,7 @@ export async function POST(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    await guardPatientAccess(user.id, patientId)
+    const supabaseAdmin = await guardPatientAccess(user.id, patientId)
 
     const formData = await request.formData()
     const file = formData.get('file') as File
@@ -207,8 +204,6 @@ export async function POST(
     const fileName = generateSecureFileName(file.name)
     const filePath = `patient-${patientId}/${fileName}`
 
-    const supabaseAdmin = createAdminClient()
-
     const { error: uploadError } = await supabaseAdmin.storage
       .from('patient-documents')
       .upload(filePath, file, {
@@ -256,11 +251,11 @@ export async function POST(
     }
 
     // Transform document to match frontend interface (same format as GET endpoint)
-    // Fetch uploader name from profiles
-    let uploadedByName = null
+    // Fetch uploader name from profiles, or use stored name (e.g. patient intake uploads)
+    let uploadedByName: string | null = document.uploaded_by_name ?? null
     if (document.uploaded_by) {
       try {
-        const { data: profile, error: profileError } = await supabase
+        const { data: profile, error: profileError } = await supabaseAdmin
           .from('profiles')
           .select('full_name, email')
           .eq('uid', document.uploaded_by)
@@ -291,7 +286,6 @@ export async function POST(
 
     return NextResponse.json({ document: transformedDocument }, { status: 201 })
   } catch (error) {
-    console.error('Error in POST /api/patients/[id]/documents:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }

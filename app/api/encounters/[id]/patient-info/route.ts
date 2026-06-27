@@ -15,6 +15,8 @@ import {
   saveEncounterPatientInfo,
   type PatientInfoUpdatePayload,
 } from '@/lib/encounter/encounter-patient-info'
+import { normalizePatientGender } from '@/lib/encounter/patient-gender'
+import { toDateInputValue } from '@/lib/datetime/date-input'
 import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 
 export const dynamic = 'force-dynamic'
@@ -30,13 +32,14 @@ function normalizePayload(input: PatientInfoSaveInput): PatientInfoUpdatePayload
     if (v == null || v === '') return null
     return v.trim() || null
   }
+  const dobRaw = emptyToNull(input.date_of_birth)
   return {
     first_name: input.first_name,
     last_name: input.last_name,
     email: emptyToNull(input.email),
     phone: emptyToNull(input.phone),
-    gender: emptyToNull(input.gender),
-    date_of_birth: emptyToNull(input.date_of_birth),
+    gender: normalizePatientGender(emptyToNull(input.gender)),
+    date_of_birth: dobRaw ? toDateInputValue(dobRaw) || null : null,
     street_address: emptyToNull(input.street_address),
     state: emptyToNull(input.state),
     zip_code: emptyToNull(input.zip_code),

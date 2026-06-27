@@ -45,7 +45,7 @@ export async function resolvePharmEmailDoctorAndClinic(
     npi: null,
   }
 
-  let locationId: number | null = null
+  let doctorLocationId: number | null = null
 
   if (input.doctorId != null) {
     const { data: doctorRow } = await admin
@@ -64,32 +64,33 @@ export async function resolvePharmEmailDoctorAndClinic(
         npi: (doctorRow.npi as string | null)?.trim() || null,
       }
       if (doctorRow.location_id != null) {
-        locationId = Number(doctorRow.location_id)
+        doctorLocationId = Number(doctorRow.location_id)
       }
     }
   }
 
-  if (locationId == null) {
-    const { data: patientRow } = await admin
-      .from('patients')
-      .select('location_id')
-      .eq('id', input.patientId)
-      .maybeSingle()
-    if (patientRow?.location_id != null) {
-      locationId = Number(patientRow.location_id)
-    }
-  }
+  const { data: patientRow } = await admin
+    .from('patients')
+    .select('location_id')
+    .eq('id', input.patientId)
+    .maybeSingle()
 
-  if (locationId == null && input.appointmentId != null) {
+  let appointmentLocationId: number | null = null
+  if (input.appointmentId != null) {
     const { data: appointmentRow } = await admin
       .from('appointments')
       .select('location_id')
       .eq('id', input.appointmentId)
       .maybeSingle()
     if (appointmentRow?.location_id != null) {
-      locationId = Number(appointmentRow.location_id)
+      appointmentLocationId = Number(appointmentRow.location_id)
     }
   }
+
+  const patientLocationId =
+    patientRow?.location_id != null ? Number(patientRow.location_id) : null
+  const locationId =
+    appointmentLocationId ?? patientLocationId ?? doctorLocationId
 
   let clinic: PharmEmailClinicInfo = {
     locationId,

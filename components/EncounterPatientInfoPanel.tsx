@@ -4,7 +4,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { DobDateInput } from '@/components/DobDateInput'
+import { AddressLookupFields } from '@/components/AddressLookupFields'
 import type { EncounterPatientInfo, PatientInfoAuditSummary, PatientInfoUpdatePayload } from '@/lib/encounter/encounter-patient-info'
+import { normalizePatientGender } from '@/lib/encounter/patient-gender'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 function patientAgeFromDob(dob: string | null): number | null {
@@ -36,11 +39,23 @@ const GENDER_OPTIONS = [
 ] as const
 
 function normalizeGenderValue(value: string | null | undefined): (typeof GENDER_OPTIONS)[number]['value'] | null {
-  const g = (value ?? '').trim().toLowerCase()
-  if (!g) return null
-  if (g === 'male') return 'male'
-  if (g === 'female') return 'female'
-  return 'other'
+  return normalizePatientGender(value)
+}
+
+function patientFormFromRecord(patient: EncounterPatientInfo): PatientInfoUpdatePayload {
+  const { id: _id, patient_code: _code, ...fields } = patient
+  return {
+    ...fields,
+    gender: normalizePatientGender(fields.gender),
+  }
+}
+
+function formatSaveError(json: { error?: string; details?: Array<{ message?: string }> }, fallback: string): string {
+  const base = json.error || fallback
+  const detail = Array.isArray(json.details)
+    ? json.details.map((d) => d.message).filter(Boolean).join('; ')
+    : ''
+  return detail ? `${base}: ${detail}` : base
 }
 
 function genderDisplayLabel(value: string | null | undefined, t: (key: string) => string): string {
@@ -76,8 +91,7 @@ export function EncounterPatientInfoPanel({
 
       const p = json.patient as EncounterPatientInfo
       setPatient(p)
-      const { id: _id, patient_code: _code, ...editable } = p
-      setForm(editable)
+      setForm(patientFormFromRecord(p))
       setLastAudit((json.last_audit as PatientInfoAuditSummary) ?? null)
       setEditable(Boolean(json.editable) && canEdit)
     } catch (e) {
@@ -119,8 +133,7 @@ export function EncounterPatientInfoPanel({
 
   const startEdit = () => {
     if (patient) {
-      const { id: _id, patient_code: _code, ...editable } = patient
-      setForm(editable)
+      setForm(patientFormFromRecord(patient))
       setEditing(true)
     }
   }
@@ -128,8 +141,7 @@ export function EncounterPatientInfoPanel({
   const cancelEdit = () => {
     setEditing(false)
     if (patient) {
-      const { id: _id, patient_code: _code, ...editable } = patient
-      setForm(editable)
+      setForm(patientFormFromRecord(patient))
     }
   }
 
@@ -149,12 +161,11 @@ export function EncounterPatientInfoPanel({
         body: JSON.stringify(form),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.patient_info_save_failed'))
+      if (!res.ok) throw new Error(formatSaveError(json, t('encounter_modal.patient_info_save_failed')))
 
       const saved = json.patient as EncounterPatientInfo
       setPatient(saved)
-      const { id: _sid, patient_code: _scode, ...editableSaved } = saved
-      setForm(editableSaved)
+      setForm(patientFormFromRecord(saved))
       setLastAudit((json.last_audit as PatientInfoAuditSummary) ?? null)
       setEditing(false)
       onPatientUpdated?.(saved)
@@ -261,10 +272,9 @@ export function EncounterPatientInfoPanel({
             </div>
             <div>
               <label className="text-slate-500 text-sm mb-1 font-semibold block">{t('common.dob')}</label>
-              <input
-                type="date"
-                value={form.date_of_birth ?? ''}
-                onChange={(e) => setForm((f) => (f ? { ...f, date_of_birth: e.target.value || null } : f))}
+              <DobDateInput
+                value={form.date_of_birth}
+                onChange={(date_of_birth) => setForm((f) => (f ? { ...f, date_of_birth } : f))}
                 className={INPUT_CLASS}
               />
             </div>
@@ -285,31 +295,22 @@ export function EncounterPatientInfoPanel({
                 className={INPUT_CLASS}
               />
             </div>
-            <div className="md:col-span-2">
-              <label className="text-slate-500 text-sm mb-1 font-semibold block">{t('common.address')}</label>
-              <input
-                value={form.street_address ?? ''}
-                onChange={(e) => setForm((f) => (f ? { ...f, street_address: e.target.value } : f))}
-                className={INPUT_CLASS}
-                placeholder={t('encounter_modal.patient_street_placeholder')}
-              />
-            </div>
-            <div>
-              <label className="text-slate-500 text-sm mb-1 font-semibold block">{t('encounter_modal.patient_state')}</label>
-              <input
-                value={form.state ?? ''}
-                onChange={(e) => setForm((f) => (f ? { ...f, state: e.target.value } : f))}
-                className={INPUT_CLASS}
-              />
-            </div>
-            <div>
-              <label className="text-slate-500 text-sm mb-1 font-semibold block">{t('encounter_modal.patient_zip')}</label>
-              <input
-                value={form.zip_code ?? ''}
-                onChange={(e) => setForm((f) => (f ? { ...f, zip_code: e.target.value } : f))}
-                className={INPUT_CLASS}
-              />
-            </div>
+            <AddressLookupFields
+              streetAddress={form.street_address ?? ''}
+              state={form.state ?? ''}
+              zipCode={form.zip_code ?? ''}
+              onStreetAddressChange={(street_address) =>
+                setForm((f) => (f ? { ...f, street_address } : f))
+              }
+              onStateChange={(state) => setForm((f) => (f ? { ...f, state } : f))}
+              onZipCodeChange={(zip_code) => setForm((f) => (f ? { ...f, zip_code } : f))}
+              streetLabel={t('common.address')}
+              stateLabel={t('encounter_modal.patient_state')}
+              zipLabel={t('encounter_modal.patient_zip')}
+              streetPlaceholder={t('encounter_modal.patient_street_placeholder')}
+              inputClassName={INPUT_CLASS}
+              disabled={saving}
+            />
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
             <button
