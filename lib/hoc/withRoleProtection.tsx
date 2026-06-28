@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth-context'
+import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import type { UserRole } from '@/lib/roles'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { useT } from '@/lib/i18n'
@@ -20,7 +21,9 @@ export function withRoleProtection<P extends object>(
   const { allowedRoles, redirectTo = '/', showLoading = true } = options
 
   return function ProtectedComponent(props: P) {
-    const { user, role, loading } = useAuth()
+    const { user, role, loading: authLoading } = useAuth()
+    const { loading: profileLoading } = useUserProfile()
+    const loading = authLoading || (!!user && profileLoading && !role)
     const router = useRouter()
     const { t } = useT()
 
@@ -45,7 +48,8 @@ export function withRoleProtection<P extends object>(
         router.push(redirectTo)
         return
       }
-    }, [user, role, loading, router, redirectTo])
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+    }, [user?.id, role, loading, router, redirectTo])
 
     // Show loading state while checking auth (match dashboard shell — avoids blue full-screen flash)
     if (loading && showLoading) {

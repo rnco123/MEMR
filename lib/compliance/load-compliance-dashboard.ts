@@ -368,7 +368,7 @@ function buildVelocity(rows: ReviewRow[]): ComplianceVelocityPoint[] {
   return [...buckets.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
     .slice(-8)
-    .map(([key, reviews], i) => ({ week: `Wk ${i + 1}`, reviews }))
+    .map(([, reviews], i) => ({ week: `Wk ${i + 1}`, reviews }))
 }
 
 function sparkFromTrend(values: number[]): number[] {

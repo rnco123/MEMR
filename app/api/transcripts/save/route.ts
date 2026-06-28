@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
@@ -151,6 +152,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, ids })
   } catch (e) {
+    console.error('[transcripts/save]', e)
+    Sentry.captureException(e, { tags: { route: 'transcripts-save' } })
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }

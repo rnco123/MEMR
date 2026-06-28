@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
@@ -10,6 +11,9 @@ import {
 import { analyzeClinicalRisk } from '@/lib/risk-alerts/openai-analyze'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import { loadAiSoapRiskContextForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
+import { loadIntakeForEncounter } from '@/lib/encounters/load-intake-for-encounter'
+import { loadLatestVitalsForEncounter } from '@/lib/vitals/load-encounter-vitals'
 
 export const dynamic = 'force-dynamic'
 
@@ -98,51 +102,12 @@ export async function POST(request: Request) {
       })
     }
 
-    let intake: Record<string, unknown> | null = null
-    if (enc.intake_id) {
-      const { data } = await admin.from('intake_form').select('*').eq('id', enc.intake_id).maybeSingle()
-      if (data) intake = data as Record<string, unknown>
-    }
-    if (!intake) {
-      const { data } = await admin.from('intake_form').select('*').eq('appointment_id', appointmentId).maybeSingle()
-      if (data) intake = data as Record<string, unknown>
-    }
+    const intakeId =
+      enc.intake_id != null && Number.isFinite(Number(enc.intake_id)) ? Number(enc.intake_id) : null
 
-    let soap: {
-      subjective_text?: string | null
-      objective_text?: string | null
-      assessment_text?: string | null
-      plan_text?: string | null
-    } | null = null
-
-    const { data: soapEnc } = await admin
-      .from('ai_soapnotes')
-      .select('subjective_text, objective_text, assessment_text, plan_text')
-      .eq('encounter_id', encounterId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    if (soapEnc) {
-      soap = soapEnc
-    } else {
-      const { data: soapAppt } = await admin
-        .from('ai_soapnotes')
-        .select('subjective_text, objective_text, assessment_text, plan_text')
-        .eq('appointment_id', appointmentId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (soapAppt) soap = soapAppt
-    }
-
-    const { data: vitalsRow } = await admin
-      .from('vitals')
-      .select('*')
-      .eq('encounter_id', encounterId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const intake = await loadIntakeForEncounter(admin, intakeId, appointmentId)
+    const soap = await loadAiSoapRiskContextForEncounter(admin, encounterId, appointmentId)
+    const vitalsRow = await loadLatestVitalsForEncounter(admin, encounterId)
 
     const intakeText = formatIntakeForRisk(intake)
     const soapText = formatSoapForRisk(soap)
@@ -194,6 +159,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Risk alerts are not configured (missing OPENAI_API_KEY).' }, { status: 503 })
     }
     console.error('[risk-alerts]', e)
+    Sentry.captureException(e, { tags: { route: 'risk-alerts' } })
     return NextResponse.json({ error: message }, { status: 502 })
   }
 }

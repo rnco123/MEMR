@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 
 // DELETE - Delete a document
 export async function DELETE(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string; docId: string } }
 ) {
   try {

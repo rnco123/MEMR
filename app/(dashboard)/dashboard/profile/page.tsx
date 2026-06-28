@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
+import { isPhysicianRole } from '@/lib/roles'
 import { useUserProfile } from '@/lib/user-profile-context'
 import { AvatarPicker } from '@/components/AvatarPicker'
 import { ChangePasswordForm } from '@/components/ChangePasswordForm'
@@ -25,6 +25,7 @@ export default function ProfilePage() {
       setFullName(profile.full_name ?? profile.display_name ?? '')
       setNpi(profile.npi ?? '')
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- narrowed to the specific profile fields (not the object reference) so this doesn't reset local form state on every profile refresh that doesn't change these fields.
   }, [profile?.full_name, profile?.display_name, profile?.npi])
 
   const displayName =

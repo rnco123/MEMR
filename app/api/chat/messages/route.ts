@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { generateSecureFileName, scanFileContent, validateFileUpload } from '@/lib/security/file-upload'
+import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
+import { handleApiError } from '@/lib/api-error-handler'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
@@ -43,37 +43,6 @@ async function ensureChatAttachmentsBucket() {
   if (createErr && !String(createErr.message || '').toLowerCase().includes('already exists')) {
     console.error('Unable to create chat attachments bucket:', createErr)
   }
-}
-
-// Helper to extract user from custom cookie format
-async function getUserFromCustomCookie(request: NextRequest) {
-  const authCookie = request.cookies.get('supabase.auth.token')
-  if (!authCookie?.value) return null
-
-  try {
-    const base64Part = authCookie.value.replace('base64-', '')
-    const decoded = Buffer.from(base64Part, 'base64').toString('utf-8')
-    const sessionData = JSON.parse(decoded)
-    
-    if (sessionData?.access_token) {
-      const supabase = createSupabaseClient(
-        getSupabaseUrl(),
-        getSupabasePublishableKey(),
-        {
-          global: {
-            headers: {
-              Authorization: `Bearer ${sessionData.access_token}`,
-            },
-          },
-        }
-      )
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (!error && user) return user
-    }
-  } catch (error) {
-    console.error('Error parsing custom cookie:', error)
-  }
-  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -157,12 +126,15 @@ export async function GET(request: NextRequest) {
     }
 
     const admin = createAdminClient()
+    const signedUrlByPath = await createSignedUrlMap(
+      admin,
+      CHAT_ATTACHMENTS_BUCKET,
+      (attachments || []).map((item) => item.file_path),
+      3600
+    )
     const attachmentsByMessage = new Map<string, any[]>()
     for (const item of attachments || []) {
-      const { data: signed } = await admin.storage
-        .from(CHAT_ATTACHMENTS_BUCKET)
-        .createSignedUrl(item.file_path, 3600)
-      const file_url = signed?.signedUrl ?? null
+      const file_url = signedUrlByPath.get(item.file_path) ?? null
       const list = attachmentsByMessage.get(item.message_id) || []
       list.push({ ...item, file_url })
       attachmentsByMessage.set(item.message_id, list)
@@ -187,8 +159,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ messages: enrichedMessages })
   } catch (error) {
-    console.error('Error in GET /api/chat/messages:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }
 
@@ -348,7 +319,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ message: enrichedMessage })
   } catch (error) {
-    console.error('Error in POST /api/chat/messages:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }

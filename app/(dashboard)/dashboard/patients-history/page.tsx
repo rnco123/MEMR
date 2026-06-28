@@ -2,8 +2,7 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { createClient } from '@/lib/supabase/client'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole } from '@/lib/roles'
@@ -48,7 +47,6 @@ function PatientsHistoryPage() {
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
   const { isPending: searchPending, debouncedQuery } = useAiPatientSearchParse(searchQuery)
-  const supabase = useMemo(() => createClient(), [])
   const prevSearchRef = useRef(debouncedQuery)
 
   // Fetch patients for current page (search applies to ALL records)

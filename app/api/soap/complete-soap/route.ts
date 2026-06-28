@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
@@ -108,6 +109,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(json ?? { success: true, message: 'SOAP data stored successfully' })
   } catch (err) {
     console.error('[SOAP complete-soap] Error:', err)
+    Sentry.captureException(err, { tags: { route: 'soap-complete-soap' } })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Failed to call SOAP API' },
       { status: 500 }

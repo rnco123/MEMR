@@ -180,6 +180,7 @@ export function I693WorkflowBoard({
         setMovingEncounterId(null)
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- t omitted: only used for a toast message, and including it would recreate this drag-handler on every language switch.
     [movingEncounterId, rows]
   )
 

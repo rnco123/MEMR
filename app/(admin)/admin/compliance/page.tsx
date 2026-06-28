@@ -380,6 +380,7 @@ function ReviewDrawer({ review, readOnly = false, patientFileHref, onClose, onSa
         } : prev)
       })
       .finally(() => setLoadingDetail(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- narrowed to review?.id/encounterIdNum (not the object reference) so this doesn't refetch on every state update that replaces review with an equivalent object.
   }, [review?.id, review?.encounterIdNum])
 
   const active = detail ?? review
@@ -954,7 +955,10 @@ export default function CompliancePage() {
   const kpi = dashboard.kpi
   const providers = dashboard.providers
   const trendData = dashboard.trend.length ? dashboard.trend : [{ date: '—', reviewed: 0, required: 0, compliance: 100 }]
-  const velocityData = dashboard.velocity.length ? dashboard.velocity : [{ week: 'Wk 1', reviews: 0 }]
+  const velocityData = useMemo(
+    () => (dashboard.velocity.length ? dashboard.velocity : [{ week: 'Wk 1', reviews: 0 }]),
+    [dashboard.velocity]
+  )
   const sparklines = dashboard.sparklines
 
   const velocityDelta = useMemo(() => {

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
@@ -112,14 +111,15 @@ async function syncUserLocations(
   locationIds: number[]
 ) {
   await admin.from('user_locations').delete().eq('user_uid', uid)
-  for (const lid of locationIds) {
-    const { error } = await admin.from('user_locations').insert({
+  if (locationIds.length === 0) return
+  const { error } = await admin.from('user_locations').insert(
+    locationIds.map((lid) => ({
       user_uid: uid,
       profile_id: uid,
       location_id: lid,
-    })
-    if (error) throw error
-  }
+    }))
+  )
+  if (error) throw error
 }
 
 export async function GET(_req: NextRequest) {
@@ -253,7 +253,7 @@ export async function POST(req: NextRequest) {
         role,
         fullName,
         email,
-        location_ids?.length ? { primaryLocationId: location_ids[0] ?? null } : undefined
+        location_ids?.length ? { primaryLocationId } : undefined
       )
     } catch (staffErr) {
       const msg = staffErr instanceof Error ? staffErr.message : 'Staff record failed'

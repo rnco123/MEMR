@@ -6,6 +6,7 @@ import { resolveAuthenticatedRole } from '@/lib/admin-auth'
 import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { z } from 'zod'
 import { createRateLimiter } from '@/lib/rate-limit'
+import { isTurnstileEnabled, verifyTurnstileToken } from '@/lib/security/turnstile'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,7 @@ const loginRateLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
+  turnstileToken: z.string().optional(),
 })
 
 type PendingCookie = { name: string; value: string; options?: Parameters<NextResponse['cookies']['set']>[2] }
@@ -48,6 +50,17 @@ export async function POST(request: NextRequest) {
     const parsed = bodySchema.safeParse(body)
     if (!parsed.success) {
       throw new ValidationError('Email and password are required')
+    }
+
+    // CAPTCHA gate — enforced once TURNSTILE_SECRET_KEY is configured; verified server-side, never trust the client.
+    if (isTurnstileEnabled()) {
+      const captchaOk = await verifyTurnstileToken(parsed.data.turnstileToken ?? '', ip)
+      if (!captchaOk) {
+        return NextResponse.json(
+          { error: 'Captcha verification failed. Please refresh and try again.' },
+          { status: 400 }
+        )
+      }
     }
 
     const cookieStore = await cookies()

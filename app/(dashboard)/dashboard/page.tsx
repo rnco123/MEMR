@@ -2,11 +2,10 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { ROLE_PERMISSIONS, getRoleLabel, UserRole, isPhysicianRole, FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
+import { ROLE_PERMISSIONS, getRoleLabel, isPhysicianRole, FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateOnly, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -38,7 +37,6 @@ function DashboardPage() {
   const [upcomingAppointments, setUpcomingAppointments] = useState<UpcomingAppointment[]>([])
   const [loadingAppointments, setLoadingAppointments] = useState(false)
   const [startingEncounterId, setStartingEncounterId] = useState<number | null>(null)
-  const supabase = createClient()
   const {
     locations: assignedLocations,
     loading: locationsLoading,
@@ -51,12 +49,7 @@ function DashboardPage() {
 
   const fetchAvailability = useCallback(async () => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = {}
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`
-      }
-      const response = await fetch('/api/doctors/availability', { credentials: 'include', headers })
+      const response = await fetch('/api/doctors/availability', { credentials: 'include' })
       const json = await response.json()
       if (response.ok && json.data) {
         setIsAvailable(json.data.is_available ?? false)
@@ -66,7 +59,7 @@ function DashboardPage() {
     } catch (error) {
       setIsAvailable(false)
     }
-  }, [supabase])
+  }, [])
 
   const toggleAvailability = async () => {
     if (isToggling) return
@@ -74,15 +67,10 @@ function DashboardPage() {
     setIsToggling(true)
     try {
       const newStatus = !(isAvailable ?? false)
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`
-      }
       const response = await fetch('/api/doctors/availability', {
         method: 'POST',
         credentials: 'include',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_available: newStatus }),
       })
 
@@ -120,7 +108,8 @@ function DashboardPage() {
     } finally {
       setLoadingStats(false)
     }
-  }, [user, isClinicalStaff, selectedLocationId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id, isClinicalStaff, selectedLocationId])
 
   const fetchUpcomingAppointments = useCallback(async () => {
     if (!user || !isPhysicianRole(role)) {
@@ -130,86 +119,36 @@ function DashboardPage() {
 
     setLoadingAppointments(true)
     try {
-      const { data: doctorData } = await supabase
-        .from('doctors')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-
-      if (!doctorData) {
+      const res = await fetch('/api/clinical/upcoming-appointments', { credentials: 'include' })
+      const json = await res.json()
+      if (res.ok && Array.isArray(json.data)) {
+        setUpcomingAppointments(json.data as UpcomingAppointment[])
+      } else {
         setUpcomingAppointments([])
-        setLoadingAppointments(false)
-        return
       }
-
-      const { data: encounters } = await supabase
-        .from('encounters')
-        .select('id, appointment_id, status')
-        .eq('doctor_id', doctorData.id)
-
-      if (!encounters || encounters.length === 0) {
-        setUpcomingAppointments([])
-        setLoadingAppointments(false)
-        return
-      }
-
-      const appointmentIds = encounters.map(e => e.appointment_id).filter(Boolean)
-      const today = new Date().toISOString().split('T')[0]
-
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select('id, appointment_date, appointment_time, onsite_type, patient_id')
-        .in('id', appointmentIds)
-        .gte('appointment_date', today)
-        .order('appointment_date', { ascending: true })
-        .limit(5)
-
-      if (!appointmentsData || appointmentsData.length === 0) {
-        setUpcomingAppointments([])
-        setLoadingAppointments(false)
-        return
-      }
-
-      const patientIds = [...new Set(appointmentsData.map(a => a.patient_id).filter(Boolean))]
-      const { data: patientsData } = await supabase
-        .from('patients')
-        .select('id, first_name, last_name')
-        .in('id', patientIds)
-
-      const appointmentsWithPatients = appointmentsData.map(appointment => ({
-        id: String(appointment.id),
-        appointment_date: appointment.appointment_date,
-        appointment_time: appointment.appointment_time ?? null,
-        onsite_type: (appointment as { onsite_type?: string | null }).onsite_type ?? null,
-        encounter_id: encounters.find((e) => e.appointment_id === appointment.id)?.id ?? null,
-        status: encounters.find((e) => e.appointment_id === appointment.id)?.status ?? 'scheduled',
-        patient: patientsData?.find(p => p.id === appointment.patient_id) || null,
-      }))
-
-      setUpcomingAppointments(appointmentsWithPatients)
     } catch (error) {
       console.error('Error in fetchUpcomingAppointments:', error)
       setUpcomingAppointments([])
     } finally {
       setLoadingAppointments(false)
     }
-  }, [user, role, supabase])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id, role])
 
   const startConsultation = useCallback(
     async (appointment: UpcomingAppointment) => {
       if (!appointment.encounter_id || startingEncounterId === appointment.encounter_id) return
       setStartingEncounterId(appointment.encounter_id)
       try {
-        const { error: statusError } = await supabase
-          .from('encounters')
-          .update({
-            status: 'in_consultation',
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', appointment.encounter_id)
-
-        if (statusError) {
-          console.error('Error updating encounter status:', statusError)
+        const statusRes = await fetch(`/api/encounters/${appointment.encounter_id}/status`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'in_consultation' }),
+        })
+        if (!statusRes.ok) {
+          const json = await statusRes.json().catch(() => ({}))
+          console.error('Error updating encounter status:', json)
         }
 
         router.push(`/video?encounter=${appointment.encounter_id}`)
@@ -219,7 +158,7 @@ function DashboardPage() {
         setStartingEncounterId(null)
       }
     },
-    [router, startingEncounterId, supabase]
+    [router, startingEncounterId]
   )
 
   const refreshAllData = useCallback(() => {
@@ -230,14 +169,16 @@ function DashboardPage() {
       fetchAvailability()
       fetchUpcomingAppointments()
     }
-  }, [isClinicalStaff, isDoctorLike, user, fetchAvailability, fetchStats, fetchUpcomingAppointments])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [isClinicalStaff, isDoctorLike, user?.id, fetchAvailability, fetchStats, fetchUpcomingAppointments])
 
   // Fetch doctor availability status
   useEffect(() => {
     if (isDoctorLike && user) {
       fetchAvailability()
     }
-  }, [isDoctorLike, user, fetchAvailability])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [isDoctorLike, user?.id, fetchAvailability])
 
   // Fetch statistics (doctors and nurses, scoped by assigned locations)
   useEffect(() => {
@@ -261,7 +202,8 @@ function DashboardPage() {
 
     document.addEventListener('visibilitychange', handleVisibilityChange)
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
-  }, [user, isDoctorLike, refreshAllData])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id, isDoctorLike, refreshAllData])
 
   return (
     <div className="p-6 lg:p-10">

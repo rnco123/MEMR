@@ -2,8 +2,7 @@
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { FULL_CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
-import { createClient } from '@/lib/supabase/client'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
@@ -22,7 +21,6 @@ type OrderRow = {
 }
 
 function OrdersPage() {
-  const supabase = useMemo(() => createClient(), [])
   const { t, language } = useT()
   const [rows, setRows] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -38,40 +36,18 @@ function OrdersPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      let q = supabase
-        .from('encounter_orders')
-        .select(
-          `
-          id,
-          encounter_id,
-          patient_id,
-          order_type,
-          title,
-          instructions,
-          status,
-          created_at,
-          patients:patient_id ( first_name, last_name )
-        `
-        )
-        .order('created_at', { ascending: false })
-        .limit(200)
-
-      if (filter === 'pending') {
-        q = q.in('status', ['pending', 'in_progress'])
-      } else if (filter === 'completed') {
-        q = q.eq('status', 'completed')
-      }
-
-      const { data, error } = await q
-      if (error) throw error
-      setRows((data as unknown as OrderRow[]) ?? [])
+      const params = new URLSearchParams({ filter })
+      const res = await fetch(`/api/clinical/orders?${params}`, { credentials: 'include' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to load orders')
+      setRows((json.data as OrderRow[]) ?? [])
     } catch (e) {
       console.error(e)
       toast.error('Failed to load orders')
     } finally {
       setLoading(false)
     }
-  }, [supabase, filter])
+  }, [filter])
 
   useEffect(() => {
     load()

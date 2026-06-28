@@ -3,7 +3,6 @@
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole, isPhysicianRole, UserRole } from '@/lib/roles'
-import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useState, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -82,7 +81,6 @@ interface Appointment {
 function FlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
-  const supabase = useMemo(() => createClient(), [])
   const { t } = useT()
   const {
     locations: userLocations,
@@ -103,7 +101,6 @@ function FlowboardPage() {
     if (typeof window === 'undefined') return true
     return !sessionStorage.getItem(CACHE_KEY)
   })
-  const viewMode: 'mine' = 'mine'
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
     useAiPatientSearchParse(searchQuery, { includeProvider: true })
@@ -139,35 +136,42 @@ function FlowboardPage() {
     setPage(1)
   }
 
+  const resolveEncounterForAppointment = useCallback(async (appointment: Appointment) => {
+    if (appointment.encounter_id) {
+      return {
+        encounterId: appointment.encounter_id,
+        encounterStatus: appointment.encounter_status,
+      }
+    }
+    const res = await fetch(`/api/appointments/${appointment.id}/encounter`, {
+      credentials: 'include',
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok && json.data?.id) {
+      return {
+        encounterId: json.data.id as number,
+        encounterStatus: (json.data.status as string | undefined) ?? appointment.encounter_status,
+      }
+    }
+    return null
+  }, [])
+
   const openEncounter = useCallback(
     async (appointment: Appointment, e?: React.MouseEvent) => {
       e?.stopPropagation()
-      if (appointment.encounter_id) {
+      const resolved = await resolveEncounterForAppointment(appointment)
+      if (resolved) {
         setSelectedEncounter({
-          encounterId: appointment.encounter_id,
+          encounterId: resolved.encounterId,
           appointmentId: appointment.id,
           patientId: appointment.patient_id,
-          encounterStatus: appointment.encounter_status,
-        })
-        return
-      }
-      const { data: encounter } = await supabase
-        .from('encounters')
-        .select('id, status')
-        .eq('appointment_id', appointment.id)
-        .maybeSingle()
-      if (encounter?.id) {
-        setSelectedEncounter({
-          encounterId: encounter.id,
-          appointmentId: appointment.id,
-          patientId: appointment.patient_id,
-          encounterStatus: encounter.status ?? undefined,
+          encounterStatus: resolved.encounterStatus,
         })
       } else {
         alert('You are not assigned to this patient.')
       }
     },
-    [supabase]
+    [resolveEncounterForAppointment]
   )
 
   const fetchAssignedAppointments = useCallback(async (showLoading = true) => {
@@ -209,13 +213,15 @@ function FlowboardPage() {
       const hasCache = typeof window !== 'undefined' && !!sessionStorage.getItem(CACHE_KEY)
       fetchAssignedAppointments(!hasCache)
     }
-  }, [user, role, fetchAssignedAppointments])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id, role, fetchAssignedAppointments])
 
   useEffect(() => {
     if (user && isClinicalDashboardRole(role) && role !== UserRole.NURSE && initialLoadDone.current) {
       fetchAssignedAppointments(false)
     }
-  }, [selectedLocationId, user, role, fetchAssignedAppointments])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [selectedLocationId, user?.id, role, fetchAssignedAppointments])
 
   const refreshData = useCallback(() => {
     try {
@@ -678,30 +684,7 @@ function FlowboardPage() {
                       type="button"
                       onClick={async (e) => {
                         e.stopPropagation()
-                        if (appointment.encounter_id) {
-                          setSelectedEncounter({
-                            encounterId: appointment.encounter_id,
-                            appointmentId: appointment.id,
-                            patientId: appointment.patient_id,
-                            encounterStatus: appointment.encounter_status,
-                          })
-                          return
-                        }
-                        const { data: encounter } = await supabase
-                          .from('encounters')
-                          .select('id, status')
-                          .eq('appointment_id', appointment.id)
-                          .maybeSingle()
-                        if (encounter?.id) {
-                          setSelectedEncounter({
-                            encounterId: encounter.id,
-                            appointmentId: appointment.id,
-                            patientId: appointment.patient_id,
-                            encounterStatus: encounter.status ?? undefined,
-                          })
-                        } else {
-                          alert('You are not assigned to this patient.')
-                        }
+                        await openEncounter(appointment, e)
                       }}
                       className="px-3.5 py-2 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
                     >

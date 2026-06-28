@@ -3,8 +3,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
-import { useAuth } from '@/lib/auth-context'
-import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
@@ -123,8 +121,6 @@ export type PatientFileViewProps = {
 }
 
 export function PatientFileView({ patientId, backHref, embedded = false }: PatientFileViewProps) {
-  const { user } = useAuth()
-  const supabase = createClient()
   const { t, language } = useT()
   const locale = language === 'es' ? 'es-ES' : 'en-US'
 
@@ -242,16 +238,12 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       
       setLoadingPatient(true)
       try {
-        const { data, error } = await supabase
-          .from('patients')
-          .select('*, locations(title, location_code)')
-          .eq('id', patientId)
-          .single()
-
-        if (error) {
-          console.error('Error fetching patient:', error)
+        const res = await fetch(`/api/patients/${patientId}`, { credentials: 'include' })
+        const json = await res.json()
+        if (!res.ok) {
+          console.error('Error fetching patient:', json)
         } else {
-          setPatient(data as Patient)
+          setPatient(json.patient as Patient)
         }
       } catch (error) {
         console.error('Error in fetchPatient:', error)
@@ -261,7 +253,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     }
 
     fetchPatient()
-  }, [patientId, supabase])
+  }, [patientId])
 
   // Fetch encounters for patient (server route bypasses admin RLS gap)
   useEffect(() => {
@@ -293,285 +285,42 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     fetchEncounters()
   }, [patientId])
 
-  // Fetch medical history from intake forms and vitals
+  // Fetch medical history, medications, and pharmacy via guarded API
   useEffect(() => {
-    const fetchMedicalHistory = async () => {
+    const fetchClinicalHistory = async () => {
       if (!patientId || isNaN(patientId)) return
-      
+
       setLoadingHistory(true)
-      try {
-        // Get all appointments for this patient
-        const { data: appointments, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-
-        if (appointmentsError) {
-          console.error('Error fetching appointments for medical history:', appointmentsError)
-          setLoadingHistory(false)
-          return
-        }
-
-        if (!appointments || appointments.length === 0) {
-          setMedicalHistory(null)
-          setLoadingHistory(false)
-          return
-        }
-
-        const appointmentIds = appointments.map(a => a.id)
-
-        // Get all encounters for these appointments
-        const { data: encounters, error: encountersError } = await supabase
-          .from('encounters')
-          .select('id, appointment_id')
-          .in('appointment_id', appointmentIds)
-
-        if (encountersError) {
-          console.error('Error fetching encounters for medical history:', encountersError)
-          setLoadingHistory(false)
-          return
-        }
-
-        if (!encounters || encounters.length === 0) {
-          setMedicalHistory(null)
-          setLoadingHistory(false)
-          return
-        }
-
-        const encounterIds = encounters.map(e => e.id)
-
-        // Get intake forms for these appointments
-        let intakeForms: any[] = []
-        if (appointmentIds.length > 0) {
-          const { data: intakeData, error: intakeError } = await supabase
-            .from('intake_form')
-            .select('*')
-            .in('appointment_id', appointmentIds)
-            .order('created_at', { ascending: false })
-
-          if (intakeError) {
-            console.error('Error fetching intake forms:', intakeError)
-          } else if (intakeData) {
-            intakeForms = intakeData
-          }
-        }
-
-        // Get all vitals for these encounters
-        const { data: vitalsData, error: vitalsError } = await supabase
-          .from('vitals')
-          .select('*')
-          .in('encounter_id', encounterIds)
-          .order('created_at', { ascending: false })
-
-        if (vitalsError) {
-          console.error('Error fetching vitals:', vitalsError)
-        }
-
-        // Aggregate medical history from all intake forms
-        const aggregatedHistory = {
-          medical_conditions: [] as any[],
-          surgeries: [] as any[],
-          allergies: [] as any[],
-          current_medications: [] as any[],
-          family_history: {
-            diabetes: false,
-            hypertension: false,
-            cancer: false,
-            heart_disease: false,
-          },
-          lifestyle: {
-            tobacco_use: false,
-            alcohol_use: false,
-            drug_use: false,
-          },
-          vitals: vitalsData || [], // All vitals records
-          latest_intake: intakeForms[0] || null, // Most recent intake form
-          latest_vitals: vitalsData && vitalsData.length > 0 ? vitalsData[0] : null, // Most recent vitals
-        }
-
-        intakeForms.forEach(form => {
-          // Aggregate medical conditions
-          if (form.medical_conditions && Array.isArray(form.medical_conditions)) {
-            aggregatedHistory.medical_conditions.push(...form.medical_conditions)
-          }
-          // Aggregate surgeries
-          if (form.surgeries && Array.isArray(form.surgeries)) {
-            aggregatedHistory.surgeries.push(...form.surgeries)
-          }
-          // Aggregate allergies
-          if (form.allergies && Array.isArray(form.allergies)) {
-            aggregatedHistory.allergies.push(...form.allergies)
-          }
-          // Aggregate medications
-          if (form.current_medications && Array.isArray(form.current_medications)) {
-            aggregatedHistory.current_medications.push(...form.current_medications)
-          }
-          // Family history (use most recent values)
-          if (form.fh_diabetes) aggregatedHistory.family_history.diabetes = true
-          if (form.fh_hypertension) aggregatedHistory.family_history.hypertension = true
-          if (form.fh_cancer) aggregatedHistory.family_history.cancer = true
-          if (form.fh_heart_disease) aggregatedHistory.family_history.heart_disease = true
-          // Lifestyle
-          if (form.tobacco_use) aggregatedHistory.lifestyle.tobacco_use = true
-          if (form.alcohol_use) aggregatedHistory.lifestyle.alcohol_use = true
-          if (form.drug_use) aggregatedHistory.lifestyle.drug_use = true
-        })
-
-        // Remove duplicates
-        aggregatedHistory.medical_conditions = [...new Set(aggregatedHistory.medical_conditions)]
-        aggregatedHistory.surgeries = [...new Set(aggregatedHistory.surgeries)]
-        aggregatedHistory.allergies = [...new Set(aggregatedHistory.allergies)]
-        aggregatedHistory.current_medications = [...new Set(aggregatedHistory.current_medications)]
-
-        setMedicalHistory(aggregatedHistory)
-      } catch (error) {
-        console.error('Error in fetchMedicalHistory:', error)
-      } finally {
-        setLoadingHistory(false)
-      }
-    }
-
-    fetchMedicalHistory()
-  }, [patientId, supabase])
-
-  // Fetch latest pharmacy based on most recent encounter with a pharmacy_id for this patient
-  useEffect(() => {
-    const fetchPharmacy = async () => {
-      if (!patientId || isNaN(patientId)) return
-
-      try {
-        // Get all appointments for this patient
-        const { data: appointments, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-
-        if (appointmentsError) {
-          console.error('Error fetching appointments for pharmacy:', appointmentsError)
-          setPharmacy(null)
-          return
-        }
-
-        if (!appointments || appointments.length === 0) {
-          setPharmacy(null)
-          return
-        }
-
-        const appointmentIds = appointments.map(a => a.id)
-
-        const { data: encounterWithPharmacy, error: encounterError } = await supabase
-          .from('encounters')
-          .select('pharmacy_id, appointment_id, created_at')
-          .in('appointment_id', appointmentIds)
-          .not('pharmacy_id', 'is', null)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (encounterError) {
-          console.error('Error fetching encounter pharmacy for patient:', encounterError)
-          setPharmacy(null)
-          return
-        }
-
-        if (!encounterWithPharmacy?.pharmacy_id) {
-          setPharmacy(null)
-          return
-        }
-
-        const { data: pharmacyData, error: pharmacyError } = await supabase
-          .from('pharmacy')
-          .select('*')
-          .eq('id', encounterWithPharmacy.pharmacy_id)
-          .maybeSingle()
-
-        if (pharmacyError) {
-          console.error('Error fetching pharmacy for patient:', pharmacyError)
-          setPharmacy(null)
-          return
-        }
-
-        setPharmacy(pharmacyData as Pharmacy)
-      } catch (error) {
-        console.error('Error in fetchPharmacy:', error)
-        setPharmacy(null)
-      }
-    }
-
-    fetchPharmacy()
-  }, [patientId, supabase])
-
-  // Fetch medications from intake forms
-  useEffect(() => {
-    const fetchMedications = async () => {
-      if (!patientId || isNaN(patientId)) return
-      
       setLoadingMedications(true)
       try {
-        // Get all appointments for this patient
-        const { data: appointments, error: appointmentsError } = await supabase
-          .from('appointments')
-          .select('id')
-          .eq('patient_id', patientId)
-
-        if (appointmentsError) {
-          console.error('Error fetching appointments:', appointmentsError)
-          setLoadingMedications(false)
+        const res = await fetch(`/api/patients/${patientId}/clinical-history`, {
+          credentials: 'include',
+        })
+        const json = await res.json()
+        if (!res.ok) {
+          console.error('Error fetching clinical history:', json)
+          setMedicalHistory(null)
+          setMedications([])
+          setPharmacy(null)
           return
         }
 
-        if (!appointments || appointments.length === 0) {
-          setMedications([])
-          setLoadingMedications(false)
-          return
-        }
-
-        const appointmentIds = appointments.map(a => a.id)
-
-        // Get current medications from intake forms
-        const { data: intakeForms, error: intakeError } = await supabase
-          .from('intake_form')
-          .select('current_medications, created_at, appointment_id')
-          .in('appointment_id', appointmentIds)
-          .not('current_medications', 'is', null)
-          .order('created_at', { ascending: false })
-
-        if (intakeError) {
-          console.error('Error fetching medications:', intakeError)
-        } else if (intakeForms) {
-          // Flatten medications from all intake forms
-          const allMedications: any[] = []
-          intakeForms.forEach(form => {
-            if (form.current_medications && Array.isArray(form.current_medications)) {
-              form.current_medications.forEach((med: any) => {
-                const normalized =
-                  typeof med === 'string'
-                    ? { name: med }
-                    : med && typeof med === 'object'
-                    ? med
-                    : { name: String(med) }
-
-                allMedications.push({
-                  ...normalized,
-                  added_date: form.created_at,
-                  appointment_id: form.appointment_id,
-                })
-              })
-            }
-          })
-          setMedications(allMedications)
-        } else {
-          setMedications([])
-        }
+        setMedicalHistory(json.medical_history ?? null)
+        setMedications(json.medications ?? [])
+        setPharmacy((json.pharmacy as Pharmacy) ?? null)
       } catch (error) {
-        console.error('Error in fetchMedications:', error)
+        console.error('Error in fetchClinicalHistory:', error)
+        setMedicalHistory(null)
+        setMedications([])
+        setPharmacy(null)
       } finally {
+        setLoadingHistory(false)
         setLoadingMedications(false)
       }
     }
 
-    fetchMedications()
-  }, [patientId, supabase])
+    fetchClinicalHistory()
+  }, [patientId])
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return t('common.na')
@@ -2261,6 +2010,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                     />
                                   </div>
                                 )}
+                                {/* eslint-disable-next-line @next/next/no-img-element -- time-limited Supabase signed URL; not a next/image-eligible remote host */}
                                 <img
                                   src={viewingDocument.file_url}
                                   alt={viewingDocument.document_name}

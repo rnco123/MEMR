@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { config } from '@/lib/config'
 import { signupSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
-import { rateLimitCheck, createRateLimiter } from '@/lib/rate-limit'
+import { createRateLimiter } from '@/lib/rate-limit'
 import { logAuditEvent } from '@/lib/audit-server'
 
 // Create admin client with service role key

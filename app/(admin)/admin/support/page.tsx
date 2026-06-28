@@ -111,14 +111,15 @@ export default function AdminSupportPage() {
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activeTicket?.id (not the object reference) is intentional: avoids resubscribing on every state update that replaces activeTicket with an equivalent object.
   }, [activeTicket?.id])
 
-  // Realtime: ticket list changes
+  // Realtime: new tickets only (INSERT); list refresh relies on admin RLS
   useEffect(() => {
     const supabase = supabaseRef.current
     const channel = supabase
       .channel('admin-support-list')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => {
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_tickets' }, () => {
         loadTickets()
       })
       .subscribe()
@@ -409,6 +410,7 @@ export default function AdminSupportPage() {
                               <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer">
                                 {att.file_type?.startsWith('image/') ? (
                                   <div className="relative">
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- time-limited Supabase signed URL; not a next/image-eligible remote host */}
                                     <img
                                       src={att.file_url}
                                       alt={att.file_name}

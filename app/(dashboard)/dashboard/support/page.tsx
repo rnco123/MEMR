@@ -116,6 +116,7 @@ export default function SupportPage() {
       })
       .subscribe()
     return () => { supabase.removeChannel(channel) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- activeTicket?.id (not the object reference) is intentional: avoids resubscribing on every state update that replaces activeTicket with an equivalent object.
   }, [activeTicket?.id])
 
   const openThread = async (ticket: SupportTicket) => {
@@ -412,6 +413,7 @@ export default function SupportPage() {
                   <div className="mb-2 flex flex-wrap gap-2">
                     {newFilePreviews.map((src, i) => (
                       <div key={i} className="relative h-16 w-16 rounded-lg overflow-hidden border border-slate-200">
+                        {/* eslint-disable-next-line @next/next/no-img-element -- local blob: object URL preview, not a next/image-eligible remote host */}
                         <img src={src} alt="" className="h-full w-full object-cover" />
                         <button
                           type="button"
@@ -580,6 +582,7 @@ export default function SupportPage() {
                             att.file_url ? (
                               <a key={att.id} href={att.file_url} target="_blank" rel="noopener noreferrer" className="block">
                                 {att.file_type?.startsWith('image/') ? (
+                                  /* eslint-disable-next-line @next/next/no-img-element -- time-limited Supabase signed URL; not a next/image-eligible remote host */
                                   <img
                                     src={att.file_url}
                                     alt={att.file_name}
@@ -632,6 +635,7 @@ export default function SupportPage() {
               <div className="mb-3 flex flex-wrap gap-2">
                 {replyFilePreviews.map((src, i) => (
                   <div key={i} className="relative h-14 w-14 rounded-lg overflow-hidden border border-slate-200">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- local blob: object URL preview, not a next/image-eligible remote host */}
                     <img src={src} alt="" className="h-full w-full object-cover" />
                     <button
                       type="button"

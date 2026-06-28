@@ -2,8 +2,6 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { createClient } from '@/lib/supabase/client'
-import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { useT } from '@/lib/i18n'
 
 interface VitalsFormModalProps {
@@ -29,7 +27,6 @@ const VALIDATION_RANGES = {
 }
 
 export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: VitalsFormModalProps) {
-  const supabase = createClient()
   const { t } = useT()
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -164,20 +161,6 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
     setErrors({})
 
     try {
-      // Verify encounter exists
-      const { data: encounterCheck, error: encounterCheckError } = await supabase
-        .from('encounters')
-        .select('id')
-        .eq('id', encounterId)
-        .single()
-
-      if (encounterCheckError || !encounterCheck) {
-        console.error('Encounter not found:', encounterCheckError)
-        alert(`Error: Encounter not found. Please refresh and try again.`)
-        setSaving(false)
-        return
-      }
-
       // Calculate BMI if weight and height are provided
       let bmi = null
       if (formData.weight && formData.height) {
@@ -192,11 +175,11 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
         }
       }
 
-      // Insert vitals
-      const { error: vitalsError } = await supabase
-        .from('vitals')
-        .insert({
-          encounter_id: encounterId,
+      const vitalsRes = await fetch(`/api/encounters/${encounterId}/vitals`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           bp_systolic: formData.bp_systolic ? parseInt(formData.bp_systolic) : null,
           bp_diastolic: formData.bp_diastolic ? parseInt(formData.bp_diastolic) : null,
           heart_rate: formData.heart_rate ? parseInt(formData.heart_rate) : null,
@@ -210,36 +193,15 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
           height_unit: formData.height_unit,
           bmi: bmi ? parseFloat(bmi.toFixed(1)) : null,
           notes: formData.notes || null,
-        })
+        }),
+      })
 
-      if (vitalsError) {
-        console.error('Error saving vitals:', vitalsError)
-        alert(`Failed to save vitals: ${vitalsError.message || 'Unknown error'}. Please check the console for details.`)
+      const vitalsJson = await vitalsRes.json().catch(() => ({}))
+      if (!vitalsRes.ok) {
+        console.error('Error saving vitals:', vitalsJson)
+        alert(`Failed to save vitals: ${vitalsJson.error || vitalsJson.message || 'Unknown error'}. Please check the console for details.`)
         setSaving(false)
         return
-      }
-
-      // Update encounter status to vitals_assessed
-      const { error: encounterError } = await supabase
-        .from('encounters')
-        .update({ 
-          status: 'vitals_assessed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', encounterId)
-
-      if (encounterError) {
-        console.error('Error updating encounter status:', encounterError)
-        // Don't fail - vitals were saved
-      } else {
-        // Record who updated status in status_timeline
-        const { data: { user } } = await supabase.auth.getUser()
-        const profileId = user ? await getProfileId(supabase, user.id) : null
-        await insertStatusTimeline(supabase, {
-          encounterId,
-          status: 'vitals_assessed',
-          profileId,
-        })
       }
 
       // Trigger SOAP completion via our API route (proxies to external API; avoids CORS and env)

@@ -153,7 +153,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t, language]
+    [t]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {

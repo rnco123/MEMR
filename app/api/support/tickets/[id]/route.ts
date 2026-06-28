@@ -2,6 +2,15 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { updateTicketSchema } from '@/lib/support/types'
+import {
+  SUPPORT_TICKET_SELECT,
+  SUPPORT_TICKET_OWNERSHIP_SELECT,
+  SUPPORT_TICKET_MESSAGE_SELECT,
+  SUPPORT_TICKET_ATTACHMENT_SELECT,
+} from '@/lib/support/support-selects'
+import { resolveSupportActor } from '@/lib/support/resolve-actor'
+import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,11 +24,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .or(`uid.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle()
+    const profile = await resolveSupportActor(supabase, user.id)
     const isAdmin = profile?.role === 'admin'
 
     const adminClient = createAdminClient()
@@ -27,7 +32,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
     // Fetch ticket
     const { data: ticket, error: ticketErr } = await adminClient
       .from('support_tickets')
-      .select('*')
+      .select(SUPPORT_TICKET_SELECT)
       .eq('id', params.id)
       .single()
 
@@ -43,23 +48,27 @@ export async function GET(_request: NextRequest, { params }: Params) {
     // Fetch messages
     const { data: messages } = await adminClient
       .from('support_ticket_messages')
-      .select('*')
+      .select(SUPPORT_TICKET_MESSAGE_SELECT)
       .eq('ticket_id', params.id)
       .order('created_at', { ascending: true })
 
-    // Fetch attachments and generate signed URLs
+    // Fetch attachments and generate signed URLs (batched, one storage round trip)
     const { data: attachments } = await adminClient
       .from('support_ticket_attachments')
-      .select('*')
+      .select(SUPPORT_TICKET_ATTACHMENT_SELECT)
       .eq('ticket_id', params.id)
       .order('created_at', { ascending: true })
+
+    const signedUrlByPath = await createSignedUrlMap(
+      adminClient,
+      BUCKET,
+      (attachments || []).map((att) => att.file_path),
+      3600
+    )
 
     const attachmentsByMessage = new Map<string, any[]>()
     for (const att of attachments || []) {
-      const { data: signed } = await adminClient.storage
-        .from(BUCKET)
-        .createSignedUrl(att.file_path, 3600)
-      const withUrl = { ...att, file_url: signed?.signedUrl ?? null }
+      const withUrl = { ...att, file_url: signedUrlByPath.get(att.file_path) ?? null }
       const list = attachmentsByMessage.get(att.message_id) || []
       list.push(withUrl)
       attachmentsByMessage.set(att.message_id, list)
@@ -72,8 +81,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ ticket: { ...ticket, messages: enrichedMessages } })
   } catch (err) {
-    console.error('[GET /api/support/tickets/[id]]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }
 
@@ -83,11 +91,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .or(`uid.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle()
+    const profile = await resolveSupportActor(supabase, user.id)
     const isAdmin = profile?.role === 'admin'
 
     const body = await request.json()
@@ -101,7 +105,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
     // Fetch ticket to check ownership / current status
     const { data: ticket, error: fetchErr } = await adminClient
       .from('support_tickets')
-      .select('*')
+      .select(SUPPORT_TICKET_OWNERSHIP_SELECT)
       .eq('id', params.id)
       .single()
 
@@ -139,7 +143,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       .from('support_tickets')
       .update(updates)
       .eq('id', params.id)
-      .select()
+      .select(SUPPORT_TICKET_SELECT)
       .single()
 
     if (updateErr) {
@@ -149,7 +153,6 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ ticket: updated })
   } catch (err) {
-    console.error('[PATCH /api/support/tickets/[id]]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }

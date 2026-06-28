@@ -9,7 +9,7 @@ import {
   parseLocationFilter,
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
-import { UserRole, isPhysicianRole, CLINICAL_STAFF_ROLE_VALUES } from '@/lib/roles'
+import { UserRole, isPhysicianRole } from '@/lib/roles'
 import { getDoctorIdForUser } from '@/lib/locations/flowboard-data'
 
 export const dynamic = 'force-dynamic'

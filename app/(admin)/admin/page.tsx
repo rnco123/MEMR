@@ -121,7 +121,6 @@ function formatStatValue(value: number | undefined | null, loading: boolean, emD
 
 export default function AdminOverviewPage() {
   const { t, language } = useT()
-  const localeTag = language === 'es' ? 'es-ES' : 'en-US'
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
 

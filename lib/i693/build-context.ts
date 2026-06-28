@@ -7,6 +7,13 @@ import {
 import { loadEncounterPhysicalExamination } from '@/lib/encounter/physical-examination-store'
 import { formatPhysicalExaminationForContext } from '@/lib/encounter/physical-examination'
 import { parseAddressComponents } from '@/lib/i693/ai-fill'
+import {
+  DOCTOR_SOAP_SELECT,
+  PATIENT_DETAIL_SELECT,
+} from '@/lib/encounters/encounter-detail-selects'
+import { loadAiSoapRiskContextForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
+import { loadIntakeForEncounter } from '@/lib/encounters/load-intake-for-encounter'
+import { loadLatestVitalsForEncounter } from '@/lib/vitals/load-encounter-vitals'
 
 export type I693ClinicalBundle = {
   patient: Record<string, unknown> | null
@@ -32,54 +39,26 @@ export async function buildI693ClinicalContext(
     .eq('id', encounterId)
     .maybeSingle()
 
-  const { data: patient } = await admin.from('patients').select('*').eq('id', patientId).maybeSingle()
-
-  let intake: Record<string, unknown> | null = null
-  if (enc?.intake_id) {
-    const { data } = await admin.from('intake_form').select('*').eq('id', enc.intake_id).maybeSingle()
-    if (data) intake = data as Record<string, unknown>
-  }
-  if (!intake && enc?.appointment_id) {
-    const { data } = await admin
-      .from('intake_form')
-      .select('*')
-      .eq('appointment_id', enc.appointment_id)
-      .maybeSingle()
-    if (data) intake = data as Record<string, unknown>
-  }
-
-  const { data: vitalsRow } = await admin
-    .from('vitals')
-    .select('*')
-    .eq('encounter_id', encounterId)
-    .order('created_at', { ascending: false })
-    .limit(1)
+  const { data: patient } = await admin
+    .from('patients')
+    .select(PATIENT_DETAIL_SELECT)
+    .eq('id', patientId)
     .maybeSingle()
 
-  let aiSoap: Record<string, unknown> | null = null
-  const { data: soapEnc } = await admin
-    .from('ai_soapnotes')
-    .select('subjective_text, objective_text, assessment_text, plan_text')
-    .eq('encounter_id', encounterId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (soapEnc) {
-    aiSoap = soapEnc as Record<string, unknown>
-  } else if (enc?.appointment_id) {
-    const { data: soapAppt } = await admin
-      .from('ai_soapnotes')
-      .select('subjective_text, objective_text, assessment_text, plan_text')
-      .eq('appointment_id', enc.appointment_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-    if (soapAppt) aiSoap = soapAppt as Record<string, unknown>
-  }
+  const appointmentId =
+    enc?.appointment_id != null && Number.isFinite(Number(enc.appointment_id))
+      ? Number(enc.appointment_id)
+      : null
+  const intakeId =
+    enc?.intake_id != null && Number.isFinite(Number(enc.intake_id)) ? Number(enc.intake_id) : null
+
+  const intake = await loadIntakeForEncounter(admin, intakeId, appointmentId)
+  const vitalsRow = await loadLatestVitalsForEncounter(admin, encounterId)
+  const aiSoap = await loadAiSoapRiskContextForEncounter(admin, encounterId, appointmentId)
 
   const { data: doctorSoap } = await admin
     .from('doctor_soapnotes')
-    .select('subjective_text, objective_text, assessment_text, plan_text')
+    .select(DOCTOR_SOAP_SELECT)
     .eq('encounter_id', encounterId)
     .maybeSingle()
 

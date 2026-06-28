@@ -1,15 +1,13 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { DailyCall, DailyParticipantsObject } from '@daily-co/daily-js'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { getRoleLabel, isPhysicianRole, CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
-import { createClient } from '@/lib/supabase/client'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
-import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
 import { PreVisitSummary } from '@/components/PreVisitSummary'
@@ -209,7 +207,6 @@ function VideoPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const encounterId = searchParams.get('encounter')
-  const supabase = useMemo(() => createClient(), [])
   const [error, setError] = useState<string | null>(null)
   const [roomToken, setRoomToken] = useState<string | null>(null)
   const [roomName, setRoomName] = useState<string | null>(null)
@@ -376,13 +373,10 @@ function VideoPage() {
       })
 
       const work = async () => {
-        const { data: { session } } = await supabase.auth.getSession()
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
-
         const response = await fetch('/api/daily/room', {
           method: 'POST',
-          headers,
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ encounterId: Number(encounterId) }),
         })
         const room = await response.json()
@@ -433,132 +427,41 @@ function VideoPage() {
       cancelled = true
       if (timeoutId) clearTimeout(timeoutId)
     }
-  }, [encounterId, user?.id, authLoading, supabase])
+  }, [encounterId, user?.id, authLoading])
 
   useEffect(() => {
-    if (!encounterId || !supabase) return
+    if (!encounterId) return
 
     const fetchDetails = async () => {
       setDetailsLoading(true)
       try {
-        const { data: enc } = await supabase
-          .from('encounters')
-          .select('*')
-          .eq('id', Number(encounterId))
-          .single()
+        const encId = Number(encounterId)
+        const [detailRes, soapRes, profileRes] = await Promise.all([
+          fetch(`/api/encounters/${encId}/detail`, { credentials: 'include' }),
+          fetch(`/api/encounters/${encId}/doctor-soap`, { credentials: 'include' }),
+          fetch('/api/me/profile', { credentials: 'include' }),
+        ])
 
-        if (!enc) {
-          setDetailsLoading(false)
-          return
+        const detailJson = detailRes.ok ? await detailRes.json() : null
+        const soapJson = soapRes.ok ? await soapRes.json() : null
+        const profileJson = profileRes.ok ? await profileRes.json() : null
+
+        if (detailJson?.encounter) {
+          const enc = detailJson.encounter as Encounter & { doctor_id?: number | null }
+          setEncounter(enc)
+          if (enc.doctor_id != null) {
+            setDoctorId(Number(enc.doctor_id))
+          }
         }
+        setAppointment((detailJson?.appointment as Appointment) ?? null)
+        setPatient((detailJson?.patient as Patient) ?? null)
+        setIntake((detailJson?.intake as IntakeForm) ?? null)
+        setVitals((detailJson?.vitals as Vitals) ?? null)
+        setSoapNotes((detailJson?.ai_soap as SOAPNotes) ?? null)
 
-        setEncounter(enc as Encounter)
-
-        let apptRow: Appointment | null = null
-        if (enc.appointment_id != null && enc.appointment_id !== undefined) {
-          const { data: appt } = await supabase
-            .from('appointments')
-            .select('id, patient_id, appointment_date, appointment_time, onsite_type')
-            .eq('id', enc.appointment_id)
-            .maybeSingle()
-          apptRow = appt as Appointment
-          setAppointment(apptRow)
-        } else {
-          setAppointment(null)
-        }
-
-        const resolvedPatientId =
-          enc.patient_id != null && enc.patient_id !== undefined
-            ? enc.patient_id
-            : apptRow?.patient_id != null
-              ? apptRow.patient_id
-              : null
-
-        if (resolvedPatientId != null) {
-          const { data: pat, error: patErr } = await supabase
-            .from('patients')
-            .select('*')
-            .eq('id', resolvedPatientId)
-            .maybeSingle()
-          if (patErr) console.error('Error loading patient for video sidebar:', patErr)
-          setPatient((pat as Patient) ?? null)
-        } else {
-          setPatient(null)
-        }
-
-        // Intake: try encounter.intake_id first, then by appointment_id
-        let intakeResult: IntakeForm | null = null
-        if (enc.intake_id) {
-          const { data: int } = await supabase
-            .from('intake_form')
-            .select('chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use')
-            .eq('id', enc.intake_id)
-            .maybeSingle()
-          intakeResult = int as IntakeForm
-        }
-        if (!intakeResult && enc.appointment_id) {
-          const { data: int } = await supabase
-            .from('intake_form')
-            .select('chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use')
-            .eq('appointment_id', enc.appointment_id)
-            .maybeSingle()
-          intakeResult = int as IntakeForm
-        }
-        if (intakeResult) setIntake(intakeResult)
-
-        const vitalsApiRes = await fetch(`/api/encounters/${Number(encounterId)}/vitals`, {
-          credentials: 'include',
-        })
-        const vitalsJson = vitalsApiRes.ok ? await vitalsApiRes.json() : { data: null }
-        setVitals((vitalsJson.data as Vitals | null) ?? null)
-
-        let soapData: SOAPNotes | null = null
-        const { data: soapEnc, error: soapEncErr } = await supabase
-          .from('ai_soapnotes')
-          .select('subjective_text, objective_text, assessment_text, plan_text')
-          .eq('encounter_id', Number(encounterId))
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (soapEncErr?.code === '42703') {
-          const { data: soapAppt } = await supabase
-            .from('ai_soapnotes')
-            .select('subjective_text, objective_text, assessment_text, plan_text')
-            .eq('appointment_id', enc.appointment_id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          soapData = soapAppt as SOAPNotes
-        } else if (soapEnc) {
-          soapData = soapEnc as SOAPNotes
-        } else {
-          const { data: soapAppt } = await supabase
-            .from('ai_soapnotes')
-            .select('subjective_text, objective_text, assessment_text, plan_text')
-            .eq('appointment_id', enc.appointment_id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-          soapData = soapAppt as SOAPNotes
-        }
-        setSoapNotes(soapData)
-
-        const { data: { user: authUser } } = await supabase.auth.getUser()
-        const { data: docRow } = await supabase
-          .from('doctors')
-          .select('id')
-          .eq('user_id', authUser?.id)
-          .maybeSingle()
-        if (docRow) setDoctorId(docRow.id)
-
-        const { data: docSoap } = await supabase
-          .from('doctor_soapnotes')
-          .select('id, subjective_text, objective_text, assessment_text, plan_text')
-          .eq('encounter_id', Number(encounterId))
-          .maybeSingle()
+        const docSoap = soapJson?.doctor_soap as DoctorSOAPNotes | null | undefined
         if (docSoap) {
-          setDoctorSoap(docSoap as DoctorSOAPNotes)
+          setDoctorSoap(docSoap)
           setSoapForm({
             subjective_text: docSoap.subjective_text ?? '',
             objective_text: docSoap.objective_text ?? '',
@@ -574,15 +477,12 @@ function VideoPage() {
           })
         }
 
-        if (authUser) {
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('uid', authUser.id)
-            .maybeSingle()
-          const name = profile?.full_name || authUser.email?.split('@')[0] || 'User'
-          setUserName(name)
-        }
+        const name =
+          profileJson?.full_name ||
+          user?.user_metadata?.full_name ||
+          user?.email?.split('@')[0] ||
+          'User'
+        setUserName(name)
       } catch (e) {
         console.error('Error fetching patient details:', e)
       } finally {
@@ -591,11 +491,11 @@ function VideoPage() {
     }
 
     fetchDetails()
-  }, [encounterId, supabase])
+  }, [encounterId, user?.email, user?.user_metadata?.full_name])
 
   // For nurses/staff: watch encounter status; if doctor concludes, show message then send them back to virtual waiting room
   useEffect(() => {
-    if (!encounterId || !supabase) return
+    if (!encounterId) return
     if (isPhysicianRole(role)) return
     if (sessionEnded) return
 
@@ -604,17 +504,16 @@ function VideoPage() {
 
     const interval = setInterval(async () => {
       try {
-        const { data, error } = await supabase
-          .from('encounters')
-          .select('status')
-          .eq('id', encounterIdNum)
-          .maybeSingle()
+        const res = await fetch(`/api/encounters/${encounterIdNum}/status`, {
+          credentials: 'include',
+        })
+        const json = res.ok ? await res.json() : null
+        const status = json?.data?.status as string | undefined
 
         if (
-          !error &&
-          (data?.status === 'final_review' ||
-            data?.status === 'completed' ||
-            data?.status === 'consultation_concluded')
+          status === 'final_review' ||
+          status === 'completed' ||
+          status === 'consultation_concluded'
         ) {
           setSessionEnded(true)
           setEndMessage(
@@ -628,13 +527,12 @@ function VideoPage() {
           }, 5000)
         }
       } catch (e) {
-        // Ignore polling errors; try again on next tick
         console.error('Error polling encounter status:', e)
       }
-    }, 10000) // poll every 10 seconds
+    }, 10000)
 
     return () => clearInterval(interval)
-  }, [encounterId, supabase, role, sessionEnded, router])
+  }, [encounterId, role, sessionEnded, router])
 
   const addTranscriptEntry = useCallback((speakerRole: string, speakerName: string, message: string) => {
     transcriptBufferRef.current.push({
@@ -818,12 +716,10 @@ function VideoPage() {
     const items = transcriptBufferRef.current
     if (!items.length) return []
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
       const res = await fetch('/api/transcripts/save', {
         method: 'POST',
-        headers,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ encounterId: encounterIdNum, items }),
       })
       const data = (await res.json().catch(() => ({}))) as { ids?: number[]; error?: string }
@@ -852,12 +748,10 @@ function VideoPage() {
     inlineItems: Array<{ speaker_role: string; speaker_name: string; message: string }>
   ) => {
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
       await fetch(`/api/encounters/${encounterIdNum}/ai-summary?persist=true`, {
         method: 'POST',
-        headers,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inlineTranscript: inlineItems }),
       })
     } catch (e) {
@@ -896,12 +790,10 @@ function VideoPage() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
       const res = await fetch('/api/clean-transcript', {
         method: 'POST',
-        headers,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           encounterId: encounterIdNum,
           items: items.map((t, i) => ({
@@ -956,12 +848,10 @@ function VideoPage() {
     setAiSummaryError(null)
     if (showPanel) setShowSummaryPanel(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
       const res = await fetch(`/api/encounters/${encounterIdNum}/ai-summary`, {
         method: 'POST',
-        headers,
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ inlineTranscript: inlineItems }),
       })
       const data = await res.json()
@@ -1011,27 +901,24 @@ function VideoPage() {
   }
 
   const handleSaveDoctorSoap = async () => {
-    if (!encounterId || !doctorId || !isPhysicianRole(role)) return
+    if (!encounterId || !isPhysicianRole(role)) return
     if (!validateDoctorSoap()) return
 
     setSavingSoap(true)
     try {
-      const payload = {
-        encounter_id: Number(encounterId),
-        doctor_id: doctorId,
-        subjective_text: soapForm.subjective_text!.trim(),
-        objective_text: soapForm.objective_text!.trim(),
-        assessment_text: soapForm.assessment_text!.trim(),
-        plan_text: soapForm.plan_text!.trim(),
-        updated_at: new Date().toISOString(),
-      }
-      const { error } = await supabase
-        .from('doctor_soapnotes')
-        .upsert(payload, {
-          onConflict: 'encounter_id',
-          ignoreDuplicates: false,
-        })
-      if (error) throw error
+      const res = await fetch(`/api/encounters/${Number(encounterId)}/doctor-soap`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subjective_text: soapForm.subjective_text!.trim(),
+          objective_text: soapForm.objective_text!.trim(),
+          assessment_text: soapForm.assessment_text!.trim(),
+          plan_text: soapForm.plan_text!.trim(),
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || 'Failed to save SOAP note')
       setDoctorSoap({ ...soapForm })
     } catch (e) {
       console.error('Error saving doctor SOAP:', e)
@@ -1042,52 +929,37 @@ function VideoPage() {
   }
 
   const handleEndConsultation = async () => {
-    if (!encounterId || !doctorId || !isPhysicianRole(role)) return
+    if (!encounterId || !isPhysicianRole(role)) return
     if (!validateDoctorSoap()) return
 
     setSavingSoap(true)
     try {
       const encounterIdNum = Number(encounterId)
-      const payload = {
-        encounter_id: encounterIdNum,
-        doctor_id: doctorId,
-        subjective_text: soapForm.subjective_text!.trim(),
-        objective_text: soapForm.objective_text!.trim(),
-        assessment_text: soapForm.assessment_text!.trim(),
-        plan_text: soapForm.plan_text!.trim(),
-        updated_at: new Date().toISOString(),
-      }
 
-      // Save/overwrite doctor SOAP note (ensures nothing is null)
-      const { error: soapError } = await supabase
-        .from('doctor_soapnotes')
-        .upsert(payload, {
-          onConflict: 'encounter_id',
-          ignoreDuplicates: false,
-        })
-      if (soapError) throw soapError
+      const soapRes = await fetch(`/api/encounters/${encounterIdNum}/doctor-soap`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subjective_text: soapForm.subjective_text!.trim(),
+          objective_text: soapForm.objective_text!.trim(),
+          assessment_text: soapForm.assessment_text!.trim(),
+          plan_text: soapForm.plan_text!.trim(),
+        }),
+      })
+      const soapJson = await soapRes.json().catch(() => ({}))
+      if (!soapRes.ok) throw new Error(soapJson.error || 'Failed to save SOAP note')
 
       setDoctorSoap({ ...soapForm })
 
-      // Move encounter to final review (doctor wrap-up; nurse final review skipped)
-      const { error: encounterError } = await supabase
-        .from('encounters')
-        .update({
-          status: 'final_review',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', encounterIdNum)
-
-      if (encounterError) throw encounterError
-
-      if (user?.id) {
-        const profileId = await getProfileId(supabase, user.id)
-        await insertStatusTimeline(supabase, {
-          encounterId: encounterIdNum,
-          status: 'final_review',
-          profileId,
-        })
-      }
+      const statusRes = await fetch(`/api/encounters/${encounterIdNum}/status`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'final_review' }),
+      })
+      const statusJson = await statusRes.json().catch(() => ({}))
+      if (!statusRes.ok) throw new Error(statusJson.error || 'Failed to update encounter status')
 
       void fetch(`/api/encounters/${encounterIdNum}/physician-review/ensure`, {
         method: 'POST',
@@ -1163,6 +1035,7 @@ function VideoPage() {
       }
       go()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchAndOpenTranscriptReview/flushTranscript/handleEndConsultation intentionally omitted; runEndCallCleanupRef is reassigned to this closure on every render (below), so callers reading the ref always get the latest versions regardless of this array.
   }, [role, encounterId, doctorId, router])
 
   runEndCallCleanupRef.current = runEndCallCleanup

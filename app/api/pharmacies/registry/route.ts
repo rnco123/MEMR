@@ -11,9 +11,32 @@ import {
 import { pharmacyRegistryCreateSchema } from '@/lib/validation'
 import { loadEncounterForRx } from '@/lib/prescriptions/encounter-prescriptions'
 import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
-import { canManageEncounterPharmacy } from '@/lib/roles'
+import { canManageEncounterPharmacy, canViewClinicalEncounterContent } from '@/lib/roles'
+import { loadActivePharmacyRegistry } from '@/lib/pharmacies/load-active-registry'
 
 export const dynamic = 'force-dynamic'
+
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) throw new AuthenticationError()
+
+    const roleInfo = await fetchUserRole(supabase, user.id)
+    if (!canViewClinicalEncounterContent(roleInfo?.role)) {
+      throw new AuthorizationError('Clinical staff only')
+    }
+
+    const admin = createAdminClient()
+    const data = await loadActivePharmacyRegistry(admin)
+    return NextResponse.json({ data })
+  } catch (e) {
+    return handleApiError(e)
+  }
+}
 
 export async function POST(request: Request) {
   try {

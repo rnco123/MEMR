@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { encounterOrderUpdateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { guardOrderAccess } from '@/lib/encounters/guard'
+import { ENCOUNTER_ORDER_SELECT } from '@/lib/encounters/encounter-detail-selects'
 
 export const dynamic = 'force-dynamic'
 
@@ -46,7 +47,12 @@ export async function PATCH(request: Request, { params }: { params: { orderId: s
       }
     }
 
-    const { data, error } = await supabase.from('encounter_orders').update(patch).eq('id', orderId).select().single()
+    const { data, error } = await supabase
+      .from('encounter_orders')
+      .update(patch)
+      .eq('id', orderId)
+      .select(ENCOUNTER_ORDER_SELECT)
+      .single()
 
     if (error) throw error
     return NextResponse.json({ success: true, data })

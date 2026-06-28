@@ -223,6 +223,7 @@ export function BugReportModal({ isOpen, onClose }: Props) {
           {/* Screenshot section */}
           {screenshotPreview ? (
             <div className="relative rounded-xl overflow-hidden border border-slate-200">
+              {/* eslint-disable-next-line @next/next/no-img-element -- local blob: object URL preview, not a next/image-eligible remote host */}
               <img src={screenshotPreview} alt="Screenshot" className="w-full max-h-32 object-cover" />
               <button
                 type="button"

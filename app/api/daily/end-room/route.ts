@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { isClinicalStaffRole } from '@/lib/roles'
 
@@ -88,6 +89,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
+    console.error('[daily/end-room]', error)
+    Sentry.captureException(error, { tags: { route: 'daily-end-room' } })
     return NextResponse.json(
       {
         error: 'Internal server error',

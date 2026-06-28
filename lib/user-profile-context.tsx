@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { createClient } from '@/lib/supabase/client'
+import { mapRoleToEnum } from '@/lib/roles'
 
 export type UserProfileSummary = {
   avatar_id: string | null
@@ -32,13 +34,14 @@ type UserProfileContextValue = {
 const UserProfileContext = createContext<UserProfileContextValue | null>(null)
 
 export function UserProfileProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
-  const enabled = !!user
+  const { user, applyRoleFromProfile } = useAuth()
+  const supabase = useMemo(() => createClient(), [])
+  const userId = user?.id
   const [profile, setProfile] = useState<UserProfileSummary | null>(null)
   const [loading, setLoading] = useState(false)
 
   const refreshProfile = useCallback(async () => {
-    if (!enabled) {
+    if (!userId) {
       setProfile(null)
       return
     }
@@ -47,7 +50,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/me/profile', { cache: 'no-store' })
       const data = await res.json()
       if (res.ok) {
-        setProfile({
+        const nextProfile: UserProfileSummary = {
           avatar_id: data.avatar_id ?? null,
           avatar_url: data.avatar_url ?? null,
           full_name: data.full_name ?? null,
@@ -56,22 +59,40 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
           display_name: data.display_name ?? data.full_name ?? data.email ?? 'User',
           npi: data.npi ?? null,
           compliance_access: data.compliance_access === true,
-        })
+        }
+        setProfile(nextProfile)
+        applyRoleFromProfile(mapRoleToEnum(nextProfile.role))
       }
     } catch {
       /* ignore */
     } finally {
       setLoading(false)
     }
-  }, [enabled])
+  }, [userId, applyRoleFromProfile])
 
   const patchProfile = useCallback((patch: Partial<UserProfileSummary>) => {
     setProfile((prev) => (prev ? { ...prev, ...patch } : prev))
-  }, [])
+    if (patch.role !== undefined) {
+      applyRoleFromProfile(mapRoleToEnum(patch.role))
+    }
+  }, [applyRoleFromProfile])
 
   useEffect(() => {
     void refreshProfile()
-  }, [refreshProfile, user?.id])
+  }, [refreshProfile, userId])
+
+  // Re-fetch when auth user metadata changes without a new user id (USER_UPDATED).
+  useEffect(() => {
+    if (!userId) return
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
+      if (event === 'USER_UPDATED') {
+        void refreshProfile()
+      }
+    })
+    return () => subscription.unsubscribe()
+  }, [userId, supabase, refreshProfile])
 
   const value = useMemo(
     () => ({ profile, loading, refreshProfile, patchProfile }),

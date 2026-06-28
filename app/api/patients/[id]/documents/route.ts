@@ -6,6 +6,8 @@ import { listImmigrationDocumentsForPatient } from '@/lib/patient-documents/immi
 import { requireClinicalRole } from '@/lib/locations/scope'
 import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
+import { PATIENT_DOCUMENT_SELECT } from '@/lib/encounters/encounter-detail-selects'
+import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -13,7 +15,7 @@ export const dynamic = 'force-dynamic'
 
 // GET - Fetch all documents for a patient
 export async function GET(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -39,7 +41,7 @@ export async function GET(
     // Service role after access check — JWT RLS omits admin/fnp/pa.
     const { data: documents, error } = await supabaseAdmin
       .from('patient_documents')
-      .select('*')
+      .select(PATIENT_DOCUMENT_SELECT)
       .eq('patient_id', patientId)
       .order('created_at', { ascending: false })
 
@@ -50,54 +52,44 @@ export async function GET(
       )
     }
 
-    const getDocumentUrl = async (filePath: string, bucket = 'patient-documents'): Promise<string> => {
-      const { data } = await supabaseAdmin.storage
-        .from(bucket)
-        .createSignedUrl(filePath, 3600)
-      return data?.signedUrl ?? supabaseAdmin.storage.from(bucket).getPublicUrl(filePath).data.publicUrl
-    }
+    // Use signed URLs (1h) so docs open in viewer even when bucket is private — one batched
+    // storage call instead of one round trip per document.
+    const signedUrlByPath = await createSignedUrlMap(
+      supabaseAdmin,
+      'patient-documents',
+      (documents ?? []).map((doc: any) => doc.file_path).filter(Boolean),
+      3600
+    )
+
+    // Batch uploader profiles (one query instead of one per document).
+    const uploaderIds = [...new Set((documents ?? []).map((doc: any) => doc.uploaded_by).filter(Boolean))]
+    const { data: uploaderProfiles } = uploaderIds.length
+      ? await supabaseAdmin.from('profiles').select('uid, full_name, email').in('uid', uploaderIds)
+      : { data: [] as { uid: string; full_name: string | null; email: string | null }[] }
+    const uploaderById = new Map((uploaderProfiles ?? []).map((p) => [p.uid, p]))
 
     // Transform documents to match frontend interface
     // Schema has: id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at
     // Frontend expects: id, document_name, document_label, file_url, file_name, file_size, file_type, uploaded_by, uploaded_by_name, created_at
-    const transformedDocuments = await Promise.all(
-      (documents ?? []).map(async (doc: any) => {
-        // Use signed URL (1h) so doc opens in viewer even when bucket is private
-        const fileUrl = doc.file_path ? await getDocumentUrl(doc.file_path) : ''
+    const transformedDocuments = (documents ?? []).map((doc: any) => {
+      const uploaderProfile = doc.uploaded_by ? uploaderById.get(doc.uploaded_by) : null
+      const uploadedByName: string | null =
+        uploaderProfile?.full_name || uploaderProfile?.email || doc.uploaded_by_name || null
 
-        // Fetch uploader name from profiles, or use stored name (e.g. patient intake uploads)
-        let uploadedByName: string | null = doc.uploaded_by_name ?? null
-        if (doc.uploaded_by) {
-          try {
-            const { data: profile, error: profileError } = await supabaseAdmin
-              .from('profiles')
-              .select('full_name, email')
-              .eq('uid', doc.uploaded_by)
-              .single()
-            
-            if (!profileError && profile) {
-              uploadedByName = profile.full_name || profile.email || null
-            }
-          } catch (error) {
-            console.error('Error fetching uploader profile:', error)
-          }
-        }
-
-        return {
-          id: doc.id,
-          patient_id: doc.patient_id,
-          document_name: doc.file_name, // Use file_name as document_name
-          document_label: doc.document_category || 'other', // Use document_category as document_label
-          file_url: fileUrl,
-          file_name: doc.file_name,
-          file_size: doc.file_size,
-          file_type: doc.file_type,
-          uploaded_by: doc.uploaded_by,
-          uploaded_by_name: uploadedByName,
-          created_at: doc.created_at,
-        }
-      })
-    )
+      return {
+        id: doc.id,
+        patient_id: doc.patient_id,
+        document_name: doc.file_name, // Use file_name as document_name
+        document_label: doc.document_category || 'other', // Use document_category as document_label
+        file_url: doc.file_path ? signedUrlByPath.get(doc.file_path) ?? '' : '',
+        file_name: doc.file_name,
+        file_size: doc.file_size,
+        file_type: doc.file_type,
+        uploaded_by: doc.uploaded_by,
+        uploaded_by_name: uploadedByName,
+        created_at: doc.created_at,
+      }
+    })
 
     let i693BasePath = '/dashboard/i-693'
     if (user) {
@@ -220,12 +212,13 @@ export async function POST(
       )
     }
 
-    const { data: signed } = await supabaseAdmin.storage
+    const { data: signed, error: signError } = await supabaseAdmin.storage
       .from('patient-documents')
       .createSignedUrl(filePath, 3600)
-    const fileUrl =
-      signed?.signedUrl ??
-      supabaseAdmin.storage.from('patient-documents').getPublicUrl(filePath).data.publicUrl
+    if (signError) {
+      console.error('Error creating signed URL after upload:', signError.message)
+    }
+    const fileUrl = signed?.signedUrl ?? ''
 
     const { data: document, error: insertError } = await supabaseAdmin
       .from('patient_documents')
@@ -238,7 +231,7 @@ export async function POST(
         file_type: contentType,
         uploaded_by: user.id,
       })
-      .select()
+      .select(PATIENT_DOCUMENT_SELECT)
       .single()
 
     if (insertError) {

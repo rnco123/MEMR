@@ -47,11 +47,6 @@ type ParsedVaxWidget = {
 
 const LINE_PREFIX = /^Pt10Line(\d+)/
 
-function doseFromLetter(letter: string): number {
-  const n = letter.charCodeAt(0) - 96
-  return n >= 1 && n <= 4 ? n : 1
-}
-
 /** Parse vaccination-table widget short names (not barcode / Part 14 remarks). */
 export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   if (

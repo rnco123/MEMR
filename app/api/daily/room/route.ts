@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { canJoinTelemedicine } from '@/lib/encounter-status'
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
     } catch {
       body = {}
     }
-    const { roomName, encounterId } = body
+    const { encounterId } = body
 
     // L-04: Telemedicine requires a specific encounter; nurses cannot join arbitrary rooms.
     if (encounterId == null) {
@@ -308,6 +309,8 @@ export async function POST(request: NextRequest) {
       room_url: roomUrl, // Use this URL on the client so domain matches the account that created the room
     })
   } catch (error) {
+    console.error('[daily/room]', error)
+    Sentry.captureException(error, { tags: { route: 'daily-room' } })
     return NextResponse.json(
       {
         error: 'Internal server error',

@@ -1,8 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react'
-import { createClient } from '@/lib/supabase/client'
-import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { LoadingSpinner } from './LoadingSpinner'
 import { toast } from 'sonner'
 import type { FinalReviewSuggestions } from '@/lib/final-review/from-transcript'
@@ -158,7 +156,6 @@ export function FinalReviewModal({
   onClose,
   onComplete,
 }: FinalReviewModalProps) {
-  const supabase = createClient()
   const [loading, setLoading] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [intake, setIntake] = useState<IntakeForm | null>(null)
@@ -295,18 +292,31 @@ export function FinalReviewModal({
     const fetchData = async () => {
       setLoading(true)
       try {
-        const [{ data: patientData }, { data: encounterData }] = await Promise.all([
-          supabase.from('patients').select('*').eq('id', patientId).single(),
-          supabase.from('encounters').select('*').eq('id', encounterId).single(),
-        ])
-        setPatient((patientData as Patient) ?? null)
+        const res = await fetch(
+          `/api/encounters/${encounterId}/detail?prescriptions=1&pre_sales=1`,
+          { credentials: 'include' }
+        )
+        const json = await res.json()
+        if (!res.ok) {
+          throw new Error(json.error || 'Failed to load review data')
+        }
+
+        const encounterData = json.encounter as Record<string, unknown> | null
+        const patientData = json.patient as Record<string, unknown> | null
+        const intakeData = json.intake
+        const vitalsData = json.vitals
+        const soapData = json.ai_soap as SOAPNotes | null
+        const pharmacyData = json.pharmacy
+        const preSalesData = (json.pre_sales as Array<{ id: number; product_id: number | null; product_quantity: number }>) ?? []
+        const rxRows = (json.prescriptions as Record<string, unknown>[]) ?? []
+
+        setPatient((patientData as unknown as Patient) ?? null)
 
         if (encounterData) {
           const cached = encounterData.final_review_suggestions_json as FinalReviewSuggestions | null
           if (cached && typeof cached === 'object' && Array.isArray(cached.pre_sales)) {
             setTranscriptSuggestions(cached)
           }
-
           setEncounterDoctorId(
             typeof encounterData.doctor_id === 'number' ? encounterData.doctor_id : null
           )
@@ -318,80 +328,31 @@ export function FinalReviewModal({
           setEncounterPharmacyId(null)
         }
 
-        let intakeData: unknown = null
-        if (encounterData?.intake_id) {
-          const res = await supabase
-            .from('intake_form')
-            .select('*')
-            .eq('id', encounterData.intake_id)
-            .maybeSingle()
-          intakeData = res.data
-        }
-        if (!intakeData && appointmentId) {
-          const res = await supabase
-            .from('intake_form')
-            .select('*')
-            .eq('appointment_id', appointmentId)
-            .maybeSingle()
-          intakeData = res.data
-        }
         if (intakeData) setIntake(intakeData as IntakeForm)
         else setIntake(null)
 
-        const [vitalsApiRes, soapRes, preSalesRes] = await Promise.all([
-          fetch(`/api/encounters/${encounterId}/vitals`, { credentials: 'include' }),
-          supabase
-            .from('ai_soapnotes')
-            .select('*')
-            .eq('encounter_id', encounterId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-          supabase.from('pre_sales').select('id, product_id, product_quantity').eq('encounter_id', encounterId),
-        ])
+        setVitals((vitalsData as Vitals | null) ?? null)
+        setSoapNotes(soapData)
+        setPharmacy((pharmacyData as Pharmacy) ?? null)
 
-        const vitalsJson = vitalsApiRes.ok ? await vitalsApiRes.json() : { data: null }
-        setVitals((vitalsJson.data as Vitals | null) ?? null)
-        setSoapNotes(soapRes.data as SOAPNotes)
-
-        if (encounterData?.pharmacy_id) {
-          const { data: pharmacyData } = await supabase
-            .from('pharmacy')
-            .select('*')
-            .eq('id', encounterData.pharmacy_id)
-            .maybeSingle()
-          setPharmacy(pharmacyData as Pharmacy)
-        } else {
-          setPharmacy(null)
-        }
-
-        const preSalesData = preSalesRes.data
-        if (preSalesData?.length) {
+        if (preSalesData.length) {
           const productIds = [
             ...new Set(
               preSalesData
-                .map((r: { product_id: number | null }) => r.product_id)
+                .map((r) => r.product_id)
                 .filter((id): id is number => id != null && Number(id) > 0)
             ),
           ]
           const nameMap = new Map<number, string>()
-          const { data: localProductRows } = await supabase
-            .from('products')
-            .select('product_id, product_name')
-            .in('product_id', productIds)
-          for (const p of localProductRows || []) {
-            nameMap.set(p.product_id, p.product_name)
-          }
-          const missingIds = productIds.filter((id) => !nameMap.has(id))
-          if (missingIds.length > 0) {
+          if (productIds.length > 0) {
             try {
-              const res = await fetch(
-                `/api/mcm/catalog?product_ids=${missingIds.map(String).join(',')}`,
-                { method: 'GET', credentials: 'include' }
+              const catalogRes = await fetch(
+                `/api/mcm/catalog?product_ids=${productIds.map(String).join(',')}`,
+                { credentials: 'include' }
               )
-              const json = await res.json().catch(() => ({}))
-              if (res.ok && Array.isArray(json.products)) {
-                for (const row of json.products as { product_id: number; product_name: string }[]) {
+              const catalogJson = await catalogRes.json().catch(() => ({}))
+              if (catalogRes.ok && Array.isArray(catalogJson.products)) {
+                for (const row of catalogJson.products as { product_id: number; product_name: string }[]) {
                   if (row.product_name) nameMap.set(row.product_id, row.product_name)
                 }
               }
@@ -400,7 +361,7 @@ export function FinalReviewModal({
             }
           }
           setPreSalesProducts(
-            preSalesData.map((r: { id: number; product_id: number | null; product_quantity: number }) => ({
+            preSalesData.map((r) => ({
               id: `db-${r.id}`,
               product_id: r.product_id ?? 0,
               product_name: nameMap.get(r.product_id ?? 0) ?? 'Unknown',
@@ -411,13 +372,8 @@ export function FinalReviewModal({
           setPreSalesProducts([])
         }
 
-        const { data: rxRows } = await supabase
-          .from('prescriptions')
-          .select('*')
-          .eq('encounter_id', encounterId)
-          .order('created_at', { ascending: true })
         setRxLines(
-          (rxRows || []).map((r: Record<string, unknown>) => {
+          rxRows.map((r) => {
             const dose =
               (r.dosage_instruction as string) ||
               (r.instructions as string) ||
@@ -446,7 +402,7 @@ export function FinalReviewModal({
     }
 
     fetchData()
-  }, [isOpen, encounterId, appointmentId, patientId, supabase])
+  }, [isOpen, encounterId, appointmentId, patientId])
 
   useEffect(() => {
     if (!isOpen || loading) return
@@ -620,27 +576,27 @@ export function FinalReviewModal({
     if (pending.length === 0) return true
 
     const rows = pending.map((p) => ({
-      encounter_id: encounterId,
       product_id: p.product_id,
       product_quantity: p.quantity,
-      product_quantity_taken: 0,
-      status: 'initiated' as const,
     }))
 
-    const { data: inserted, error } = await supabase
-      .from('pre_sales')
-      .insert(rows)
-      .select('id, product_id, product_quantity')
-
-    if (error) {
-      console.error(error)
-      toast.error(error.message ?? 'Could not save pre-sales rows')
+    const res = await fetch(`/api/encounters/${encounterId}/pre-sales`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      console.error(json)
+      toast.error(json.error ?? 'Could not save pre-sales rows')
       return false
     }
 
     toast.success('Pre-sales saved for this encounter')
 
-    const mergedNew = (inserted ?? []).map((row, i) => ({
+    const inserted = (json.data ?? []) as Array<{ id: number; product_id: number | null; product_quantity: number }>
+    const mergedNew = inserted.map((row, i) => ({
       id: `db-${row.id}`,
       product_id: row.product_id ?? pending[i]?.product_id ?? 0,
       product_name: pending[i]?.product_name ?? 'Unknown',
@@ -650,7 +606,7 @@ export function FinalReviewModal({
     setPreSalesProducts((prev) => [...prev.filter((p) => String(p.id).startsWith('db-')), ...mergedNew])
 
     return true
-  }, [preSalesProducts, encounterId, supabase])
+  }, [preSalesProducts, encounterId])
 
   /** Persist session-only Rx lines to EMR `prescriptions` using encounter pharmacy_id + assigned doctor. */
   const persistPendingPrescriptions = useCallback(async (): Promise<boolean> => {
@@ -675,36 +631,32 @@ export function FinalReviewModal({
 
     const doseOf = (line: RxLine) => line.dosage_instruction.trim() || null
 
-    const inserts = pending.map((line) => ({
-      prescriber_doctor_id: encounterDoctorId,
-      patient_id: patientId,
-      encounter_id: encounterId,
-      pharmacy_id: encounterPharmacyId,
-      medication_name: line.medication_name.trim(),
-      strength: line.strength.trim() || null,
-      dosage_instruction: doseOf(line),
-      dosage: doseOf(line),
-      instructions: doseOf(line),
-      route: line.route.trim() || null,
-      frequency: line.frequency.trim() || null,
-      duration: line.duration.trim() || null,
-      refills: 0,
-      status: 'recorded' as const,
-      notes: line.notes.trim() || null,
-    }))
-
-    const { data: inserted, error } = await supabase
-      .from('prescriptions')
-      .insert(inserts)
-      .select('id, medication_name, strength, dosage_instruction, dosage, instructions, route, frequency, duration, notes')
-
-    if (error) {
-      console.error(error)
-      toast.error(error.message ?? 'Could not save prescriptions')
-      return false
+    const inserted: Record<string, unknown>[] = []
+    for (const line of pending) {
+      const res = await fetch(`/api/encounters/${encounterId}/prescriptions`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          medication_name: line.medication_name.trim(),
+          strength: line.strength.trim() || null,
+          dosage_instruction: doseOf(line),
+          route: line.route.trim() || null,
+          frequency: line.frequency.trim() || null,
+          duration: line.duration.trim() || null,
+          notes: line.notes.trim() || null,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.error(json)
+        toast.error(json.error ?? 'Could not save prescriptions')
+        return false
+      }
+      if (json.data) inserted.push(json.data as Record<string, unknown>)
     }
 
-    const mergedNew = (inserted ?? []).map((row: Record<string, unknown>, i: number) => {
+    const mergedNew = inserted.map((row, i) => {
       const pend = pending[i]
       const fromRow = String(row.dosage_instruction ?? row.instructions ?? row.dosage ?? '').trim()
       const fromPending = pend != null ? doseOf(pend) ?? '' : ''
@@ -724,7 +676,7 @@ export function FinalReviewModal({
     setRxLines((prev) => [...prev.filter((r) => String(r.id).startsWith('db-')), ...mergedNew])
     toast.success(pending.length === 1 ? 'Prescription saved' : `${pending.length} prescriptions saved`)
     return true
-  }, [rxLines, encounterDoctorId, encounterPharmacyId, patientId, encounterId, supabase])
+  }, [rxLines, encounterDoctorId, encounterPharmacyId, encounterId])
 
   const handleAddRxLine = () => {
     if (!rxForm.medication_name.trim()) {
@@ -796,26 +748,19 @@ export function FinalReviewModal({
         }
       }
 
-      // Update encounter status to final_review
-      const { error: updateError } = await supabase
-        .from('encounters')
-        .update({ status: 'final_review' })
-        .eq('id', encounterId)
-
-      if (updateError) {
-        console.error('Error updating encounter status:', updateError)
+      const statusRes = await fetch(`/api/encounters/${encounterId}/status`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'final_review' }),
+      })
+      const statusJson = await statusRes.json().catch(() => ({}))
+      if (!statusRes.ok) {
+        console.error('Error updating encounter status:', statusJson)
         alert('Error updating encounter status. Please try again.')
         setSaving(false)
         return
       }
-
-      const { data: { user } } = await supabase.auth.getUser()
-      const profileId = user ? await getProfileId(supabase, user.id) : null
-      await insertStatusTimeline(supabase, {
-        encounterId,
-        status: 'final_review',
-        profileId,
-      })
 
       void fetch(`/api/encounters/${encounterId}/physician-review/ensure`, {
         method: 'POST',

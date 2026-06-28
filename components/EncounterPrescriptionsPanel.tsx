@@ -137,6 +137,7 @@ export function EncounterPrescriptionsPanel({
   useEffect(() => {
     void loadPrescriptions()
     void loadLastPharmEmailSend()
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPrescriptions omitted: it's recreated when `t` changes (language switch), and refetching prescriptions on a pure language change is unnecessary.
   }, [encounterId, loadLastPharmEmailSend])
 
   const canSaveNew = editable && hasDoctor

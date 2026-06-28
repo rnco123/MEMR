@@ -10,10 +10,7 @@ import {
 } from '@/lib/api-error-handler'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
-import {
-  canEditClinicalEncounterContent,
-  canViewClinicalEncounterContent,
-} from '@/lib/roles'
+import { canViewClinicalEncounterContent } from '@/lib/roles'
 export const dynamic = 'force-dynamic'
 
 function parseEncounterId(raw: string | undefined): number {

@@ -41,7 +41,6 @@ import {
   type I693CrossAnnotation,
   type I693ImageAnnotation,
   type I693TextAnnotation,
-  parseI693Annotations,
   resolveStoredI693Annotations,
 } from '@/lib/i693/annotations'
 import { useT } from '@/lib/i18n'
@@ -654,6 +653,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     if (mode !== 'preview' || previewTick === 0 || !bytesRef.current) return
 
     let cancelled = false
+    let resolvedHost: HTMLDivElement | null = null
 
     const run = async (attempt = 0) => {
       const host = previewHostRef.current
@@ -666,6 +666,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         }
         return
       }
+      resolvedHost = host
 
       try {
         setPreviewError(null)
@@ -690,7 +691,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
     return () => {
       cancelled = true
-      if (previewHostRef.current) previewHostRef.current.innerHTML = ''
+      if (resolvedHost) resolvedHost.innerHTML = ''
       setPreviewPageHosts([])
       setPreviewCombPlacements([])
       setPdfReady(false)
@@ -1217,6 +1218,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                       ×
                     </button>
                   </div>
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local blob: object URL for a freely user-resized annotation overlay */}
                   <img src={a.imageUrl} alt="annotation" className="h-full w-full object-contain border border-sky-500 bg-white/70" />
                 </div>
               </Rnd>
@@ -1282,6 +1284,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
             const w = Math.max(48, toPx(a.widthPercent, pageHost.width))
             const h = Math.max(24, toPx(a.heightPercent, pageHost.height))
             return (
+              // eslint-disable-next-line @next/next/no-img-element -- local blob: object URL for a freely user-resized annotation overlay
               <img
                 key={a.id}
                 src={a.imageUrl}

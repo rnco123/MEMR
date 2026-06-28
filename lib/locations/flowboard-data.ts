@@ -1,7 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getClinicTodayDateString } from '@/lib/datetime/clinic-timezone'
 import {
-  getLocationScopeForUser,
   isAllowedByLocationScope,
   resolveEffectiveLocationId,
   type LocationScope,

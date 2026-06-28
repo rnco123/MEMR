@@ -11,9 +11,11 @@ import {
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { PHYSICIAN_NURSE_ADMIN_ROLE_SET } from '@/lib/roles'
+import { handleApiError } from '@/lib/api-error-handler'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'patient_consent_forms'
+const SIGNED_URL_TTL_SEC = 3600
 const ALLOWED_ROLES = PHYSICIAN_NURSE_ADMIN_ROLE_SET
 
 export type ConsentFormPayload = {
@@ -134,14 +136,20 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     let patientPath = normalizeStoragePath(encounterId, parsed.patientRelative)
     const physicianPath = normalizeStoragePath(encounterId, parsed.physicianRelative)
 
-    const publicUrl = (fullPath: string | null) => {
+    const signedUrl = async (fullPath: string | null): Promise<string | null> => {
       if (!fullPath) return null
-      const { data } = admin.storage.from(BUCKET).getPublicUrl(fullPath)
-      return data.publicUrl ?? null
+      const { data, error } = await admin.storage
+        .from(BUCKET)
+        .createSignedUrl(fullPath, SIGNED_URL_TTL_SEC)
+      if (error) {
+        console.error('[consent-forms] signed URL', fullPath, error.message)
+        return null
+      }
+      return data?.signedUrl ?? null
     }
 
-    let patientSigUrl = publicUrl(patientPath)
-    const physicianSigUrl = publicUrl(physicianPath)
+    let patientSigUrl = await signedUrl(patientPath)
+    const physicianSigUrl = await signedUrl(physicianPath)
 
     if (!patientSigUrl) {
       const { data: files, error: listErr } = await admin.storage.from(BUCKET).list(String(encounterId), {
@@ -153,7 +161,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         )
         if (img) {
           patientPath = `${encounterId}/${img.name}`
-          patientSigUrl = publicUrl(patientPath)
+          patientSigUrl = await signedUrl(patientPath)
         }
       }
     }
@@ -203,7 +211,6 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       forms,
     })
   } catch (e) {
-    console.error('[consent-forms]', e)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    return handleApiError(e)
   }
 }

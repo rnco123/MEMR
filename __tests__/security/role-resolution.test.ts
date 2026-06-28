@@ -13,7 +13,7 @@ describe('H-03 — Role resolution from profiles (not metadata)', () => {
   it('H-03-T01 profile role takes precedence (simulated)', () => {
     // admin in metadata should NOT override profile role nurse
     const profileRole = 'nurse' // from DB
-    const metadataRole = 'admin' // spoofed
+    // metadataRole would be 'admin' (spoofed) — must not influence resolution
     // The fix: resolveAuthenticatedRole now reads profiles first
     const resolved = mapRoleToEnum(profileRole)
     expect(resolved).toBe(UserRole.NURSE)

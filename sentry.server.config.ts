@@ -29,7 +29,7 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
     ],
     
     // Filter out sensitive data
-    beforeSend(event, hint) {
+    beforeSend(event) {
       // Allow errors in development for testing (remove this check if you want to test)
       // Uncomment the line below to disable Sentry in development:
       // if (process.env.NODE_ENV === 'development') { return null }

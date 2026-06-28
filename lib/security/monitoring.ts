@@ -2,7 +2,6 @@
  * Security monitoring and threat detection
  */
 
-import { createClient } from '@/lib/supabase/server'
 import { logAuditEvent } from '@/lib/audit-server'
 
 export interface SecurityEvent {
@@ -18,8 +17,6 @@ export interface SecurityEvent {
  */
 export async function logSecurityEvent(event: SecurityEvent): Promise<void> {
   try {
-    const supabase = await createClient()
-    
     // Log to audit table
     await logAuditEvent(
       'security_event' as any,
@@ -55,8 +52,8 @@ export async function logSecurityEvent(event: SecurityEvent): Promise<void> {
  * Detect suspicious activity patterns
  */
 export function detectSuspiciousActivity(
-  ipAddress: string,
-  userId: string | undefined,
+  _ipAddress: string,
+  _userId: string | undefined,
   action: string
 ): boolean {
   // Patterns that indicate suspicious activity
@@ -76,13 +73,12 @@ export function detectSuspiciousActivity(
  * Check for brute force attack
  */
 export async function checkBruteForce(
-  identifier: string,
-  action: string
+  _identifier: string,
+  _action: string
 ): Promise<{ isBruteForce: boolean; remainingAttempts: number }> {
   // This would integrate with rate limiting
-  // Check for multiple failed attempts in short time
+  // Check for multiple failed attempts in short time (15 min window)
   const maxAttempts = 5
-  const windowMs = 15 * 60 * 1000 // 15 minutes
 
   // In a real implementation, check against database or cache
   // For now, return false (would need to implement attempt tracking)

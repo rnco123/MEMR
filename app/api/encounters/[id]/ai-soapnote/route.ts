@@ -5,6 +5,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
+import { handleApiError } from '@/lib/api-error-handler'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
@@ -73,7 +74,6 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       soap: row ?? null,
     })
   } catch (e) {
-    console.error('[ai-soapnote]', e)
-    return NextResponse.json({ error: 'Server error' }, { status: 500 })
+    return handleApiError(e)
   }
 }

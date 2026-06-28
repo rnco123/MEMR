@@ -2,7 +2,7 @@
 
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { UserRole } from '@/lib/roles'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'

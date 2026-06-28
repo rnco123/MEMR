@@ -122,6 +122,7 @@ function AdminFormsPage() {
     } finally {
       setLoadingAllForms(false)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- depends on allForms.length (not the array reference) so this callback stays stable unless the count actually changes.
   }, [allForms.length, refreshAllForms, t])
 
   useEffect(() => {

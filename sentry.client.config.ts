@@ -63,7 +63,7 @@ if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
       if (event.request?.url) {
         try {
           const url = new URL(event.request.url)
-          url.searchParams.forEach((value, key) => {
+          url.searchParams.forEach((_value, key) => {
             if (key.toLowerCase().includes('password') || key.toLowerCase().includes('pin')) {
               url.searchParams.set(key, '[REDACTED]')
             }

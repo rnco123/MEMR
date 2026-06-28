@@ -1,10 +1,12 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Image from 'next/image'
 import { useAuth } from '@/lib/auth-context'
 import { useT } from '@/lib/i18n'
 import { LanguageToggle } from '@/components/LanguageToggle'
+import { TurnstileWidget, type TurnstileWidgetRef } from '@/components/auth/TurnstileWidget'
+import { getTurnstileSiteKey } from '@/lib/security/turnstile'
 
 const ADMIN_SUPPORT_EMAIL = 'admin@myclinicmd.com'
 
@@ -24,6 +26,8 @@ function LoginHelpNote() {
   )
 }
 
+const TURNSTILE_SITE_KEY = getTurnstileSiteKey()
+
 export function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,6 +35,8 @@ export function LoginScreen() {
   const [error, setError] = useState<string | null>(null)
   const [emailError, setEmailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null)
+  const turnstileRef = useRef<TurnstileWidgetRef>(null)
   const { signIn } = useAuth()
   const { t } = useT()
 
@@ -57,10 +63,15 @@ export function LoginScreen() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setLoading(true)
 
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setError(t('auth.captcha_required'))
+      return
+    }
+
+    setLoading(true)
     try {
-      const { error: signInError } = await signIn(email, password)
+      const { error: signInError } = await signIn(email, password, captchaToken)
       if (signInError) {
         setError(signInError.message)
       }
@@ -68,6 +79,9 @@ export function LoginScreen() {
       setError(t('auth.unexpected_error'))
     } finally {
       setLoading(false)
+      // Turnstile tokens are single-use — reset so the widget issues a fresh one for the next attempt.
+      setCaptchaToken(null)
+      turnstileRef.current?.reset()
     }
   }
 
@@ -138,6 +152,17 @@ export function LoginScreen() {
         </div>
       </div>
 
+      {TURNSTILE_SITE_KEY && (
+        <div className="flex justify-center">
+          <TurnstileWidget
+            ref={turnstileRef}
+            siteKey={TURNSTILE_SITE_KEY}
+            onVerify={setCaptchaToken}
+            onExpire={() => setCaptchaToken(null)}
+          />
+        </div>
+      )}
+
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {error}
@@ -146,7 +171,7 @@ export function LoginScreen() {
 
       <button
         type="submit"
-        disabled={loading}
+        disabled={loading || (!!TURNSTILE_SITE_KEY && !captchaToken)}
         className="h-12 w-full rounded-full bg-[#2E6EF3] text-sm font-semibold text-white shadow-[0_8px_24px_rgba(46,110,243,0.35)] transition-colors hover:bg-[#1f5ad2] active:bg-[#1a4db8] disabled:cursor-not-allowed disabled:opacity-60 lg:h-[3.25rem] lg:rounded-2xl lg:shadow-none lg:text-base"
       >
         {loading ? t('auth.signing_in') : t('auth.sign_in_now')}

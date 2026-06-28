@@ -11,7 +11,7 @@ import { PHYSICIAN_ROLE_VALUES, CLINICAL_STAFF_ROLE_VALUES } from '@/lib/roles'
 /**
  * Require authentication for API route
  */
-export async function requireAuth(request: NextRequest): Promise<{
+export async function requireAuth(_request: NextRequest): Promise<{
   user: { id: string; email?: string }
   supabase: Awaited<ReturnType<typeof createClient>>
 } | NextResponse> {

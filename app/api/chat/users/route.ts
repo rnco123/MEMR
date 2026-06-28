@@ -1,5 +1,6 @@
 import { CHAT_ELIGIBLE_ROLES, getChatSupabaseClient, resolveChatUser } from '@/lib/chat/auth'
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 
 export const dynamic = 'force-dynamic'
 export const fetchCache = 'force-no-store'
@@ -43,12 +44,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log(`Found ${profiles?.length || 0} users for chat`)
-    console.log('User IDs found:', profiles?.map(p => p.uid).join(', '))
-    
     return NextResponse.json({ users: profiles || [] })
   } catch (error) {
     console.error('Error in GET /api/chat/users:', error)
+    Sentry.captureException(error, { tags: { route: 'chat-users' } })
     const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     const statusCode = errorMessage.includes('RLS') ? 403 : 500
     

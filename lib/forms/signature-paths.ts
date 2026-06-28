@@ -2,7 +2,7 @@
  * Parse signed_forms.form_paths into patient/physician relative paths, then full storage paths.
  */
 
-/** Must match Storage bucket name (not part of the object key passed to getPublicUrl). */
+/** Must match Storage bucket name (not part of the object key passed to createSignedUrl). */
 export const PATIENT_CONSENT_FORMS_BUCKET = 'patient_consent_forms'
 
 export type ParsedSignaturePaths = {
@@ -54,7 +54,7 @@ export function parseFormPathsRaw(formPathsRaw: string | null | undefined): Pars
 /**
  * Returns the object path inside the bucket only (e.g. `19/digital_signature.jpg`).
  * Strips accidental bucket prefixes and patterns like `19/patient_consent_forms/19/file.jpg`
- * that break getPublicUrl when stored in form_paths.
+ * that break signed-URL resolution when stored in form_paths.
  */
 export function normalizeStoragePath(encounterId: number, relative: string | null): string | null {
   if (!relative?.trim()) return null

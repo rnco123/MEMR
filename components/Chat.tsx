@@ -125,6 +125,7 @@ function ChatMessageAttachments({
           >
             {isImage && att.file_url ? (
               <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element -- time-limited Supabase signed URL; not a next/image-eligible remote host */}
                 <img
                   src={att.file_url}
                   alt={att.file_name}
@@ -212,7 +213,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } finally {
       setLoading(false)
     }
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id])
 
   // Fetch users for new chat
   const fetchUsers = useCallback(async () => {
@@ -224,7 +226,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       })
       if (response.ok) {
         const data = await response.json()
-        console.log('Fetched users:', data.users?.length || 0)
         setUsers(data.users || [])
       } else {
         const errorData = await response.json()
@@ -233,7 +234,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error fetching users:', error)
     }
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id])
 
   // Fetch messages for a conversation
   const fetchMessages = useCallback(async (conversationId: string) => {
@@ -250,7 +252,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error fetching messages:', error)
     }
-  }, [user])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id])
 
   const addPendingFiles = useCallback((fileList: FileList | null) => {
     if (!fileList?.length) return
@@ -360,7 +363,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error starting conversation:', error)
     }
-  }, [user, conversations, fetchMessages, fetchConversations])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
+  }, [user?.id, conversations, fetchMessages, fetchConversations])
 
   // Scroll to bottom of messages
   const scrollToBottom = () => {
@@ -372,7 +376,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       fetchConversations()
       fetchUsers()
     }
-  }, [isOpen, user, fetchConversations, fetchUsers])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [isOpen, user?.id, fetchConversations, fetchUsers])
 
   useEffect(() => {
     if (selectedConversation) {
@@ -424,7 +429,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [selectedConversation, user, supabase, fetchMessages, fetchConversations])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids resubscribing on every auth-context re-render that yields a new user object with the same id.
+  }, [selectedConversation, user?.id, supabase, fetchMessages, fetchConversations])
 
   const formatTime = (dateString: string) => formatClinicChatTime(dateString, language)
 

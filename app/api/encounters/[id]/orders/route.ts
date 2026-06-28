@@ -4,6 +4,8 @@ import { encounterOrderCreateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { getDoctorRowId } from '@/lib/clinical'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { loadEncounterOrders } from '@/lib/clinical/load-encounter-orders'
+import { ENCOUNTER_ORDER_SELECT } from '@/lib/encounters/encounter-detail-selects'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,14 +23,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     await guardEncounterAccess(user.id, encounterId)
 
-    const { data, error } = await supabase
-      .from('encounter_orders')
-      .select('*')
-      .eq('encounter_id', encounterId)
-      .order('created_at', { ascending: false })
-
-    if (error) throw error
-    return NextResponse.json({ data: data ?? [] })
+    const data = await loadEncounterOrders(supabase, encounterId)
+    return NextResponse.json({ data })
   } catch (e) {
     return handleApiError(e)
   }
@@ -81,7 +77,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         instructions: parsed.data.instructions ?? null,
         status: 'pending',
       })
-      .select()
+      .select(ENCOUNTER_ORDER_SELECT)
       .single()
 
     if (error) throw error

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
@@ -8,9 +9,11 @@ import {
   formatSoapSubjectiveOnly,
 } from '@/lib/icd-suggestions/format-subjective-for-icd'
 import { suggestIcdCodesFromSubjective } from '@/lib/icd-suggestions/suggest-icd-openai'
-
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { canViewClinicalEncounterContent } from '@/lib/roles'
+import { loadAiSoapSubjectiveForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
+import { loadIntakeForEncounter } from '@/lib/encounters/load-intake-for-encounter'
+
 export const dynamic = 'force-dynamic'
 
 async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
@@ -35,7 +38,6 @@ async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
 
     await guardEncounterAccess(user.id, encounterId)
 
-
     const admin = createAdminClient()
 
     const { data: enc, error: encErr } = await admin
@@ -48,42 +50,16 @@ async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
       return NextResponse.json({ error: 'Encounter not found' }, { status: 404 })
     }
 
-    const appointmentId = Number(enc.appointment_id)
+    const appointmentId =
+      enc.appointment_id != null && Number.isFinite(Number(enc.appointment_id))
+        ? Number(enc.appointment_id)
+        : null
+    const intakeId =
+      enc.intake_id != null && Number.isFinite(Number(enc.intake_id)) ? Number(enc.intake_id) : null
 
-    let intake: Record<string, unknown> | null = null
-    if (enc.intake_id) {
-      const { data } = await admin.from('intake_form').select('*').eq('id', enc.intake_id).maybeSingle()
-      if (data) intake = data as Record<string, unknown>
-    }
-    if (!intake && Number.isFinite(appointmentId) && appointmentId > 0) {
-      const { data } = await admin
-        .from('intake_form')
-        .select('*')
-        .eq('appointment_id', appointmentId)
-        .maybeSingle()
-      if (data) intake = data as Record<string, unknown>
-    }
-
-    const { data: soapRow } = await admin
-      .from('ai_soapnotes')
-      .select('subjective_text')
-      .eq('encounter_id', encounterId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
-
-    let soapSubjective = formatSoapSubjectiveOnly(soapRow as { subjective_text?: string | null } | null)
-
-    if (!soapSubjective && Number.isFinite(appointmentId) && appointmentId > 0) {
-      const { data: soapAppt } = await admin
-        .from('ai_soapnotes')
-        .select('subjective_text')
-        .eq('appointment_id', appointmentId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      soapSubjective = formatSoapSubjectiveOnly(soapAppt as { subjective_text?: string | null } | null)
-    }
+    const intake = await loadIntakeForEncounter(admin, intakeId, appointmentId)
+    const soapRow = await loadAiSoapSubjectiveForEncounter(admin, encounterId, appointmentId)
+    const soapSubjective = formatSoapSubjectiveOnly(soapRow)
 
     const intakeBlock = formatIntakeSubjectiveForIcd(intake)
     const payload = buildIcdUserPayload(intakeBlock, soapSubjective)
@@ -105,6 +81,7 @@ async function requireStaffAndRun(encounterId: number): Promise<NextResponse> {
     return NextResponse.json({ ok: true, icd_suggestions: result.icd_suggestions })
   } catch (e) {
     console.error('[icd-suggestions]', e)
+    Sentry.captureException(e, { tags: { route: 'icd-suggestions' } })
     return NextResponse.json({ ok: false, message: "AI can't find ICD code" }, { status: 500 })
   }
 }

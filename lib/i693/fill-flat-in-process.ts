@@ -2,8 +2,6 @@ import type { I693FormData } from '@/lib/i693/types'
 import { getNestedValue } from '@/lib/i693/field-sections'
 import {
   aNumberToCells,
-  cellsToANumber,
-  cellsToValue,
   valueToCells,
 } from '@/lib/i693/pdf-char-cells'
 import { readSlottedValue } from '@/lib/i693/pdf-field-slots'

@@ -34,7 +34,8 @@ export function AuditTracker() {
       path: pathname,
       role,
     })
-  }, [pathname, user, role])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
+  }, [pathname, user?.id, role])
 
   return null
 }

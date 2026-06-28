@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
 import { generateSecureFileName, scanFileContent, validateFileUpload } from '@/lib/security/file-upload'
 import { replySchema } from '@/lib/support/types'
+import { resolveSupportActor } from '@/lib/support/resolve-actor'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,11 +29,7 @@ export async function POST(request: NextRequest, { params }: Params) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, role')
-      .or(`uid.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle()
+    const profile = await resolveSupportActor(supabase, user.id)
     const isAdmin = profile?.role === 'admin'
 
     const adminClient = createAdminClient()
@@ -151,7 +149,6 @@ export async function POST(request: NextRequest, { params }: Params) {
 
     return NextResponse.json({ message: { ...message, attachments: messageAttachments } }, { status: 201 })
   } catch (err) {
-    console.error('[POST /api/support/tickets/[id]/messages]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }

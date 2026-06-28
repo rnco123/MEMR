@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import * as Sentry from '@sentry/nextjs'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getUserFromRequest, getSupabaseForRequest } from '@/lib/encounters/auth-from-request'
 import { createClient as createServerClient } from '@/lib/supabase/server'
@@ -166,6 +167,8 @@ export async function POST(
       persisted: persist,
     })
   } catch (e) {
+    console.error('[ai-summary]', e)
+    Sentry.captureException(e, { tags: { route: 'ai-summary' } })
     return NextResponse.json(
       { error: e instanceof Error ? e.message : 'Internal server error' },
       { status: 500 }

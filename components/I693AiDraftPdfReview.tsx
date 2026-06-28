@@ -193,8 +193,9 @@ export function I693AiDraftPdfReview({ draft, onAccept, onReject }: Props) {
 
   useEffect(() => {
     void renderDraft()
+    const hostEl = hostRef.current
     return () => {
-      if (hostRef.current) hostRef.current.innerHTML = ''
+      if (hostEl) hostEl.innerHTML = ''
       setPageHosts([])
       setCombPlacements([])
     }

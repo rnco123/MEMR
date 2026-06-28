@@ -6,7 +6,7 @@ import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { resolveDisplayName } from '@/lib/display-name'
 import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { loadProfileForUser, updateProfileForUser } from '@/lib/profile/load-profile'
-import { UserRole, isPhysicianRole } from '@/lib/roles'
+import { isPhysicianRole } from '@/lib/roles'
 import { z } from 'zod'
 
 export const dynamic = 'force-dynamic'

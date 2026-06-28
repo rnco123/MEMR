@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useEffect, useState } from 'react'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
@@ -22,7 +21,6 @@ type ApiOk = {
 
 export function EncounterConsentFormsTab({ encounterId }: { encounterId: number }) {
   const { t, language } = useT()
-  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<ApiOk | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,14 +31,8 @@ export function EncounterConsentFormsTab({ encounterId }: { encounterId: number 
       setLoading(true)
       setError(null)
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        const headers: Record<string, string> = {}
-        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
         const res = await fetch(`/api/encounters/${encounterId}/consent-forms`, {
           credentials: 'include',
-          headers,
         })
         const json = (await res.json()) as ApiOk & { error?: string; detail?: string }
         if (cancelled) return
@@ -64,7 +56,7 @@ export function EncounterConsentFormsTab({ encounterId }: { encounterId: number 
     return () => {
       cancelled = true
     }
-  }, [encounterId, supabase])
+  }, [encounterId])
 
   if (loading) {
     return (

@@ -7,14 +7,12 @@ import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
-import { createClient } from '@/lib/supabase/client'
 import { LoadingSpinner } from './LoadingSpinner'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { EncounterRoomingPanel } from './EncounterRoomingPanel'
 import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
 import {
-  mergePharmacyIntoList,
   normalizePharmacyRow,
   type PharmacyRecord,
 } from '@/lib/pharmacies/normalize'
@@ -183,8 +181,9 @@ interface EncounterDetailModalProps {
 
 export function EncounterDetailModal({
   encounterId,
-  appointmentId,
-  patientId,
+  // appointmentId/patientId accepted for the caller's contract; not read in this component.
+  appointmentId: _appointmentId,
+  patientId: _patientId,
   isOpen,
   onClose,
   onJoinTelemedicine,
@@ -203,7 +202,6 @@ export function EncounterDetailModal({
       ),
     [pathname, role, encounterId]
   )
-  const supabase = useMemo(() => createClient(), [])
   const [loading, setLoading] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [intake, setIntake] = useState<IntakeForm | null>(null)
@@ -250,158 +248,55 @@ export function EncounterDetailModal({
     const fetchData = async () => {
       setLoading(true)
       try {
-        // Patient demographics: encounter → appointment → patients (schema)
-        const { data: appointmentData, error: appointmentError } = await supabase
-          .from('appointments')
-          .select(
-            `id, appointment_date, appointment_time, onsite_type, patient_id,
-            services:service_id ( title_en, title_es ),
-            patients:patient_id (
-              id, first_name, last_name, email, phone, gender, date_of_birth,
-              zip_code, state, street_address, patient_code
-            )`
-          )
-          .eq('id', appointmentId)
-          .single()
-
-        if (appointmentError) {
-          console.error('Error fetching appointment:', appointmentError)
+        const res = await fetch(
+          `/api/encounters/${encounterId}/detail?pharmacy_registry=1`,
+          { credentials: 'include' }
+        )
+        const json = await res.json()
+        if (!res.ok) {
+          console.error('Error fetching encounter details:', json)
+          return
         }
 
-        if (appointmentData) {
-          setAppointment({
-            id: appointmentData.id,
-            appointment_date: appointmentData.appointment_date,
-            appointment_time: appointmentData.appointment_time,
-            onsite_type: appointmentData.onsite_type,
-            services: appointmentData.services as Appointment['services'],
-          })
-          const linkedPatient = appointmentData.patients
-          if (linkedPatient && typeof linkedPatient === 'object' && !Array.isArray(linkedPatient)) {
-            setPatient(linkedPatient as Patient)
-          }
-        }
-        const { data: encounterData } = await supabase
-          .from('encounters')
-          .select('*')
-          .eq('id', encounterId)
-          .single()
-
-        const encTyped = encounterData as Encounter
-        setEncounter(encTyped)
-
-        const { data: pharmList } = await supabase
-          .from('pharmacy')
-          .select('id, name, address, city, state, zip_code, phone, phone_number, email, is_active')
-          .or('is_active.is.null,is_active.eq.true')
-          .order('name')
-        let pharmacyRegistry = ((pharmList as Record<string, unknown>[]) ?? []).map((row) =>
+        const appointmentData = json.appointment as Record<string, unknown> | null
+        const encounterData = json.encounter as Record<string, unknown> | null
+        const patientData = json.patient as Record<string, unknown> | null
+        const intakeData = json.intake
+        const vitalsData = json.vitals
+        const soapData = json.ai_soap as SOAPNotes | null
+        const pharmacyData = json.pharmacy
+        const pharmacyRegistry = ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map((row) =>
           normalizePharmacyRow(row)
         )
 
-        // Fetch intake form: try encounter.intake_id first, then by appointment_id (intake_form links to appointment)
-        let intakeData: unknown = null
-        if (encounterData?.intake_id) {
-          const res = await supabase
-            .from('intake_form')
-            .select('*')
-            .eq('id', encounterData.intake_id)
-            .maybeSingle()
-          if (res.error) console.error('Error fetching intake form by id:', res.error)
-          intakeData = res.data
+        if (appointmentData) {
+          setAppointment({
+            id: appointmentData.id as number,
+            appointment_date: appointmentData.appointment_date as string | null,
+            appointment_time: appointmentData.appointment_time as string | null,
+            onsite_type: appointmentData.onsite_type as string,
+            services: appointmentData.services as Appointment['services'],
+          })
         }
-        if (!intakeData && appointmentId) {
-          const res = await supabase
-            .from('intake_form')
-            .select('*')
-            .eq('appointment_id', appointmentId)
-            .maybeSingle()
-          if (res.error) console.error('Error fetching intake form by appointment:', res.error)
-          intakeData = res.data
+
+        if (patientData) {
+          setPatient(patientData as unknown as Patient)
         }
+
+        if (encounterData) {
+          setEncounter(encounterData as unknown as Encounter)
+        }
+
         if (intakeData) {
           setIntake(intakeData as IntakeForm)
-        }
-
-        // Fetch vitals (API bypasses stale RLS that blocked physicians on client reads)
-        try {
-          const vitalsRes = await fetch(`/api/encounters/${encounterId}/vitals`, {
-            credentials: 'include',
-          })
-          const vitalsJson = await vitalsRes.json()
-          if (vitalsRes.ok) {
-            setVitals((vitalsJson.data as Vitals | null) ?? null)
-          } else {
-            console.error('Error fetching vitals:', vitalsJson.error)
-            setVitals(null)
-          }
-        } catch (vitalsErr) {
-          console.error('Error fetching vitals:', vitalsErr)
-          setVitals(null)
-        }
-
-        // Fetch SOAP notes by encounter_id (table links to encounters.id)
-        let soapData: SOAPNotes | null = null
-        let soapError: { message: string } | null = null
-
-        const { data: soapByEncounter, error: soapErrEncounter } = await supabase
-          .from('ai_soapnotes')
-          .select('*')
-          .eq('encounter_id', encounterId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle()
-
-        if (soapErrEncounter) {
-          // Fallback: some schemas use appointment_id instead of encounter_id
-          const { data: soapByAppt, error: soapErrAppt } = await supabase
-            .from('ai_soapnotes')
-            .select('*')
-            .eq('appointment_id', appointmentId)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-
-          if (!soapErrAppt && soapByAppt) {
-            soapData = soapByAppt as SOAPNotes
-          } else {
-            soapError = soapErrEncounter
-          }
-        } else if (soapByEncounter) {
-          soapData = soapByEncounter as SOAPNotes
-        }
-
-        if (soapError) {
-          console.error('Error fetching SOAP notes:', soapError)
-        }
-        setSoapNotes(soapData)
-
-        // Fetch pharmacy if pharmacy_id exists
-        if (encounterData?.pharmacy_id) {
-          const { data: pharmacyData, error: pharmacyError } = await supabase
-            .from('pharmacy')
-            .select('*')
-            .eq('id', encounterData.pharmacy_id)
-            .maybeSingle()
-
-          if (pharmacyError) {
-            console.error('Error fetching pharmacy:', pharmacyError)
-            setPharmacy(null)
-          } else if (pharmacyData) {
-            setPharmacy(pharmacyData as Pharmacy)
-            pharmacyRegistry = mergePharmacyIntoList(
-              pharmacyRegistry,
-              normalizePharmacyRow(pharmacyData as Record<string, unknown>)
-            )
-          } else {
-            setPharmacy(null)
-          }
         } else {
-          setPharmacy(null)
+          setIntake(null)
         }
 
+        setVitals((vitalsData as Vitals | null) ?? null)
+        setSoapNotes(soapData)
+        setPharmacy((pharmacyData as Pharmacy) ?? null)
         setPharmacies(pharmacyRegistry)
-
       } catch (error) {
         console.error('Error fetching encounter details:', error)
       } finally {
@@ -410,40 +305,46 @@ export function EncounterDetailModal({
     }
 
     fetchData()
-  }, [isOpen, encounterId, appointmentId, supabase])
+  }, [isOpen, encounterId])
 
   const reloadPharmacyRegistry = useCallback(async () => {
-    const { data: pharmList } = await supabase
-      .from('pharmacy')
-      .select('id, name, address, city, state, zip_code, phone, phone_number, email, is_active')
-      .or('is_active.is.null,is_active.eq.true')
-      .order('name')
+    const res = await fetch('/api/pharmacies/registry', { credentials: 'include' })
+    const json = await res.json()
+    if (!res.ok) {
+      console.error('Error fetching pharmacy registry:', json)
+      return
+    }
     setPharmacies(
-      ((pharmList as Record<string, unknown>[]) ?? []).map((row) => normalizePharmacyRow(row))
+      ((json.data as Record<string, unknown>[]) ?? []).map((row) => normalizePharmacyRow(row))
     )
-  }, [supabase])
+  }, [])
+
+  const refreshEncounterFromApi = useCallback(async () => {
+    const res = await fetch(`/api/encounters/${encounterId}/detail`, { credentials: 'include' })
+    const json = await res.json()
+    if (!res.ok || !json.encounter) return null
+    setEncounter(json.encounter as Encounter)
+    if (json.pharmacy) {
+      setPharmacy(json.pharmacy as Pharmacy)
+    }
+    return json.encounter as Encounter
+  }, [encounterId])
 
   const refreshEncounterAndPharmacy = useCallback(async () => {
-    const { data: enc } = await supabase.from('encounters').select('*').eq('id', encounterId).single()
-    if (!enc) return
-    setEncounter(enc as Encounter)
-    const pid = (enc as Encounter).pharmacy_id
-
-    await reloadPharmacyRegistry()
-
-    if (pid) {
-      const { data: pharmacyData } = await supabase.from('pharmacy').select('*').eq('id', pid).maybeSingle()
-      const normalized = pharmacyData
-        ? normalizePharmacyRow(pharmacyData as Record<string, unknown>)
-        : null
-      setPharmacy((pharmacyData as Pharmacy) ?? null)
-      if (normalized) {
-        setPharmacies((prev) => mergePharmacyIntoList(prev, normalized))
-      }
-    } else {
-      setPharmacy(null)
-    }
-  }, [encounterId, supabase, reloadPharmacyRegistry])
+    const res = await fetch(
+      `/api/encounters/${encounterId}/detail?pharmacy_registry=1`,
+      { credentials: 'include' }
+    )
+    const json = await res.json()
+    if (!res.ok || !json.encounter) return
+    setEncounter(json.encounter as Encounter)
+    setPharmacy((json.pharmacy as Pharmacy) ?? null)
+    setPharmacies(
+      ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map((row) =>
+        normalizePharmacyRow(row)
+      )
+    )
+  }, [encounterId])
 
   const canEditClinicalEncounter = canEditClinicalEncounterContent(role)
   const canManagePharmacy = canManageEncounterPharmacy(role)
@@ -499,14 +400,8 @@ export function EncounterDetailModal({
 
     ;(async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession()
-        const headers: Record<string, string> = {}
-        if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
         const res = await fetch(`/api/encounters/${encounterId}/icd-suggestions`, {
           credentials: 'include',
-          headers,
         })
         const json = (await res.json().catch(() => ({}))) as {
           ok?: boolean
@@ -541,7 +436,7 @@ export function EncounterDetailModal({
     return () => {
       cancelled = true
     }
-  }, [isOpen, loading, encounterId, supabase, t])
+  }, [isOpen, loading, encounterId, t])
 
   const patientAgeYears = useMemo(
     () => (patient?.date_of_birth ? patientAgeFromDob(patient.date_of_birth) : null),
@@ -948,12 +843,7 @@ export function EncounterDetailModal({
                   encounter={encounter}
                   readOnly={!canEditClinicalEncounter}
                   onUpdated={async () => {
-                    const { data: enc } = await supabase
-                      .from('encounters')
-                      .select('*')
-                      .eq('id', encounterId)
-                      .single()
-                    if (enc) setEncounter(enc as Encounter)
+                    await refreshEncounterFromApi()
                   }}
                 />
               )}
@@ -964,12 +854,7 @@ export function EncounterDetailModal({
                   encounterStatus={encounter.status}
                   canEdit={canEditPhysicalExam}
                   onSaved={async () => {
-                    const { data: enc } = await supabase
-                      .from('encounters')
-                      .select('*')
-                      .eq('id', encounterId)
-                      .single()
-                    if (enc) setEncounter(enc as Encounter)
+                    await refreshEncounterFromApi()
                   }}
                 />
               )}

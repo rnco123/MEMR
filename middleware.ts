@@ -4,9 +4,6 @@ import { UserRole, mapRoleToEnum } from './lib/roles'
 import { fetchProfileFields } from './lib/fetch-user-role'
 import { getSupabasePublishableKey, getSupabaseUrl } from './lib/supabase/keys'
 import { maxRequestBodySizeForPath, validateRequest } from './lib/security/request-validator'
-import { rateLimitCheck } from './lib/rate-limit'
-
-const isProduction = process.env.NODE_ENV === 'production'
 
 function normalizePathname(pathname: string): string {
   if (pathname.length > 1 && pathname.endsWith('/')) {
@@ -61,17 +58,6 @@ function getRequiredRolesForPath(pathname: string): UserRole[] | null {
   return null
 }
 
-/** Do not use `pathname.startsWith('/')` — that matches every path and breaks auth redirects. */
-function isPublicPath(pathname: string, production: boolean): boolean {
-  if (pathname === '/') return true
-  if (pathname === '/login' || pathname === '/signup') return true
-  if (pathname.startsWith('/api')) return true
-  if (!production && pathname === '/test-daily') return true
-  /** Dev-only: OpenAI key connectivity page (no secrets shown). */
-  if (!production && pathname === '/openai') return true
-  return false
-}
-
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname
   const normalizedPathname = normalizePathname(pathname)
@@ -95,7 +81,6 @@ export async function middleware(request: NextRequest) {
     )
   }
 
-  // Security: Validate request
   const requestValidation = validateRequest(request, {
     maxBodySize: maxRequestBodySizeForPath(normalizedPathname),
   })
@@ -104,42 +89,6 @@ export async function middleware(request: NextRequest) {
       { error: requestValidation.error || 'Invalid request', code: 'SECURITY_ERROR' },
       { status: 400 }
     )
-  }
-
-  // Production: disable dev/diagnostic surfaces
-  if (isProduction) {
-    if (
-      pathname === '/test-daily' ||
-      pathname === '/sentry-test' ||
-      pathname === '/test-consent-forms' ||
-      pathname === '/test-soap-complete'
-    ) {
-      return NextResponse.redirect(new URL('/', request.url))
-    }
-    if (
-      pathname === '/api/auth/test-login' ||
-      pathname === '/api/daily/test' ||
-      pathname === '/api/test-db-connection' ||
-      pathname === '/api/openai/test'
-    ) {
-      return NextResponse.json({ error: 'Not found' }, { status: 404 })
-    }
-  }
-
-  // Security: Rate limiting for API routes (shared per IP; dev uses a higher cap)
-  if (isProduction && request.nextUrl.pathname.startsWith('/api/')) {
-    const forwarded = request.headers.get('x-forwarded-for')
-    const ip =
-      request.ip ||
-      (forwarded ? forwarded.split(',')[0]?.trim() : null) ||
-      request.headers.get('x-real-ip') ||
-      'unknown'
-    if (!rateLimitCheck(ip, { limit: 100, windowMs: 60000 })) {
-      return NextResponse.json(
-        { error: 'Too many requests', code: 'RATE_LIMIT_EXCEEDED' },
-        { status: 429 }
-      )
-    }
   }
 
   let response = NextResponse.next({
@@ -157,19 +106,17 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll()
         },
         setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => {
+          cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value)
           })
-          // Create new response with updated cookies
           response = NextResponse.next({
             request,
           })
-          // Set cookies with extended expiration (24 hours) in the response
           cookiesToSet.forEach(({ name, value, options }) => {
             const cookieOptions = {
               ...options,
-              maxAge: options?.maxAge || 86400, // 24 hours in seconds
-              expires: options?.expires || new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+              maxAge: options?.maxAge || 86400,
+              expires: options?.expires || new Date(Date.now() + 24 * 60 * 60 * 1000),
               httpOnly: options?.httpOnly !== false,
               secure: process.env.NODE_ENV === 'production',
               sameSite: (options?.sameSite || 'lax') as 'lax' | 'strict' | 'none',
@@ -182,51 +129,13 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  // Refresh session if needed - this will automatically refresh expired tokens
+  // Single getUser() — validates JWT and auto-refreshes the session via cookie adapter.
   const {
-    data: { user: initialUser },
+    data: { user: effectiveUser },
     error: userError,
   } = await supabase.auth.getUser()
 
-  let effectiveUser = initialUser
-
-  // If there's an error getting user, try to refresh the session
-  let isAuthenticated = !!(initialUser && !userError)
-
-  // If there's an error but we have session cookies, try to refresh the session
-  if (userError && !initialUser) {
-    // Check if we have session cookies - if so, try to refresh
-    const sessionCookies = request.cookies.getAll().filter(
-      cookie => cookie.name.includes('sb-') && (cookie.name.includes('auth-token') || cookie.name.includes('refresh-token'))
-    )
-    const hasSessionCookies = sessionCookies.length > 0
-
-    if (hasSessionCookies) {
-      // Try to refresh the session
-      try {
-        const { data: { session }, error: refreshError } = await supabase.auth.refreshSession()
-        if (!refreshError && session?.user) {
-          isAuthenticated = true
-          effectiveUser = session.user
-          const { data: { user: refreshedUserData } } = await supabase.auth.getUser()
-          if (refreshedUserData) {
-            effectiveUser = refreshedUserData
-            isAuthenticated = true
-          }
-        }
-      } catch (refreshErr) {
-        // If refresh fails, it's likely the session is truly expired
-        if (process.env.NODE_ENV === 'development') {
-          console.warn('Session refresh failed:', refreshErr)
-        }
-      }
-    }
-  }
-
-  if (isAuthenticated && !effectiveUser) {
-    const { data: { user: resolved } } = await supabase.auth.getUser()
-    effectiveUser = resolved ?? null
-  }
+  const isAuthenticated = !!effectiveUser && !userError
 
   // Fetch role from profiles table — authoritative source (H-03).
   // Never trust user_metadata.role for authorization decisions.
@@ -268,14 +177,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
-  // Protect routes that require authentication
-  if (!isAuthenticated && !pathname.startsWith('/login')) {
-    if (!isPublicPath(pathname, isProduction)) {
-      const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/'
-      redirectUrl.searchParams.set('redirectedFrom', pathname)
-      return NextResponse.redirect(redirectUrl)
-    }
+  if (!isAuthenticated) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/'
+    redirectUrl.searchParams.set('redirectedFrom', pathname)
+    return NextResponse.redirect(redirectUrl)
   }
 
   // Role-based route protection (matches page-level withRoleProtection)
@@ -288,21 +194,24 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // Authenticated /login is handled client-side (post-login Lottie redirect screen).
-
-  // Don't redirect authenticated users without roles from dashboard immediately
-  // Let the client-side handle it to avoid redirect loops
-  // The client will show "account being setup" message if needed
-
   return response
 }
 
 export const config = {
   matcher: [
     /*
-     * Skip: _next/*, favicon, static assets.
-     * Only run middleware for page/API routes.
+     * Protected app pages only. Excluded entirely:
+     * - /api/* (each route uses lib/security/api-auth.ts)
+     * - /_next/*, /static/*, favicon.ico, static assets
+     * - Public pages: /, /login, /signup, /offline
      */
-    '/((?!_next|favicon\\.ico|monitoring|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico|css|js|json|webmanifest)$).*)',
+    '/dashboard',
+    '/dashboard/:path*',
+    '/admin',
+    '/admin/:path*',
+    '/video',
+    '/video/:path*',
+    '/patient-file',
+    '/patient-file/:path*',
   ],
 }

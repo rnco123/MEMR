@@ -76,7 +76,6 @@ function readNumber(value: unknown): number | null {
 export async function deriveCaseFlags(
   admin: SupabaseClient,
   encounterId: number,
-  patientId: number,
   existingDelivered: boolean
 ): Promise<CaseFlags> {
   const { data: enc } = await admin
@@ -279,24 +278,25 @@ async function syncTasks(
   if (flags.is_vaccine_complete) completed.add('vaccine_record')
   if (flags.is_md_signed) completed.add('md_signature')
 
-  for (const taskType of TASK_TYPES) {
+  const now = new Date().toISOString()
+  const rows = TASK_TYPES.map((taskType) => {
     const isComplete = completed.has(taskType)
     const isMissing = missing_items.includes(taskType)
     const status = isComplete && !isMissing ? 'completed' : 'pending'
-    const now = new Date().toISOString()
-    const { error } = await admin.from('immigration_tasks').upsert(
-      {
-        case_id: caseId,
-        task_type: taskType,
-        status,
-        completed_at: status === 'completed' ? now : null,
-        updated_at: now,
-      },
-      { onConflict: 'case_id,task_type' }
-    )
-    if (error) {
-      console.warn(`[syncImmigrationCase] immigration_tasks upsert failed (${taskType}):`, error.message)
+    return {
+      case_id: caseId,
+      task_type: taskType,
+      status,
+      completed_at: status === 'completed' ? now : null,
+      updated_at: now,
     }
+  })
+
+  const { error } = await admin
+    .from('immigration_tasks')
+    .upsert(rows, { onConflict: 'case_id,task_type' })
+  if (error) {
+    console.warn('[syncImmigrationCase] immigration_tasks upsert failed:', error.message)
   }
 }
 
@@ -350,7 +350,7 @@ export async function syncImmigrationCase(
     .maybeSingle()
 
   const priorDelivered = options?.is_delivered ?? existing?.is_delivered ?? false
-  const flags = await deriveCaseFlags(admin, encounterId, patientId, Boolean(priorDelivered))
+  const flags = await deriveCaseFlags(admin, encounterId, Boolean(priorDelivered))
 
   if (options?.is_delivered === true) flags.is_delivered = true
 

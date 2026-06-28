@@ -1,5 +1,6 @@
 import { getChatSupabaseClient, resolveChatUser, sortParticipantIds } from '@/lib/chat/auth'
 import { NextRequest, NextResponse } from 'next/server'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,8 +101,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ conversations: enrichedConversations })
   } catch (error) {
-    console.error('Error in GET /api/chat/conversations:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }
 
@@ -167,7 +167,6 @@ export async function POST(request: NextRequest) {
     const enriched = await enrichConversation(supabase, conversation, user.id)
     return NextResponse.json({ conversation: enriched })
   } catch (error) {
-    console.error('Error in POST /api/chat/conversations:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(error)
   }
 }

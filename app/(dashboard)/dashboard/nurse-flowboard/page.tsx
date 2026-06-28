@@ -2,7 +2,6 @@
 
 import { useAuth } from '@/lib/auth-context'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
-import { createClient } from '@/lib/supabase/client'
 import { useCallback, useEffect, useMemo, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -13,7 +12,6 @@ import {
   type EncounterStatus,
   getStatusAccentBarClass,
 } from '@/lib/encounter-status'
-import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { BatchAssignProviderModal } from '@/components/BatchAssignProviderModal'
@@ -34,7 +32,7 @@ import {
   writeFlowboardDisplayMode,
   type FlowboardDisplayMode,
 } from '@/components/FlowboardViewToggle'
-import { CLINICAL_DASHBOARD_ROLES, isClinicalDashboardRole, isPhysicianRole, UserRole } from '@/lib/roles'
+import { CLINICAL_DASHBOARD_ROLES, isPhysicianRole, UserRole } from '@/lib/roles'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -86,16 +84,6 @@ function formatDob(dateString: string | null | undefined): string | null {
   const d = new Date(dateString + 'T00:00:00')
   if (isNaN(d.getTime())) return null
   return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-}
-
-function dobForSearch(dateString: string | null | undefined): string {
-  if (!dateString) return ''
-  const d = new Date(dateString + 'T00:00:00')
-  if (isNaN(d.getTime())) return ''
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
 }
 
 function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {
@@ -152,7 +140,6 @@ function NurseFlowboardPage() {
   const [showBatchAssignModal, setShowBatchAssignModal] = useState(false)
   const [batchAssigning, setBatchAssigning] = useState(false)
   const initialLoadDone = useRef(false)
-  const supabase = useMemo(() => createClient(), [])
 
   useEffect(() => {
     if (isPhysicianRole(role)) {
@@ -172,47 +159,19 @@ function NurseFlowboardPage() {
 
   const fetchAvailableDoctors = useCallback(async () => {
     try {
-      // Fetch all doctors
-      const { data: doctorsData, error: doctorsError } = await supabase
-        .from('doctors')
-        .select('id, user_id, full_name, email, specialty')
-        .order('full_name', { ascending: true })
-
-      if (doctorsError) {
-        console.error('Error fetching doctors:', doctorsError)
+      const res = await fetch('/api/doctors', { credentials: 'include' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        console.error('Error fetching doctors:', json)
         setAvailableDoctors([])
         return
       }
-
-      if (!doctorsData || doctorsData.length === 0) {
-        setAvailableDoctors([])
-        return
-      }
-
-      // Fetch availability status for each doctor
-      const doctorIds = doctorsData.map(d => d.id)
-      const { data: availabilityData, error: availabilityError } = await supabase
-        .from('doctor_availability')
-        .select('doctor_id, is_available')
-        .in('doctor_id', doctorIds)
-
-      // Combine doctors with availability
-      const doctorsWithAvailability = doctorsData.map(doctor => {
-        const availability = availabilityData?.find(a => a.doctor_id === doctor.id)
-        return {
-          ...doctor,
-          is_available: availability?.is_available ?? false,
-        }
-      })
-
-      // Filter to only available doctors
-      const available = doctorsWithAvailability.filter(d => d.is_available)
-      setAvailableDoctors(available)
+      setAvailableDoctors((json.data ?? []) as AvailableDoctor[])
     } catch (error) {
       console.error('Error in fetchAvailableDoctors:', error)
       setAvailableDoctors([])
     }
-  }, [supabase])
+  }, [])
 
   const fetchAllAppointments = useCallback(async (showLoading = true) => {
     try {
@@ -400,100 +359,32 @@ function NurseFlowboardPage() {
         return
       }
 
-      let appointmentPatientId = appointments.find((a) => a.id === appointmentId)?.patient_id
-      if (!appointmentPatientId) {
-        const { data: apptRow } = await supabase
-          .from('appointments')
-          .select('patient_id')
-          .eq('id', appointmentId)
-          .maybeSingle()
-        appointmentPatientId = apptRow?.patient_id
-      }
-
-      // Update appointment date and time if provided
-      if (appointmentDate || appointmentTime) {
-        const updateData: { appointment_date?: string; appointment_time?: string } = {}
-        if (appointmentDate) updateData.appointment_date = appointmentDate
-        if (appointmentTime) updateData.appointment_time = appointmentTime
-
-        const { error: updateError } = await supabase
-          .from('appointments')
-          .update(updateData)
-          .eq('id', appointmentId)
-
-        if (updateError) {
-          console.error('Error updating appointment date/time:', updateError)
-        }
-      }
-
-      // Check if encounter exists
-      const { data: existingEncounter } = await supabase
-        .from('encounters')
-        .select('id, status')
-        .eq('appointment_id', appointmentId)
-        .maybeSingle()
-
-      let encounterIdForTimeline: number
-      if (existingEncounter) {
-        // Update encounter with doctor_id and set status to provider_assigned
-        const updatePayload: {
-          doctor_id: number
-          status: string
-          updated_at: string
-          patient_id?: number
-        } = {
+      const res = await fetch('/api/nurse/batch-assign-provider', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appointment_ids: [appointmentId],
           doctor_id: doctorIdNum,
-          status: 'provider_assigned',
-          updated_at: new Date().toISOString(),
-        }
-        if (appointmentPatientId) updatePayload.patient_id = appointmentPatientId
-
-        const { error } = await supabase
-          .from('encounters')
-          .update(updatePayload)
-          .eq('id', existingEncounter.id)
-
-        if (error) {
-          console.error('Error updating encounter:', error)
-          alert('Failed to assign doctor. Please try again.')
-          return
-        }
-        encounterIdForTimeline = existingEncounter.id
-      } else {
-        const { data: inserted, error } = await supabase
-          .from('encounters')
-          .insert({
-            appointment_id: appointmentId,
-            patient_id: appointmentPatientId ?? null,
-            doctor_id: doctorIdNum,
-            status: 'provider_assigned',
-          })
-          .select('id')
-          .single()
-
-        if (error) {
-          console.error('Error creating encounter:', error)
-          console.error('Encounter data:', { appointment_id: appointmentId, doctor_id: doctorIdNum, status: 'provider_assigned' })
-          alert(`Failed to assign doctor: ${error.message}`)
-          return
-        }
-        encounterIdForTimeline = inserted?.id ?? 0
+          appointment_date: appointmentDate ?? null,
+          appointment_time: appointmentTime ?? null,
+        }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(json.error || 'Failed to assign provider')
       }
-
-      if (encounterIdForTimeline && user?.id) {
-        const profileId = await getProfileId(supabase, user.id)
-        await insertStatusTimeline(supabase, {
-          encounterId: encounterIdForTimeline,
-          status: 'provider_assigned',
-          profileId,
-        })
+      if (json.failed > 0) {
+        const firstError = json.results?.find((r: { success?: boolean; error?: string }) => !r.success)
+        alert(firstError?.error || 'Failed to assign doctor. Please try again.')
+        return
       }
 
       await fetchAllAppointments()
       await fetchAvailableDoctors()
     } catch (error) {
       console.error('Error assigning doctor:', error)
-      alert('Failed to assign doctor. Please try again.')
+      alert(error instanceof Error ? error.message : 'Failed to assign doctor. Please try again.')
     } finally {
       setAssigningDoctor(null)
     }

@@ -4,6 +4,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { generateSecureFileName, scanFileContent, validateFileUpload } from '@/lib/security/file-upload'
 import { parseDeviceInfo } from '@/lib/support/device'
 import { createTicketSchema } from '@/lib/support/types'
+import { SUPPORT_TICKET_SELECT } from '@/lib/support/support-selects'
+import { resolveSupportActor } from '@/lib/support/resolve-actor'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,11 +30,7 @@ export async function GET(request: NextRequest) {
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     // Resolve role
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .or(`uid.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle()
+    const profile = await resolveSupportActor(supabase, user.id)
     const isAdmin = profile?.role === 'admin'
 
     const { searchParams } = new URL(request.url)
@@ -41,7 +40,7 @@ export async function GET(request: NextRequest) {
     const admin = createAdminClient()
     let query = admin
       .from('support_tickets')
-      .select('*')
+      .select(SUPPORT_TICKET_SELECT)
       .order('created_at', { ascending: false })
 
     if (!isAdmin) {
@@ -58,8 +57,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ tickets: tickets || [] })
   } catch (err) {
-    console.error('[GET /api/support/tickets]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }
 
@@ -101,11 +99,7 @@ export async function POST(request: NextRequest) {
     const { subject, content, priority, source, page_url } = parsed.data
 
     // Get user profile for snapshot
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('full_name, email, role')
-      .or(`uid.eq.${user.id},id.eq.${user.id}`)
-      .maybeSingle()
+    const profile = await resolveSupportActor(supabase, user.id)
 
     // Device info from User-Agent
     const ua = request.headers.get('user-agent') || ''
@@ -192,7 +186,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ticket, message }, { status: 201 })
   } catch (err) {
-    console.error('[POST /api/support/tickets]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }

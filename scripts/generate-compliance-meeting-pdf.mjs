@@ -1,5 +1,5 @@
 /**
- * Generates COMPLIANCE_ENCOUNTERS_AND_CHARTS.pdf in project root for meeting discussions.
+ * Generates COMPLIANCE_ENCOUNTERS_AND_CHARTS.pdf in docs/samples for meeting discussions.
  * Run: node scripts/generate-compliance-meeting-pdf.mjs
  */
 import { writeFileSync } from 'node:fs'
@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, '..')
-const OUT_PATH = resolve(ROOT, 'COMPLIANCE_ENCOUNTERS_AND_CHARTS.pdf')
+const OUT_PATH = resolve(ROOT, 'docs/samples/COMPLIANCE_ENCOUNTERS_AND_CHARTS.pdf')
 
 const { jsPDF } = await import('jspdf')
 

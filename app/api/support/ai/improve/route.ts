@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { improveTextSchema } from '@/lib/support/types'
+import { handleApiError } from '@/lib/api-error-handler'
 
 export const dynamic = 'force-dynamic'
 
@@ -57,7 +58,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ improved })
   } catch (err) {
-    console.error('[POST /api/support/ai/improve]', err)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleApiError(err)
   }
 }
