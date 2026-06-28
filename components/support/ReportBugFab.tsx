@@ -13,7 +13,7 @@ export function ReportBugFab() {
 
   // Hide for admins, unauthenticated users, loading state, and auth pages
   if (loading || !user || role === UserRole.ADMIN) return null
-  if (pathname === '/login' || pathname === '/signup' || pathname === '/') return null
+  if (pathname === '/login' || pathname === '/') return null
   if (pathname === '/dashboard/support' || pathname.startsWith('/dashboard/support')) return null
 
   return (

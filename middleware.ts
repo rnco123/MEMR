@@ -203,7 +203,7 @@ export const config = {
      * Protected app pages only. Excluded entirely:
      * - /api/* (each route uses lib/security/api-auth.ts)
      * - /_next/*, /static/*, favicon.ico, static assets
-     * - Public pages: /, /login, /signup, /offline
+     * - Public pages: /, /login, /offline
      */
     '/dashboard',
     '/dashboard/:path*',

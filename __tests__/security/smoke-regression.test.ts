@@ -45,14 +45,6 @@ describe('H-10 — Daily API key source', () => {
   })
 })
 
-describe('C-01 — Signup response does not leak user object', () => {
-  it('signup route does not return authData.user', () => {
-    const route = readFile('app/api/signup/route.ts')
-    expect(route).not.toContain('user: authData.user')
-    expect(route).toContain('{ success: true }')
-  })
-})
-
 describe('H-03 — Role resolution does not trust metadata', () => {
   it('admin-auth.ts reads profile role first', () => {
     const adminAuth = readFile('lib/admin-auth.ts')

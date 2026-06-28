@@ -15,7 +15,6 @@ interface AuthContextType {
   role: UserRole | null
   loading: boolean
   signIn: (email: string, password: string, turnstileToken?: string | null) => Promise<{ error: any }>
-  testSignIn: (email: string, password: string) => Promise<{ error: any }>
   signUp: (email: string, password: string, metadata?: { full_name?: string; role?: UserRole }) => Promise<{ error: any }>
   signOut: () => Promise<void>
   setRole: (role: UserRole) => void
@@ -208,45 +207,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? 'Cannot reach the login server. Check your internet connection or try a different network.'
           : 'Sign in failed'
       return { error: { message } }
-    }
-  }
-
-  const testSignIn = async (email: string, password: string) => {
-    try {
-      const response = await fetch('/api/auth/test-login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        return { error: { message: data.error || 'Test login failed' } }
-      }
-
-      // Create a mock user object with role
-      const mockUser = {
-        id: data.user.id,
-        email: data.user.email,
-        user_metadata: {
-          ...data.user.user_metadata,
-          role: data.user.role,
-        },
-      } as User
-
-      setUser(mockUser)
-      updateRole(data.user.role, false)
-      
-      // Store in localStorage for test mode
-      localStorage.setItem('test_user', JSON.stringify(mockUser))
-      localStorage.setItem('test_role', data.user.role)
-
-      return { error: null }
-    } catch (err) {
-      return { error: { message: 'Test login failed' } }
     }
   }
 

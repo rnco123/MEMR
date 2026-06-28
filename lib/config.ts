@@ -38,9 +38,6 @@ export const config = {
     apiKey: getEnvVar('DAILY_API_KEY', false) || getEnvVar('NEXT_PUBLIC_DAILY_API_KEY', false),
     domain: getEnvVar('NEXT_PUBLIC_DAILY_DOMAIN'),
   },
-  admin: {
-    signupPin: getEnvVar('ADMIN_SIGNUP_PIN'),
-  },
   app: {
     nodeEnv: process.env.NODE_ENV || 'development',
     isProduction: process.env.NODE_ENV === 'production',
@@ -64,7 +61,7 @@ export const config = {
   },
 } as const
 
-// Validate critical config on module load — server only (client never has SERVICE_ROLE or ADMIN_SIGNUP_PIN)
+// Validate critical config on module load — server only (client never has SERVICE_ROLE)
 const isBuildTime = process.env.NEXT_PHASE === 'phase-production-build' ||
                     process.env.NEXT_PHASE === 'phase-development-build' ||
                     process.env.NEXT_PHASE === 'phase-export'
@@ -84,9 +81,6 @@ if (config.app.isProduction && !isBuildTime && isServer) {
   }
   if (!process.env.NEXT_PUBLIC_DAILY_DOMAIN) {
     missing.push('NEXT_PUBLIC_DAILY_DOMAIN')
-  }
-  if (!process.env.ADMIN_SIGNUP_PIN) {
-    missing.push('ADMIN_SIGNUP_PIN')
   }
   if (missing.length > 0) {
     console.error(`[config] Missing required environment variables: ${missing.join(', ')}`)

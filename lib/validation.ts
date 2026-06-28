@@ -4,47 +4,6 @@
 
 import { z } from 'zod'
 
-// Signup validation
-export const signupSchema = z.object({
-  name: z
-    .string()
-    .min(2, 'Name must be at least 2 characters')
-    .max(100, 'Name must be less than 100 characters')
-    .trim()
-    .regex(/^[a-zA-Z\s'-]+$/, 'Name can only contain letters, spaces, hyphens, and apostrophes'),
-  email: z
-    .string()
-    .email('Invalid email address')
-    .toLowerCase()
-    .trim()
-    .max(255, 'Email is too long'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(128, 'Password must be less than 128 characters')
-    .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
-    .regex(/[a-z]/, 'Password must contain at least one lowercase letter')
-    .regex(/[0-9]/, 'Password must contain at least one number')
-    .regex(/[^A-Za-z0-9]/, 'Password must contain at least one special character')
-    .refine(
-      (password) => {
-        // Check for common passwords
-        const commonPasswords = ['password', '12345678', 'password123', 'admin123']
-        return !commonPasswords.includes(password.toLowerCase())
-      },
-      { message: 'Password is too common. Please choose a stronger password.' }
-    ),
-  role: z.enum(['doctor', 'nurse'], {
-    errorMap: () => ({ message: 'Role must be doctor or nurse' }),
-  }),
-  pin: z
-    .string()
-    .length(4, 'PIN must be exactly 4 characters')
-    .regex(/^\d{4}$/, 'PIN must be 4 digits'),
-})
-
-export type SignupInput = z.infer<typeof signupSchema>
-
 // Patient validation
 export const patientSchema = z.object({
   first_name: z.string().min(1, 'First name is required').max(100).trim(),
