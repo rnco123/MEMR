@@ -273,4 +273,29 @@ describe('I-693 supporting document AI flow', () => {
       immune: true,
     })
   })
+
+  it('does not clear vaccination waiver flags when draft reads unchecked widgets as false', () => {
+    const current = mergeI693Form({
+      vaccination_grid: [
+        { vaccineCode: 'dt', notAgeAppropriate: true },
+        { vaccineCode: 'polio', givenIpv: true, insufficientInterval: true },
+      ],
+    })
+    const draft = mergeI693Form({
+      vaccination_grid: [
+        { vaccineCode: 'dt', notAgeAppropriate: false },
+        { vaccineCode: 'polio', insufficientInterval: false },
+      ],
+    })
+
+    const merged = mergeAcceptedI693AiDraft(current, draft)
+
+    expect(merged.vaccination_grid.find((row) => row.vaccineCode === 'dt')).toMatchObject({
+      notAgeAppropriate: true,
+    })
+    expect(merged.vaccination_grid.find((row) => row.vaccineCode === 'polio')).toMatchObject({
+      givenIpv: true,
+      insufficientInterval: true,
+    })
+  })
 })

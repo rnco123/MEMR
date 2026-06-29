@@ -17,6 +17,7 @@ import { logI693Audit } from '@/lib/i693/audit-log'
 import { parseI693Annotations, resolveStoredI693Annotations } from '@/lib/i693/annotations'
 import type { I693Annotation } from '@/lib/i693/annotations'
 import { syncI693PdfToPatientFileAfterSave } from '@/lib/i693/save-patient-document'
+import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
@@ -104,8 +105,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     let formData = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
     const storedAnnotations = resolveStoredI693Annotations(existing?.annotations, formData)
 
-    if (!existing) {
-      const bundle = await buildI693ClinicalContext(admin, encounterId, Number(enc.patient_id))
+    const patientId = await resolveEncounterPatientId(admin, enc)
+    if (patientId != null) {
+      const bundle = await buildI693ClinicalContext(admin, encounterId, patientId)
       formData = prefillFromPatient(bundle.patient, bundle.vitals, formData)
     }
 

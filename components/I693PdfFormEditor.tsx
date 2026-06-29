@@ -8,7 +8,7 @@ import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
-import { extractFormDataFromApi, parseFormDataFromApi } from '@/lib/i693/form-api'
+import { extractFormDataFromApi, parseFormDataFromApi, countFilledI693Fields } from '@/lib/i693/form-api'
 import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
 import {
   I693AiDraftPdfReview,
@@ -25,6 +25,8 @@ import {
 import {
   applyI693FormToPdfDocument,
   extractI693FormFromPdfDocument,
+  extractI693FormFromPdfDocumentPreserving,
+  hydrateAnnotationStorageFromPdfWidgets,
 } from '@/lib/i693/pdfjs-form-bridge'
 import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 import {
@@ -114,14 +116,13 @@ function toPx(percent: number, totalPx: number): number {
   return Math.max(0, percent) * totalPx
 }
 
-/** Prevent pdf.js AcroForm widgets from accepting edits in preview. */
+/** Prevent pdf.js AcroForm widgets from accepting edits in preview (keep checked state). */
 function lockPreviewFormLayer(root: HTMLElement): void {
   root.style.pointerEvents = 'none'
   root.querySelectorAll('input, textarea, select, button').forEach((node) => {
     const el = node as HTMLInputElement
-    if (el.type === 'checkbox' || el.type === 'radio') {
-      el.disabled = true
-    } else {
+    // Do not set disabled on checkbox/radio — browsers drop the checked appearance.
+    if (el.type !== 'checkbox' && el.type !== 'radio') {
       el.readOnly = true
     }
     el.tabIndex = -1
@@ -205,6 +206,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const [supportingLoading, setSupportingLoading] = useState(false)
   const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
   const [locationAutofillLoading, setLocationAutofillLoading] = useState(false)
+  const [aiChartLoading, setAiChartLoading] = useState(false)
   const [aiDraft, setAiDraft] = useState<I693SupportingDocumentDraft | null>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const previewHostRef = useRef<HTMLDivElement>(null)
@@ -281,7 +283,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const syncFormFromPdf = useCallback(async () => {
     const pdf = pdfRef.current
     if (!pdf) return
-    const next = await extractI693FormFromPdfDocument(pdf, formRef.current)
+    const next = await extractI693FormFromPdfDocumentPreserving(pdf, formRef.current)
     setForm(next)
     formRef.current = next
     setDirty(true)
@@ -290,7 +292,10 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const saveCurrent = useCallback(
     async (showToast: boolean): Promise<boolean> => {
       if (pdfRef.current) {
-        const next = await extractI693FormFromPdfDocument(pdfRef.current, formRef.current)
+        const next = await extractI693FormFromPdfDocumentPreserving(
+          pdfRef.current,
+          formRef.current
+        )
         setForm(next)
         formRef.current = next
       }
@@ -376,6 +381,40 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       toast.error(e instanceof Error ? e.message : 'Location auto-fill failed')
     } finally {
       setLocationAutofillLoading(false)
+    }
+  }, [encounterId, mode, t])
+
+  const aiFillFromChart = useCallback(async () => {
+    setAiChartLoading(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/i693/ai-fill`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || json.message || 'AI fill failed')
+
+      const raw =
+        extractFormDataFromApi(json) ??
+        (json.submission ? extractFormDataFromApi(json.submission) : null)
+      const next = parseFormDataFromApi(raw)
+      setForm(next)
+      formRef.current = next
+      setDirty(true)
+      if (mode !== 'editor') setMode('editor')
+      setEditorTick((n) => n + 1)
+
+      const filled = countFilledI693Fields(next)
+      if (filled === 0) {
+        toast.warning(t('i693.ai_empty_warn'))
+      } else {
+        toast.success(t('i693.ai_done'))
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'AI fill failed')
+    } finally {
+      setAiChartLoading(false)
     }
   }, [encounterId, mode, t])
 
@@ -496,6 +535,9 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
       const pdfjs = await import('pdfjs-dist')
       pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
       const pdf = await loadPdfJsDocument(pdfjs, bytes)
+      // MuPDF sets /V on widgets; pdf.js needs annotationStorage before render.
+      await hydrateAnnotationStorageFromPdfWidgets(pdf)
+      await applyI693FormToPdfDocument(pdf, formRef.current)
       host.innerHTML = ''
       const linkService = new PdfLinkService(pdf.numPages)
       const nextPreviewPageHosts: PageAnnotationHost[] = []
@@ -884,7 +926,10 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     setSupportingLoading(true)
     try {
       if (pdfRef.current) {
-        const next = await extractI693FormFromPdfDocument(pdfRef.current, formRef.current)
+        const next = await extractI693FormFromPdfDocumentPreserving(
+          pdfRef.current,
+          formRef.current
+        )
         setForm(next)
         formRef.current = next
       }
@@ -1554,6 +1599,26 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           e.currentTarget.value = ''
         }}
       />
+
+      <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="min-w-0 flex-1">
+          <h3 className="text-sm font-semibold text-slate-900">{t('i693.ai_fill')}</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Fills Part 1 (name, address, DOB) and clinical sections from the patient chart and encounter notes.
+          </p>
+          {patientName ? (
+            <p className="mt-2 text-xs font-medium text-[#2E6EF3]">{patientName}</p>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          onClick={() => void aiFillFromChart()}
+          disabled={aiChartLoading || saving || previewLoading}
+          className="inline-flex shrink-0 items-center rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+        >
+          {aiChartLoading ? t('i693.ai_running') : t('i693.ai_fill')}
+        </button>
+      </div>
 
       {locationAutofill ? (
         <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">

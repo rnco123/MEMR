@@ -11,6 +11,7 @@ import {
   parseVaccinationWidget,
   vaccinationWidgetValue,
 } from '@/lib/i693/vaccination-grid-map'
+import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import { isI693CombFieldKey } from '@/lib/i693/pdf-comb-fields'
 import { widgetFieldIndex, widgetShortName } from '@/lib/i693/pdf-widget-map'
 import {
@@ -87,7 +88,8 @@ async function extractVaccinationFields(
     const val = (raw?.value ?? entry.value ?? '').toString().trim()
     const checked = val === 'On' || val === 'Yes' || entry.checkBox === true
 
-    if (!val && !checked) continue
+    // pdf.js reports unchecked boxes as "Off" — do not clear pre-filled waiver flags.
+    if (val === 'Off' || (!checked && !val)) continue
     applyVaccinationWidgetToGrid(data, short, val, checked, idx)
   }
 }
@@ -124,6 +126,32 @@ export async function applyI693FormToPdfDocument(
 
   await applyVaccinationFields(pdf, data)
   await applyPdfWidgetValues(pdf, data.pdf_widget_values)
+}
+
+/** Copy embedded AcroForm /V values into pdf.js annotationStorage (preview/export PDFs). */
+export async function hydrateAnnotationStorageFromPdfWidgets(
+  pdf: PDFDocumentProxy
+): Promise<void> {
+  const fieldObjects = await pdf.getFieldObjects()
+  if (!fieldObjects) return
+
+  for (const entries of Object.values(fieldObjects)) {
+    const list = (entries ?? []) as {
+      id?: string
+      value?: string
+      checkBox?: boolean
+    }[]
+    for (const entry of list) {
+      if (!entry?.id) continue
+      const val = (entry.value ?? '').toString().trim()
+      const checked = entry.checkBox === true || val === 'On' || val === 'Yes'
+      if (checked) {
+        pdf.annotationStorage.setValue(entry.id, { value: 'On', exportValue: 'Yes' })
+      } else if (val && val !== 'Off') {
+        pdf.annotationStorage.setValue(entry.id, { value: val, formattedValue: val })
+      }
+    }
+  }
 }
 
 /** Read pdf.js annotation storage back into MEMR form shape. */
@@ -172,4 +200,13 @@ export async function extractI693FormFromPdfDocument(
   await extractVaccinationFields(pdf, next)
   mergePdfWidgetValuesIntoForm(next, await extractPdfWidgetValues(pdf))
   return next
+}
+
+/** Read pdf.js fields without erasing pre-built clinic defaults on unchecked widgets. */
+export async function extractI693FormFromPdfDocumentPreserving(
+  pdf: PDFDocumentProxy,
+  base: I693FormData
+): Promise<I693FormData> {
+  const extracted = await extractI693FormFromPdfDocument(pdf, base)
+  return mergeAcceptedI693AiDraft(base, extracted)
 }

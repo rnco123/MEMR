@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { parseAddressComponents } from '@/lib/i693/ai-fill'
 import { joinPersonName } from '@/lib/i693/pdf-field-slots'
 import { defaultVaccinationGrid } from '@/lib/i693/vaccination-grid-map'
 import type { I693FormData, I693VaccinationGridRow } from '@/lib/i693/types'
@@ -15,6 +14,19 @@ export const LOCATION_GROUP_REGION_LABEL: Record<string, string> = {
 
 const CLINICA_I693_GROUPS = new Set(['A', 'B', 'C'])
 
+/** Kempwood tenant — uses Houston (B) pre-built template, not a separate one. */
+const KEMPWOOD_TENANT_ID = 3
+
+export function resolveI693TemplateGroup(
+  rawGroup: string,
+  location: { tenant_id?: number | null }
+): 'A' | 'B' | 'C' | null {
+  if (CLINICA_I693_GROUPS.has(rawGroup)) return rawGroup as 'A' | 'B' | 'C'
+  // Kempwood keeps CLN-28 as its location code but shares the Houston (B) I-693 template.
+  if (rawGroup === 'CLN-28' || location.tenant_id === KEMPWOOD_TENANT_ID) return 'B'
+  return null
+}
+
 const CIVIL_SURGEON_SHARED = {
   practice_name: 'CLINICA SAN MIGUEL',
   medical_license: '106645',
@@ -25,6 +37,64 @@ const CIVIL_SURGEON_SHARED = {
   surgeon_family: 'ALVEY',
   surgeon_middle: 'JORDAN',
 } as const
+
+/** Fixed civil surgeon physical/mailing address for all Dallas (Group A) locations. */
+const DALLAS_CIVIL_SURGEON_ADDRESS = {
+  street: '11411 E NW HIGHWAY',
+  apt: '',
+  city: 'DALLAS',
+  state: 'TX',
+  zip: '75218',
+} as const
+
+/** Fixed civil surgeon address for all Houston (Group B) locations, including Kempwood. */
+const HOUSTON_CIVIL_SURGEON_ADDRESS = {
+  street: '5712 FONDREN RD',
+  apt: '',
+  city: 'HOUSTON',
+  state: 'TX',
+  zip: '77036',
+} as const
+
+/** Fixed civil surgeon address for all San Antonio (Group C) locations. */
+const SAN_ANTONIO_CIVIL_SURGEON_ADDRESS = {
+  street: '13032 NACOGDOCHES',
+  apt: '213',
+  city: 'SAN ANTONIO',
+  state: 'TX',
+  zip: '78217',
+} as const
+
+function fixedCivilSurgeonContact(
+  address: { street: string; apt: string; city: string; state: string; zip: string }
+) {
+  return {
+    ...address,
+    phone: CIVIL_SURGEON_SHARED.phone,
+    email: CIVIL_SURGEON_SHARED.email,
+  }
+}
+
+export function resolveCivilSurgeonAddressForGroup(
+  group: 'A' | 'B' | 'C',
+  _location: {
+    address: string | null
+    email: string | null
+    phone: string | null
+  }
+): {
+  street: string
+  apt: string
+  city: string
+  state: string
+  zip: string
+  phone: string
+  email: string
+} {
+  if (group === 'A') return fixedCivilSurgeonContact(DALLAS_CIVIL_SURGEON_ADDRESS)
+  if (group === 'B') return fixedCivilSurgeonContact(HOUSTON_CIVIL_SURGEON_ADDRESS)
+  return fixedCivilSurgeonContact(SAN_ANTONIO_CIVIL_SURGEON_ADDRESS)
+}
 
 const VACCINATION_REMARKS: Record<'A' | 'B' | 'C', string> = {
   A: 'IPOL VACCINE 2ND DOSE DUE \rHEP B VACCINE 2ND DOSE DUE \rVARICELLA VACCINE 2ND DOSE DUE \rNOT FLU SEASON',
@@ -66,10 +136,10 @@ export type I693LocationAutofillResult = I693LocationAutofillMeta & {
 }
 
 /**
- * Fixed USCIS Part 13 (page 12) layout shared by every Clinica group (A/B/C).
- * Mirrors the standard Clinica blanket-waiver template exactly.
+ * Clinica I-693 page 12 vaccination grid — identical target for Dallas (A), Houston (B), and San Antonio (C).
+ * Line 13 vaccineCode `hpv` maps to the COVID-19 row on edition 01/20/25.
  */
-function patchVaccinationGrid(): I693VaccinationGridRow[] {
+export function buildClinicaI693VaccinationGrid(): I693VaccinationGridRow[] {
   const grid = defaultVaccinationGrid()
   const row = (code: string) => {
     let r = grid.find((g) => g.vaccineCode === code)
@@ -89,7 +159,7 @@ function patchVaccinationGrid(): I693VaccinationGridRow[] {
   row('hep_b').insufficientInterval = true
   row('varicella').insufficientInterval = true
   row('pneumo').notAgeAppropriate = true
-  // Influenza row exposes only the "*See Below Table" waiver checkbox.
+  // Influenza → "*See Below Table" waiver column.
   row('influenza').insufficientInterval = true
 
   for (const code of ['hep_a', 'meningococcal', 'rotavirus', 'hpv'] as const) {
@@ -108,18 +178,16 @@ function buildLocationAutofillPatch(
     phone: string | null
   }
 ): I693FormData {
-  const parsed = location.address
-    ? parseAddressComponents(String(location.address), 'TX', '')
-    : { street: '', apt: '', city: '', state: 'TX', zip: '', country: '' }
+  const addressFields = resolveCivilSurgeonAddressForGroup(group, location)
 
   const pdf_widget_values: Record<string, string> = {
     ...SHARED_PDF_WIDGET_VALUES,
-  ...(parsed.apt ? SAN_ANTONIO_UNIT_WIDGETS : {}),
+    ...(addressFields.apt ? SAN_ANTONIO_UNIT_WIDGETS : {}),
   }
 
-  if (parsed.apt) {
-    pdf_widget_values['form1[0].#subform[3].Pt7Line3_AptSteFlrNumber[0]'] = parsed.apt
-    pdf_widget_values['form1[0].#subform[3].Pt7Line4_AptSteFlrNumber[0]'] = parsed.apt
+  if (addressFields.apt) {
+    pdf_widget_values['form1[0].#subform[3].Pt7Line3_AptSteFlrNumber[0]'] = addressFields.apt
+    pdf_widget_values['form1[0].#subform[3].Pt7Line4_AptSteFlrNumber[0]'] = addressFields.apt
   }
 
   const patch = {
@@ -140,19 +208,19 @@ function buildLocationAutofillPatch(
         CIVIL_SURGEON_SHARED.surgeon_given
       ),
       practice_name: CIVIL_SURGEON_SHARED.practice_name,
-      street: parsed.street,
-      apt: parsed.apt,
-      city: parsed.city,
-      state: parsed.state || CIVIL_SURGEON_SHARED.state,
-      zip: parsed.zip,
-      phone: location.phone?.trim() || CIVIL_SURGEON_SHARED.phone,
-      email: location.email?.trim() || CIVIL_SURGEON_SHARED.email,
+      street: addressFields.street,
+      apt: addressFields.apt,
+      city: addressFields.city,
+      state: addressFields.state,
+      zip: addressFields.zip,
+      phone: addressFields.phone,
+      email: addressFields.email,
       medical_license: CIVIL_SURGEON_SHARED.medical_license,
       summary_overall: 'class_b',
       vaccinations_complete: true,
       vaccination_remarks: VACCINATION_REMARKS[group],
     },
-    vaccination_grid: patchVaccinationGrid(),
+    vaccination_grid: buildClinicaI693VaccinationGrid(),
     pdf_widget_values,
   } as Partial<I693FormData>
 
@@ -206,29 +274,32 @@ export async function resolveI693LocationAutofill(
 
   const { data: loc, error: locErr } = await admin
     .from('locations')
-    .select('id, title, address, email, phone, location_group')
+    .select('id, title, address, email, phone, location_group, tenant_id')
     .eq('id', locationId)
     .maybeSingle()
 
   if (locErr || !loc) return unavailable('Location not found', { location_id: locationId })
 
-  const group = String(loc.location_group ?? '')
+  const rawGroup = String(loc.location_group ?? '')
     .trim()
     .toUpperCase()
 
-  if (!CLINICA_I693_GROUPS.has(group)) {
-    const regionLabel = LOCATION_GROUP_REGION_LABEL[group] ?? null
+  const typedGroup = resolveI693TemplateGroup(rawGroup, {
+    tenant_id: loc.tenant_id as number | null | undefined,
+  })
+
+  if (!typedGroup) {
+    const regionLabel = LOCATION_GROUP_REGION_LABEL[rawGroup] ?? null
     return unavailable('Location auto-fill is only available for Clinica groups A, B, and C', {
       location_id: locationId,
       location_title: loc.title ?? null,
       location_address: loc.address ?? null,
-      location_group: group || null,
+      location_group: rawGroup || null,
       region_label: regionLabel,
     })
   }
 
-  const typedGroup = group as 'A' | 'B' | 'C'
-  const regionLabel = LOCATION_GROUP_REGION_LABEL[typedGroup] ?? group
+  const regionLabel = LOCATION_GROUP_REGION_LABEL[typedGroup] ?? typedGroup
 
   return {
     available: true,

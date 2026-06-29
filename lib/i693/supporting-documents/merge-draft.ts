@@ -26,9 +26,26 @@ function mergeVaccinationGrid(
   for (const draftRow of draft) {
     if (!draftRow.vaccineCode) continue
     const existing = byCode.get(draftRow.vaccineCode) ?? { vaccineCode: draftRow.vaccineCode }
-    byCode.set(draftRow.vaccineCode, mergeObjectValues(existing, draftRow))
+    byCode.set(draftRow.vaccineCode, mergeVaccinationGridRow(existing, draftRow))
   }
   return Array.from(byCode.values())
+}
+
+function mergeVaccinationGridRow(
+  existing: I693VaccinationGridRow,
+  draft: I693VaccinationGridRow
+): I693VaccinationGridRow {
+  const next: I693VaccinationGridRow = { ...existing }
+  for (const [key, value] of Object.entries(draft)) {
+    if (key === 'vaccineCode') continue
+    if (typeof value === 'boolean') {
+      // Unchecked PDF widgets read as false — never erase an existing waiver/check.
+      if (value) (next as Record<string, unknown>)[key] = true
+      continue
+    }
+    if (hasValue(value)) (next as Record<string, unknown>)[key] = value
+  }
+  return next
 }
 
 /**

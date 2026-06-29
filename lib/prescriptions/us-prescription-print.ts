@@ -382,17 +382,22 @@ function printViaHiddenIframe(blobUrl: string): boolean {
   return true
 }
 
+export type PrintUsPrescriptionsResult =
+  | { ok: true }
+  | { ok: false; reason: 'pdf_build_failed' }
+
 /**
  * Opens a print dialog with a U.S.-format prescription PDF.
  *
  * `targetWindow` should be a window opened *synchronously* in the click handler
  * (before any `await`) so the browser does not block it as a non-user-initiated
- * popup. If omitted, falls back to an offscreen iframe in the current document.
+ * popup. If omitted or blocked, falls back to an offscreen iframe in the current
+ * document (requires `blob:` in CSP `frame-src`).
  */
 export async function printUsPrescriptions(
   ctx: PrescriptionPrintContext,
   targetWindow?: Window | null
-): Promise<boolean> {
+): Promise<PrintUsPrescriptionsResult> {
   let blobUrl: string
   try {
     const blob = await buildUsPrescriptionPdfBlob(ctx)
@@ -406,15 +411,16 @@ export async function printUsPrescriptions(
         /* ignore */
       }
     }
-    return false
+    return { ok: false, reason: 'pdf_build_failed' }
   }
 
   const title = `Prescription — ${ctx.patient.name}`
 
   if (targetWindow && !targetWindow.closed) {
     renderInWindow(targetWindow, blobUrl, title)
-    return true
+    return { ok: true }
   }
 
-  return printViaHiddenIframe(blobUrl)
+  printViaHiddenIframe(blobUrl)
+  return { ok: true }
 }
