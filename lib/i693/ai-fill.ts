@@ -1,3 +1,4 @@
+import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import type { I693FormData } from '@/lib/i693/types'
 import { EMPTY_I693_FORM, mergeI693Form } from '@/lib/i693/types'
 
@@ -102,7 +103,7 @@ export async function fillI693WithOpenAI(
     throw new Error('OpenAI returned invalid JSON for I-693')
   }
 
-  return { form: mergeI693Form(parsed), model }
+  return { form: mergeAcceptedI693AiDraft(existingForm, mergeI693Form(parsed)), model }
 }
 
 // ── Address parser ────────────────────────────────────────────────────────────

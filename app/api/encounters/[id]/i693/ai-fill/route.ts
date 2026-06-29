@@ -14,6 +14,7 @@ import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
+import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
 export const dynamic = 'force-dynamic'
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
@@ -38,17 +39,22 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const admin = createAdminClient()
     const { data: enc, error: encErr } = await admin
       .from('encounters')
-      .select('id, patient_id')
+      .select('id, patient_id, appointment_id')
       .eq('id', encounterId)
       .maybeSingle()
 
     if (encErr) throw encErr
     if (!enc) throw new ValidationError('Encounter not found')
 
-    const bundle = await buildI693ClinicalContext(admin, encounterId, Number(enc.patient_id))
+    const patientId = await resolveEncounterPatientId(admin, enc)
+    if (patientId == null) {
+      throw new ValidationError('Patient is not linked to this encounter')
+    }
+
+    const bundle = await buildI693ClinicalContext(admin, encounterId, patientId)
     if (!bundle.textBlock.trim()) {
       throw new ValidationError(
-        'No clinical data found. Complete intake, vitals, or SOAP notes before AI fill.'
+        'No patient or clinical data found. Add patient demographics, intake, vitals, or SOAP notes before AI fill.'
       )
     }
 
@@ -66,7 +72,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
 
     const row = {
       encounter_id: encounterId,
-      patient_id: enc.patient_id,
+      patient_id: patientId,
       form_data: form,
       status: 'ai_filled',
       ai_filled_at: now,
