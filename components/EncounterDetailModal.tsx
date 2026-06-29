@@ -348,6 +348,8 @@ export function EncounterDetailModal({
 
   const canEditClinicalEncounter = canEditClinicalEncounterContent(role)
   const canManagePharmacy = canManageEncounterPharmacy(role)
+  // Prescribing is physicians-only (doctor, FNP, PA) — nurses can still manage pharmacy.
+  const canPrescribeRx = isPhysicianRole(role)
 
   const canEditSoap = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
@@ -863,7 +865,7 @@ export function EncounterDetailModal({
                 <EncounterPrescriptionsPanel
                   encounterId={encounterId}
                   encounterStatus={encounter.status}
-                  canEdit={canEditClinicalEncounter}
+                  canEdit={canPrescribeRx}
                   canManagePharmacy={canManagePharmacy}
                   hasDoctor={encounter.doctor_id != null}
                   hasPharmacy={encounter.pharmacy_id != null}

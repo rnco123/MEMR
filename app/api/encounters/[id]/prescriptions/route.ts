@@ -17,7 +17,7 @@ import {
 } from '@/lib/prescriptions/encounter-prescriptions'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import {
-  canEditClinicalEncounterContent,
+  canPrescribe,
   canViewClinicalEncounterContent,
 } from '@/lib/roles'
 
@@ -37,10 +37,10 @@ async function requireEncounterViewer(supabase: Awaited<ReturnType<typeof create
   return roleInfo!.role!
 }
 
-async function requireEncounterEditor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function requirePrescriber(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
-  if (!canEditClinicalEncounterContent(roleInfo?.role)) {
-    throw new AuthorizationError('Doctors and nurses only')
+  if (!canPrescribe(roleInfo?.role)) {
+    throw new AuthorizationError('Only physicians (doctor, FNP, PA) can prescribe')
   }
   return roleInfo!.role!
 }
@@ -76,7 +76,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requireEncounterEditor(supabase, user.id)
+    await requirePrescriber(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
 
     let body: unknown

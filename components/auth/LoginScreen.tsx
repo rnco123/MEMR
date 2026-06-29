@@ -184,7 +184,7 @@ export function LoginScreen() {
   return (
     <>
       {/* Phone / tablet: hero top + bottom sheet form */}
-      <div className="lg:hidden fixed inset-0 z-10 flex flex-col bg-[#dbeafe]">
+      <div className="lg:hidden fixed inset-0 top-[var(--mtk-h)] z-10 flex flex-col bg-[#dbeafe]">
         {/* Top hero image */}
         <div className="relative h-[36vh] min-h-[200px] max-h-[320px] shrink-0 overflow-hidden">
           <Image

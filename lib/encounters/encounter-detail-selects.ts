@@ -1,7 +1,10 @@
 /** Explicit column lists for encounter detail API (no select('*')). */
 
+// final_review_suggestions_json/final_review_suggestions_at are intentionally excluded:
+// migration 043 that adds them was never applied to dev/staging, so selecting them 500s
+// this entire endpoint (and every panel gated on the resulting `encounter` state).
 export const ENCOUNTER_DETAIL_SELECT =
-  'id, appointment_id, patient_id, intake_id, pharmacy_id, doctor_id, status, encounter_code, created_at, identity_verified_at, prescribing_location_ack_at, ma_supervision_ack_at, ready_for_doctor_at, consent_ack, program_type, risk_level, risk_rationale, risk_factors, risk_assessed_at, ma_exam_findings, final_review_suggestions_json, updated_at'
+  'id, appointment_id, patient_id, intake_id, pharmacy_id, doctor_id, status, encounter_code, created_at, identity_verified_at, prescribing_location_ack_at, ma_supervision_ack_at, ready_for_doctor_at, consent_ack, program_type, risk_level, risk_rationale, risk_factors, risk_assessed_at, ma_exam_findings, updated_at'
 
 export const ENCOUNTER_STATUS_SELECT = 'id, status'
 
@@ -20,8 +23,11 @@ export const INTAKE_FORM_DETAIL_SELECT =
 export const INTAKE_VIDEO_SELECT =
   'chief_complaint, symptoms_description, location, severity, onset, medical_conditions, allergies, current_medications, surgeries, tobacco_use, alcohol_use, drug_use'
 
+// appointment_id is intentionally excluded: ai_soapnotes has no such column — selecting it
+// errors the query, which loadAiSoapForEncounter swallows silently, so SOAP notes always
+// came back null instead of throwing visibly.
 export const AI_SOAP_SELECT =
-  'id, encounter_id, appointment_id, subjective_text, objective_text, assessment_text, plan_text, created_at, updated_at, priority'
+  'id, encounter_id, subjective_text, objective_text, assessment_text, plan_text, created_at, updated_at, priority'
 
 export const AI_SOAP_RISK_SELECT =
   'subjective_text, objective_text, assessment_text, plan_text'
@@ -36,8 +42,11 @@ export const ENCOUNTER_ORDER_SELECT =
 
 export const DOCTOR_AVAILABILITY_SELECT = 'doctor_id, is_available, updated_at'
 
+// uploaded_by_name is intentionally excluded: patient_documents has no such column — selecting
+// it 500s both GET (list) and POST (upload) on app/api/patients/[id]/documents/route.ts. The
+// uploader's display name is already resolved separately via a profiles lookup in that route.
 export const PATIENT_DOCUMENT_SELECT =
-  'id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, uploaded_by_name, created_at'
+  'id, patient_id, file_name, file_path, file_type, file_size, document_category, uploaded_by, created_at'
 
 export const PRESCRIPTION_LIST_SELECT =
   'id, medication_name, strength, dosage_instruction, dosage, instructions, route, frequency, duration, refills, status, notes, created_at'

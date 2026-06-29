@@ -269,7 +269,7 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#f5f7fb]">
+    <div className="flex h-[calc(100vh_-_var(--mtk-h))] flex-col overflow-hidden bg-[#f5f7fb] mt-[var(--mtk-h)]">
       <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shrink-0">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center gap-2 h-16 sm:h-20 min-h-[4rem]">

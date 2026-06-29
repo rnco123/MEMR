@@ -36,7 +36,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     }
 
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterId)
+    // Viewing the encounter modal — location scope is enough; don't require the viewer
+    // to be the literally-assigned doctor (that stricter check belongs on write actions).
+    await assertEncounterAccess(admin, user.id, encounterId, { requireDoctorAssignment: false })
 
     const includePharmacyRegistry = request.nextUrl.searchParams.get('pharmacy_registry') === '1'
     const includePrescriptions = request.nextUrl.searchParams.get('prescriptions') === '1'

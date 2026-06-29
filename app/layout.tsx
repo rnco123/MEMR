@@ -10,6 +10,7 @@ import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "sonner";
 import { ReportBugFab } from "@/components/support/ReportBugFab";
 import { PostHogPageview } from "@/components/analytics/PostHogPageview";
+import { MaintenanceTicker } from "@/components/MaintenanceTicker";
 // Import Sentry client-side configuration
 import "../sentry.client.config";
 
@@ -46,6 +47,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className} suppressHydrationWarning>
+        <MaintenanceTicker />
         <ErrorBoundary>
           <I18nProvider>
             <AuthProvider>

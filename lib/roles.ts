@@ -145,9 +145,14 @@ export function canViewClinicalEncounterContent(role: string | null | undefined)
   return isClinicalStaffWithAdminRole(role)
 }
 
-/** Mutate encounter workflow (SOAP, Rx, rooming, etc.) — excludes admin. */
+/** Mutate encounter workflow (SOAP, rooming, etc.) — excludes admin. */
 export function canEditClinicalEncounterContent(role: string | null | undefined): boolean {
   return isClinicalStaffRole(role)
+}
+
+/** Create/edit/delete prescriptions — physicians only (doctor, FNP, PA); excludes nurse/admin. */
+export function canPrescribe(role: string | null | undefined): boolean {
+  return isPhysicianRole(role)
 }
 
 /** Assign or create pharmacy on an encounter (includes admin). */

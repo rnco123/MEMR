@@ -66,6 +66,29 @@ body {
     transform: translateY(0);
   }
 }
+/* Site-wide maintenance ticker (see components/MaintenanceTicker.tsx).
+   --mtk-h is 0 by default so full-height shells are unaffected when the ticker is off;
+   the ticker sets it to its own height (via the .maintenance-ticker-on class on <html>)
+   so those shells can subtract/offset by it. */
+:root {
+  --mtk-h: 0px;
+}
+html.maintenance-ticker-on {
+  --mtk-h: 1.75rem;
+}
+@keyframes maintenance-ticker {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-\[maintenance-ticker_22s_linear_infinite\] {
+    animation: none !important;
+  }
+}
 @keyframes fade-in {
   from {
     opacity: 0;

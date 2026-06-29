@@ -449,7 +449,7 @@ export function EncounterPrescriptionsPanel({
                       </svg>
                       {printing ? t('encounter_modal.rx_printing') : t('encounter_modal.rx_print')}
                     </button>
-                    {editable && canEmailPharmacy && (
+                    {(editable || canManagePharmacy) && canEmailPharmacy && (
                       <button
                         type="button"
                         disabled={sendingEmail || saving || isEditingSaved}
@@ -466,7 +466,7 @@ export function EncounterPrescriptionsPanel({
                             : t('encounter_modal.rx_send_to_pharmacy')}
                       </button>
                     )}
-                    {editable && lastPharmEmailSend?.sent_at && canEmailPharmacy && (
+                    {(editable || canManagePharmacy) && lastPharmEmailSend?.sent_at && canEmailPharmacy && (
                       <p className="w-full mt-1 text-xs text-slate-400">
                         {lastPharmEmailSend.sent_by_name
                           ? t('encounter_modal.rx_send_to_pharmacy_last_sent', {

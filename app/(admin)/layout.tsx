@@ -237,7 +237,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ]
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#f6f2ff]">
+    <div className="flex h-[calc(100vh_-_var(--mtk-h))] flex-col overflow-hidden bg-[#f6f2ff] mt-[var(--mtk-h)]">
       <header className="bg-[#fdfbff] border-b border-purple-100 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center gap-2 h-16 min-h-[4rem]">

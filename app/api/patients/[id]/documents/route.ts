@@ -74,7 +74,7 @@ export async function GET(
     const transformedDocuments = (documents ?? []).map((doc: any) => {
       const uploaderProfile = doc.uploaded_by ? uploaderById.get(doc.uploaded_by) : null
       const uploadedByName: string | null =
-        uploaderProfile?.full_name || uploaderProfile?.email || doc.uploaded_by_name || null
+        uploaderProfile?.full_name || uploaderProfile?.email || null
 
       return {
         id: doc.id,
@@ -245,7 +245,7 @@ export async function POST(
 
     // Transform document to match frontend interface (same format as GET endpoint)
     // Fetch uploader name from profiles, or use stored name (e.g. patient intake uploads)
-    let uploadedByName: string | null = document.uploaded_by_name ?? null
+    let uploadedByName: string | null = null
     if (document.uploaded_by) {
       try {
         const { data: profile, error: profileError } = await supabaseAdmin
