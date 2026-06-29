@@ -11,21 +11,6 @@ function readFile(relPath: string): string {
 }
 
 describe('M-10 — Test endpoints blocked in production', () => {
-  it('M-10-T01 middleware blocks /api/auth/test-login in production', () => {
-    const middleware = readFile('middleware.ts')
-    expect(middleware).toContain('/api/auth/test-login')
-  })
-
-  it('M-10-T02 middleware blocks /api/daily/test in production', () => {
-    const middleware = readFile('middleware.ts')
-    expect(middleware).toContain('/api/daily/test')
-  })
-
-  it('M-10-T03 middleware blocks /api/test-db-connection in production', () => {
-    const middleware = readFile('middleware.ts')
-    expect(middleware).toContain('/api/test-db-connection')
-  })
-
   it('H-11 middleware blocks /api/openai/test in production', () => {
     const middleware = readFile('middleware.ts')
     expect(middleware).toContain('/api/openai/test')

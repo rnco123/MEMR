@@ -18,6 +18,10 @@ const nextConfig = {
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
       process.env.SUPABASE_ANON_KEY ||
       '',
+    // APP_ENV has no NEXT_PUBLIC_ prefix but lib/config/environment.ts is imported from
+    // client components (e.g. Sentry's client config, PostHog gating) — bake it into every
+    // bundle the same way NEXT_PUBLIC_SUPABASE_URL above is baked in.
+    APP_ENV: process.env.APP_ENV || '',
   },
   // Optimize build performance
   swcMinify: true,
@@ -133,14 +137,26 @@ const nextConfig = {
       'pdf-lib',
     ],
   },
-  webpack: (config, { isServer }) => {
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
         net: false,
         tls: false,
+        // @logtail/node (server-only Better Stack log forwarding) leaks into the client
+        // bundle via lib/api-error-handler.ts -> lib/encounter/complete-encounter.ts.
+        http: false,
+        https: false,
+        zlib: false,
       }
+      // "node:" scheme imports bypass resolve.fallback entirely (webpack treats them as a
+      // URI scheme, not a module specifier) — rewrite to the bare specifier so the fallback above applies.
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '')
+        })
+      )
     } else {
       config.externals = [...(config.externals || []), 'mupdf']
     }

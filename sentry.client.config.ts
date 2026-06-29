@@ -1,13 +1,14 @@
 /**
  * Sentry client-side configuration
- * Only initializes if NEXT_PUBLIC_SENTRY_DSN is provided
+ * Initializes only in staging/production, and only if NEXT_PUBLIC_SENTRY_DSN is set.
  */
 
 import * as Sentry from '@sentry/nextjs'
 import { isAbortError } from '@/lib/is-abort-error'
+import { isProduction, isStaging } from '@/lib/config/environment'
 
-// Only initialize Sentry if DSN is provided
-if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
+// Per monitoring rules, Sentry is enabled in staging and production only — and only if a DSN is set.
+if ((isStaging || isProduction) && process.env.NEXT_PUBLIC_SENTRY_DSN) {
   Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
     environment: process.env.NODE_ENV || 'development',

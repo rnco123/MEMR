@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
+import { logErrorToBetterStack } from '@/lib/monitoring/betterstack'
 
 export class AppError extends Error {
   constructor(
@@ -105,7 +106,9 @@ export function handleApiError(error: unknown): NextResponse {
       },
     })
   }
-  
+
+  logErrorToBetterStack(error, { errorType: 'api_error', errorHandler: 'handleApiError' })
+
   // Also log to console
   console.error('API Error:', error)
 

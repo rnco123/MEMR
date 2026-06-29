@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { Suspense } from "react";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth-context";
 import { UserProfileProvider } from "@/lib/user-profile-context";
@@ -8,6 +9,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "sonner";
 import { ReportBugFab } from "@/components/support/ReportBugFab";
+import { PostHogPageview } from "@/components/analytics/PostHogPageview";
 // Import Sentry client-side configuration
 import "../sentry.client.config";
 
@@ -56,6 +58,9 @@ export default function RootLayout({
         </ErrorBoundary>
         <Toaster richColors position="top-center" />
         <ServiceWorkerRegister />
+        <Suspense fallback={null}>
+          <PostHogPageview />
+        </Suspense>
       </body>
     </html>
   );

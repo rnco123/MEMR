@@ -16,7 +16,7 @@ const loginRateLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 
 const bodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  turnstileToken: z.string().optional(),
+  turnstileToken: z.string().nullable().optional(),
 })
 
 type PendingCookie = { name: string; value: string; options?: Parameters<NextResponse['cookies']['set']>[2] }
