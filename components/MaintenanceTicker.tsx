@@ -1,37 +1,33 @@
 'use client'
 
 import { useEffect } from 'react'
+import { resolveMaintenanceTickerMessage } from '@/lib/maintenance-ticker'
 
 /**
  * Thin site-wide maintenance ticker.
  *
  * Shown on every page (mounted in the root layout) while the app is unstable / under
  * maintenance. Toggle without a redeploy via NEXT_PUBLIC_MAINTENANCE_TICKER:
- *   - unset / 'false'  → hidden
- *   - 'true'           → shown with the default message
- *   - any other string → shown with that string as the message
+ *   - unset / 'false' / '0' / 'off'  → hidden
+ *   - 'true'                         → shown with the default message
+ *   - any other string               → shown with that string as the message
  *
- * When shown it adds `.maintenance-ticker-on` to <html>, which sets the --mtk-h CSS var
- * (see globals.css). Full-height app shells offset/subtract by that var so the fixed bar
- * reserves space instead of overlapping the header. When off, --mtk-h is 0 → zero effect.
+ * When shown it adds `.maintenance-ticker-on` to <html> for any CSS that still keys off
+ * --mtk-h. App shells use build-time helpers in lib/maintenance-ticker.ts so they do not
+ * reserve space when the ticker is disabled.
  */
 
-const DEFAULT_MESSAGE = 'System maintenance in progress — some features may be unavailable.'
-const HEIGHT_CLASS = 'h-7' // keep in sync with --mtk-h (1.75rem) in globals.css
-
-function resolveMessage(): string | null {
-  const raw = process.env.NEXT_PUBLIC_MAINTENANCE_TICKER
-  if (!raw || raw === 'false') return null
-  if (raw === 'true') return DEFAULT_MESSAGE
-  return raw
-}
+const HEIGHT_CLASS = 'h-7' // keep in sync with MAINTENANCE_TICKER_HEIGHT
 
 export function MaintenanceTicker() {
-  const message = resolveMessage()
+  const message = resolveMaintenanceTickerMessage()
 
   useEffect(() => {
-    if (!message) return
     const root = document.documentElement
+    if (!message) {
+      root.classList.remove('maintenance-ticker-on')
+      return
+    }
     root.classList.add('maintenance-ticker-on')
     return () => root.classList.remove('maintenance-ticker-on')
   }, [message])

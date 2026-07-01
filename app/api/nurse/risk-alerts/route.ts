@@ -13,7 +13,7 @@ import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 import { loadAiSoapRiskContextForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
 import { loadIntakeForEncounter } from '@/lib/encounters/load-intake-for-encounter'
-import { loadLatestVitalsForEncounter } from '@/lib/vitals/load-encounter-vitals'
+import { loadLatestVitalsForEncounter } from '@/lib/vitals/save-encounter-vitals'
 
 export const dynamic = 'force-dynamic'
 

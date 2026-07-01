@@ -179,8 +179,10 @@ export async function middleware(request: NextRequest) {
 
   if (!isAuthenticated) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = '/'
-    redirectUrl.searchParams.set('redirectedFrom', pathname)
+    redirectUrl.pathname = normalizedPathname.startsWith('/admin') ? '/login' : '/'
+    if (!normalizedPathname.startsWith('/admin')) {
+      redirectUrl.searchParams.set('redirectedFrom', pathname)
+    }
     return NextResponse.redirect(redirectUrl)
   }
 
@@ -189,7 +191,11 @@ export async function middleware(request: NextRequest) {
   if (isAuthenticated && requiredRoles !== null) {
     if (!userRole || !requiredRoles.includes(userRole)) {
       const redirectUrl = request.nextUrl.clone()
-      redirectUrl.pathname = '/'
+      if (normalizedPathname.startsWith('/admin')) {
+        redirectUrl.pathname = '/dashboard'
+      } else {
+        redirectUrl.pathname = '/dashboard'
+      }
       return NextResponse.redirect(redirectUrl)
     }
   }

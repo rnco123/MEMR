@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { encounterPrescriptionCreateSchema } from '@/lib/validation'
 import {
   AuthenticationError,
@@ -15,11 +16,17 @@ import {
   resolvePrescriberDoctorId,
   selectPrescriptionsForEncounter,
 } from '@/lib/prescriptions/encounter-prescriptions'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import {
-  canPrescribe,
+  canEditEncounterPrescriptionsByRole,
   canViewClinicalEncounterContent,
 } from '@/lib/roles'
+import { logPrescriptionAudit, loadLatestPrescriptionAuditForEncounter } from '@/lib/prescriptions/prescription-audit'
+import {
+  assertEncounterPrescriptionsEditable,
+  isEncounterPrescriptionsReleased,
+  listPrescriptionReadyForEncounter,
+} from '@/lib/prescriptions/prescription-ready'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,10 +44,10 @@ async function requireEncounterViewer(supabase: Awaited<ReturnType<typeof create
   return roleInfo!.role!
 }
 
-async function requirePrescriber(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function requireEncounterRxEditor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
-  if (!canPrescribe(roleInfo?.role)) {
-    throw new AuthorizationError('Only physicians (doctor, FNP, PA) can prescribe')
+  if (!canEditEncounterPrescriptionsByRole(roleInfo?.role)) {
+    throw new AuthorizationError()
   }
   return roleInfo!.role!
 }
@@ -55,12 +62,24 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
+    const roleInfo = await fetchUserRole(supabase, user.id)
     await requireEncounterViewer(supabase, user.id)
     await guardEncounterAccess(user.id, encounterId)
     await loadEncounterForRx(supabase, encounterId)
 
     const data = await selectPrescriptionsForEncounter(supabase, encounterId)
-    return NextResponse.json({ data })
+    const admin = createAdminClient()
+    const [last_audit, released] = await Promise.all([
+      loadLatestPrescriptionAuditForEncounter(admin, encounterId),
+      isEncounterPrescriptionsReleased(admin, encounterId),
+    ])
+
+    const payload: Record<string, unknown> = { data, last_audit, released }
+    if (roleInfo?.role === 'admin') {
+      payload.ready_queue = await listPrescriptionReadyForEncounter(admin, encounterId)
+    }
+
+    return NextResponse.json(payload)
   } catch (e) {
     return handleApiError(e)
   }
@@ -76,8 +95,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requirePrescriber(supabase, user.id)
-    await guardEncounterAccess(user.id, encounterId)
+    const role = await requireEncounterRxEditor(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     let body: unknown
     try {
@@ -92,6 +111,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const encounter = await loadEncounterForRx(supabase, encounterId)
     assertEncounterRxEditable(encounter)
 
+    const admin = createAdminClient()
+    await assertEncounterPrescriptionsEditable(admin, encounterId)
+
     const prescriberDoctorId = await resolvePrescriberDoctorId(
       supabase,
       user.id,
@@ -104,6 +126,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
       encounterId,
       pharmacyId: encounter.pharmacy_id,
       ...parsed.data,
+    })
+
+    await logPrescriptionAudit(admin, {
+      encounterId,
+      patientId: encounter.patient_id,
+      prescriptionId: data.id,
+      action: 'create',
+      userId: user.id,
+      role,
+      userEmail: user.email,
+      snapshot: data,
     })
 
     return NextResponse.json({ success: true, data })

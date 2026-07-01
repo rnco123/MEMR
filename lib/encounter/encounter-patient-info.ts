@@ -167,7 +167,7 @@ export async function loadEncounterPatientInfoContext(
   return {
     patient,
     last_audit: (lastAudit as PatientInfoAuditSummary) ?? null,
-    editable: canEditEncounterPatientInfo(encounterStatus, role),
+    editable: canEditPatientInfoByRole(role) && canEditEncounterPatientInfo(encounterStatus, role),
   }
 }
 

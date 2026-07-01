@@ -2,7 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
-import { loadEncountersForPatient } from '@/lib/patients/patient-encounters'
+import { loadEncountersForPatient, enrichEncountersWithProviderRoles } from '@/lib/patients/patient-encounters'
+import { filterEncountersForClinicalViewer } from '@/lib/patients/patient-location-visibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,8 +30,10 @@ export async function GET(
 
     const admin = await guardPatientAccess(user.id, patientId)
     const encounters = await loadEncountersForPatient(admin, patientId)
+    await enrichEncountersWithProviderRoles(admin, encounters)
+    const visible = await filterEncountersForClinicalViewer(admin, user.id, encounters)
 
-    return NextResponse.json({ encounters })
+    return NextResponse.json({ encounters: visible })
   } catch (error) {
     return handleApiError(error)
   }

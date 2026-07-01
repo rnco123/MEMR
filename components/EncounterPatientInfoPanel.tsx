@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { EncounterSectionEditButton } from '@/components/EncounterSectionEditButton'
 import { DobDateInput } from '@/components/DobDateInput'
 import { AddressLookupFields } from '@/components/AddressLookupFields'
 import type { EncounterPatientInfo, PatientInfoAuditSummary, PatientInfoUpdatePayload } from '@/lib/encounter/encounter-patient-info'
@@ -87,7 +89,13 @@ export function EncounterPatientInfoPanel({
     try {
       const res = await fetch(`/api/encounters/${encounterId}/patient-info`, { credentials: 'include' })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.patient_info_load_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) {
+          setEditable(false)
+          return
+        }
+        throw new Error(json.error || t('encounter_modal.patient_info_load_failed'))
+      }
 
       const p = json.patient as EncounterPatientInfo
       setPatient(p)
@@ -105,7 +113,6 @@ export function EncounterPatientInfoPanel({
     void loadPatientInfo()
   }, [loadPatientInfo])
 
-  const isCompleted = encounterStatus === 'completed'
   const displayAge = useMemo(() => patientAgeFromDob(patient?.date_of_birth ?? null), [patient?.date_of_birth])
 
   const formatDate = (dateString: string | null) => {
@@ -161,7 +168,10 @@ export function EncounterPatientInfoPanel({
         body: JSON.stringify(form),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(formatSaveError(json, t('encounter_modal.patient_info_save_failed')))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(formatSaveError(json, t('encounter_modal.patient_info_save_failed')))
+      }
 
       const saved = json.patient as EncounterPatientInfo
       setPatient(saved)
@@ -203,24 +213,13 @@ export function EncounterPatientInfoPanel({
             </svg>
             {t('encounter_modal.patient_info')}
           </h3>
-          <p className="text-xs text-slate-500 mt-1">{t('encounter_modal.patient_info_edit_hint')}</p>
           {lastAudit ? (
             <p className="text-xs text-violet-700 mt-2 font-medium">{formatAudit(lastAudit)}</p>
           ) : null}
-          {isCompleted ? (
-            <p className="text-xs text-amber-700 mt-2 font-medium">{t('encounter_modal.patient_info_locked_completed')}</p>
-          ) : editable ? (
-            <p className="text-xs text-emerald-700 mt-2">{t('encounter_modal.patient_info_editable_until_completed')}</p>
-          ) : null}
+          <p className="text-xs text-slate-500 mt-1">{t('encounter_modal.patient_info_edit_hint')}</p>
         </div>
         {editable && !editing ? (
-          <button
-            type="button"
-            onClick={startEdit}
-            className="px-3 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
-          >
-            {t('common.edit')}
-          </button>
+          <EncounterSectionEditButton onClick={startEdit} />
         ) : null}
       </div>
 
@@ -312,7 +311,7 @@ export function EncounterPatientInfoPanel({
               disabled={saving}
             />
           </div>
-          <div className="flex flex-wrap gap-2 pt-2">
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
             <button
               type="button"
               onClick={() => void savePatientInfo()}

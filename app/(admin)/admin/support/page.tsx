@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase/client'
+import { useT } from '@/lib/i18n'
 import type {
   SupportTicket,
   TicketMessage,
@@ -12,9 +13,7 @@ import type {
 } from '@/lib/support/types'
 import {
   PRIORITY_COLORS,
-  PRIORITY_LABELS,
   STATUS_COLORS,
-  STATUS_LABELS,
   TICKET_PRIORITIES,
   TICKET_STATUSES,
 } from '@/lib/support/types'
@@ -23,6 +22,9 @@ type View = 'list' | 'thread'
 
 export default function AdminSupportPage() {
   const { user } = useAuth()
+  const { t } = useT()
+  const statusLabel = (s: TicketStatus) => t(`support.status.${s}`)
+  const priorityLabel = (p: TicketPriority) => t(`support.priority.${p}`)
   const [view, setView] = useState<View>('list')
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null)
@@ -55,7 +57,7 @@ export default function AdminSupportPage() {
       const { tickets } = await res.json()
       setTickets(tickets)
     } catch {
-      toast.error('Failed to load tickets')
+      toast.error(t('support.load_failed'))
     } finally {
       setLoadingTickets(false)
     }
@@ -70,7 +72,7 @@ export default function AdminSupportPage() {
       setActiveTicket(ticket)
       if (scroll) scrollToBottom('instant')
     } catch {
-      toast.error('Failed to load ticket')
+      toast.error(t('support.thread_load_failed'))
     } finally {
       setLoadingThread(false)
     }
@@ -146,11 +148,11 @@ export default function AdminSupportPage() {
         body: JSON.stringify({ status }),
       })
       if (!res.ok) throw new Error()
-      toast.success(`Status → ${STATUS_LABELS[status]}`)
+      toast.success(t('support.status_updated', { status: statusLabel(status) }))
       loadTickets()
     } catch {
       setActiveTicket((t) => t ? { ...t, status: prev } : t)
-      toast.error('Failed to update status')
+      toast.error(t('support.status_update_failed'))
     } finally {
       setUpdatingStatus(false)
     }
@@ -168,10 +170,10 @@ export default function AdminSupportPage() {
         body: JSON.stringify({ priority }),
       })
       if (!res.ok) throw new Error()
-      toast.success(`Priority → ${PRIORITY_LABELS[priority]}`)
+      toast.success(t('support.priority_updated', { priority: priorityLabel(priority) }))
     } catch {
       setActiveTicket((t) => t ? { ...t, priority: prev } : t)
-      toast.error('Failed to update priority')
+      toast.error(t('support.priority_update_failed'))
     }
   }
 
@@ -315,7 +317,7 @@ export default function AdminSupportPage() {
             <>
               {/* Status row */}
               <div className="mt-2.5 flex flex-wrap gap-1.5 items-center">
-                <span className="text-xs text-slate-400 mr-0.5">Status:</span>
+                <span className="text-xs text-slate-400 mr-0.5">{t('support.status_label')}</span>
                 {TICKET_STATUSES.map((s) => (
                   <button
                     key={s}
@@ -327,7 +329,7 @@ export default function AdminSupportPage() {
                         : 'border-slate-200 text-slate-500 hover:border-slate-300 disabled:opacity-40'
                     }`}
                   >
-                    {STATUS_LABELS[s]}
+                    {statusLabel(s)}
                   </button>
                 ))}
                 <span className="ml-auto text-[10px] text-slate-400 hidden sm:flex items-center gap-1">
@@ -340,7 +342,7 @@ export default function AdminSupportPage() {
               </div>
               {/* Priority row */}
               <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
-                <span className="text-xs text-slate-400 mr-0.5">Priority:</span>
+                <span className="text-xs text-slate-400 mr-0.5">{t('support.priority_label')}</span>
                 {TICKET_PRIORITIES.map((p) => (
                   <button
                     key={p}
@@ -351,7 +353,7 @@ export default function AdminSupportPage() {
                         : 'border-slate-200 text-slate-400 hover:border-slate-300'
                     }`}
                   >
-                    {PRIORITY_LABELS[p]}
+                    {priorityLabel(p)}
                   </button>
                 ))}
               </div>
@@ -543,8 +545,8 @@ export default function AdminSupportPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">Support Tickets</h1>
-        <p className="mt-0.5 text-sm text-slate-500">Manage and respond to user-submitted issues</p>
+        <h1 className="text-2xl font-bold text-slate-800">{t('support.admin_title')}</h1>
+        <p className="mt-0.5 text-sm text-slate-500">{t('support.admin_subtitle')}</p>
       </div>
 
       {/* Stats */}
@@ -561,7 +563,7 @@ export default function AdminSupportPage() {
           >
             <div className="text-2xl font-bold text-slate-800">{statusCounts[s] || 0}</div>
             <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[s]}`}>
-              {STATUS_LABELS[s]}
+              {statusLabel(s)}
             </div>
           </button>
         ))}
@@ -577,7 +579,7 @@ export default function AdminSupportPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by subject, name, email…"
+            placeholder={t('support.search_placeholder')}
             className="w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm placeholder-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 transition-all"
           />
         </div>
@@ -586,9 +588,9 @@ export default function AdminSupportPage() {
           onChange={(e) => setFilterPriority(e.target.value as any)}
           className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-100 transition-all"
         >
-          <option value="all">All Priorities</option>
+          <option value="all">{t('support.all_priorities')}</option>
           {TICKET_PRIORITIES.map((p) => (
-            <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+            <option key={p} value={p}>{priorityLabel(p)}</option>
           ))}
         </select>
         {(filterStatus !== 'all' || filterPriority !== 'all' || searchQuery) && (
@@ -596,7 +598,7 @@ export default function AdminSupportPage() {
             onClick={() => { setFilterStatus('all'); setFilterPriority('all'); setSearchQuery('') }}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500 hover:bg-slate-50 transition-colors"
           >
-            Clear filters
+            {t('common.clear_filters')}
           </button>
         )}
       </div>
@@ -617,8 +619,8 @@ export default function AdminSupportPage() {
                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
-          <h3 className="text-base font-semibold text-slate-700">No tickets found</h3>
-          <p className="mt-1 text-sm text-slate-500">Try adjusting your filters</p>
+          <h3 className="text-base font-semibold text-slate-700">{t('support.no_tickets')}</h3>
+          <p className="mt-1 text-sm text-slate-500">{t('support.no_tickets_hint')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -643,18 +645,18 @@ export default function AdminSupportPage() {
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[ticket.status]}`}>
-                      {STATUS_LABELS[ticket.status]}
+                      {statusLabel(ticket.status)}
                     </span>
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_COLORS[ticket.priority]}`}>
-                      {PRIORITY_LABELS[ticket.priority]}
+                      {priorityLabel(ticket.priority)}
                     </span>
                     {ticket.source === 'floating_button' && (
                       <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-red-50 text-red-600">
-                        Bug Button
+                        {t('support.bug_button')}
                       </span>
                     )}
                     <span className="text-[10px] text-slate-400">
-                      {ticket.created_by_name || 'Unknown'}{ticket.created_by_role ? ` · ${ticket.created_by_role}` : ''}
+                      {ticket.created_by_name || t('common.unknown')}{ticket.created_by_role ? ` · ${ticket.created_by_role}` : ''}
                     </span>
                     {ticket.device_type && (
                       <span className="text-[10px] text-slate-400 capitalize">

@@ -5,7 +5,7 @@ import { handleApiError, AuthenticationError, ValidationError, AuthorizationErro
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
-import { guardEncounterAccess, guardPatientAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, guardPatientAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
 
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
 
     const v = parsed.data
     if (v.encounter_id != null) {
-      await guardEncounterAccess(user.id, v.encounter_id)
+      await guardEncounterAccess(user.id, v.encounter_id, ENCOUNTER_WRITE_ACCESS)
       const admin = createAdminClient()
       const { data: enc } = await admin
         .from('encounters')

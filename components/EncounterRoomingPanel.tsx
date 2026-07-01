@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 
 type ConsentKey =
   | 'telemedicine'
@@ -60,7 +61,10 @@ export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false
         body: JSON.stringify(body),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.toast_save_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.toast_save_failed'))
+      }
       toast.success(t('encounter_modal.toast_saved'))
       onUpdated()
     } catch (e) {

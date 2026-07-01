@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LocationHoursEditor } from '@/components/LocationHoursEditor'
+import { AddressLookupInput } from '@/components/AddressLookupInput'
 import { resolveGoogleMapUrl } from '@/lib/locations/format'
 import {
   DEFAULT_WEEKLY_HOURS,
@@ -446,11 +447,10 @@ function AdminLocationsPage() {
         />
       </div>
       <div className="md:col-span-2">
-        <label className="text-sm text-slate-700">{t('locations.address')}</label>
-        <input
+        <AddressLookupInput
+          label={t('locations.address')}
           value={form.address}
-          onChange={(e) => {
-            const address = e.target.value
+          onChange={(address) => {
             setForm((f) => {
               const next = { ...f, address }
               if (fieldAuto.map) {
@@ -460,7 +460,6 @@ function AdminLocationsPage() {
               return next
             })
           }}
-          className="mt-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
           placeholder={t('locations.address_placeholder')}
         />
       </div>

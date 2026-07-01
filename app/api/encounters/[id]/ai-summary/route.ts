@@ -6,7 +6,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 
 import { isClinicalStaffRole } from '@/lib/roles'
 
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 const SUMMARY_SYSTEM_PROMPT = `You are a clinical documentation assistant. Given a telemedicine session transcript, extract and return a JSON object with these fields:
@@ -142,7 +142,7 @@ export async function POST(
     }
 
     if (persist) {
-      await guardEncounterAccess(user.id, encounterId)
+      await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
       const admin = createAdminClient()
       const { error: persistError } = await admin

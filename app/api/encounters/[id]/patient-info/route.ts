@@ -17,7 +17,9 @@ import {
 } from '@/lib/encounter/encounter-patient-info'
 import { normalizePatientGender } from '@/lib/encounter/patient-gender'
 import { toDateInputValue } from '@/lib/datetime/date-input'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
+import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
+import { mapRoleToEnum } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -62,11 +64,23 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId)
     const ctx = await loadEncounterPatientInfoContext(admin, encounterId, roleInfo?.role)
+    const { data: encounterRow } = await admin
+      .from('encounters')
+      .select('doctor_id')
+      .eq('id', encounterId)
+      .maybeSingle()
+    const mappedRole = mapRoleToEnum(roleInfo?.role)
+    const canWrite =
+      mappedRole != null
+        ? await resolveEncounterWriteAllowed(admin, user.id, mappedRole, {
+            doctor_id: encounterRow?.doctor_id,
+          })
+        : false
 
     return NextResponse.json({
       patient: ctx.patient,
       last_audit: ctx.last_audit,
-      editable: ctx.editable,
+      editable: canWrite && ctx.editable,
     })
   } catch (e) {
     return handleApiError(e)
@@ -98,7 +112,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!parsed.success) throw parsed.error
 
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterId)
+    await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
     const result = await saveEncounterPatientInfo(admin, {
       encounterId,
       userId: user.id,

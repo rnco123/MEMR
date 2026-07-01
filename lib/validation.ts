@@ -112,6 +112,7 @@ export const nurseWalkInIntakeSchema = z.object({
   tobacco_use: z.boolean().optional(),
   alcohol_use: z.boolean().optional(),
   drug_use: z.boolean().optional(),
+  occupation: z.number().int().positive().optional().nullable(),
 })
 
 export const nurseWalkInCreateSchema = z.object({

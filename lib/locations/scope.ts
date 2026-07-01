@@ -20,7 +20,7 @@ export type LocationScope = {
   locationIds: number[]
 }
 
-/** Roles allowed on clinical location-scoped APIs (admin is unrestricted). */
+/** Roles allowed on clinical location-scoped APIs. */
 export function resolveClinicalApiRole(role: string | null | undefined): UserRole | null {
   const mapped = mapRoleToEnum(role)
   if (
@@ -55,8 +55,6 @@ export async function getLocationScopeForUser(
     return { unrestricted: false, locationIds: [] }
   }
 
-  const staffRole = isPhysicianRole(resolved) ? 'doctor' : 'nurse'
-
   const { data: rows } = await admin
     .from('user_locations')
     .select('location_id')
@@ -69,7 +67,7 @@ export async function getLocationScopeForUser(
   )
 
   if (ids.size === 0) {
-    const table = staffRole === 'doctor' ? 'doctors' : 'nurses'
+    const table = isPhysicianRole(resolved) ? 'doctors' : 'nurses'
     const { data: staffRow } = await admin
       .from(table)
       .select('location_id')

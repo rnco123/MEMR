@@ -14,7 +14,9 @@ import {
   loadEncounterSoapContext,
   saveDoctorSoapNote,
 } from '@/lib/soap/encounter-doctor-soap'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
+import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
+import { mapRoleToEnum } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,12 +42,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId)
     const ctx = await loadEncounterSoapContext(admin, encounterId, undefined, roleInfo?.role)
+    const mappedRole = mapRoleToEnum(roleInfo?.role)
+    const canWrite =
+      mappedRole != null
+        ? await resolveEncounterWriteAllowed(admin, user.id, mappedRole, ctx.encounter)
+        : false
 
     return NextResponse.json({
       ai_soap: ctx.ai_soap,
       doctor_soap: ctx.doctor_soap,
       last_audit: ctx.last_audit,
-      editable: ctx.editable,
+      editable: canWrite && ctx.editable,
     })
   } catch (e) {
     return handleApiError(e)
@@ -77,7 +84,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!parsed.success) throw parsed.error
 
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterId)
+    await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
     const result = await saveDoctorSoapNote(admin, {
       encounterId,
       userId: user.id,

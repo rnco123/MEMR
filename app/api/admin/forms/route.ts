@@ -2,30 +2,15 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { FORM_SELECT, resolveAdminFormUpdater, rowToApi } from '@/lib/forms/form-admin-api'
 import { consentFormCreateSchema } from '@/lib/validation'
 
 export const dynamic = 'force-dynamic'
-
-const FORM_SELECT = 'id, tenant_id, name, is_active, content, created_at, updated_at'
 
 function parseTenantId(raw: string | null): number | null {
   if (!raw?.trim()) return null
   const n = Number(raw)
   return Number.isFinite(n) && n > 0 ? n : null
-}
-
-function rowToApi(row: Record<string, unknown>) {
-  const content = row.content as { html?: string; updated_at?: string } | null
-  return {
-    id: Number(row.id),
-    tenant_id: Number(row.tenant_id),
-    name: String(row.name ?? ''),
-    is_active: Boolean(row.is_active),
-    html: typeof content?.html === 'string' ? content.html : '',
-    content_updated_at: content?.updated_at ?? null,
-    created_at: (row.created_at as string | null) ?? null,
-    updated_at: (row.updated_at as string | null) ?? content?.updated_at ?? null,
-  }
 }
 
 export async function GET(request: Request) {
@@ -50,7 +35,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    await requireAdminUser()
+    const user = await requireAdminUser()
     const admin = createAdminClient()
 
     let body: unknown
@@ -65,6 +50,7 @@ export async function POST(request: Request) {
 
     const v = parsed.data
     const now = new Date().toISOString()
+    const updater = await resolveAdminFormUpdater(admin, user)
 
     const { data, error } = await admin
       .from('forms')
@@ -74,6 +60,8 @@ export async function POST(request: Request) {
         is_active: v.is_active ?? true,
         content: { html: v.html, updated_at: now },
         updated_at: now,
+        updated_by: updater.updated_by,
+        updated_by_name: updater.updated_by_name,
       })
       .select(FORM_SELECT)
       .single()

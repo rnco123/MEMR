@@ -11,6 +11,7 @@ import {
 import { applyParsedPatientSearchToQuery } from '@/lib/nurse/patient-search-apply'
 import { resolvePatientSearch } from '@/lib/nurse/patient-search-openai'
 import { loadPatientVisitStats, resolvePatientLastVisit } from '@/lib/patients/patient-visit-stats'
+import { listPatientIdsVisibleInScope } from '@/lib/patients/patient-location-visibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,10 +59,11 @@ export async function GET(req: NextRequest) {
     if (locationFilter != null) {
       query = query.eq('location_id', locationFilter)
     } else if (!scope.unrestricted) {
-      if (scope.locationIds.length === 0) {
+      const visiblePatientIds = await listPatientIdsVisibleInScope(admin, scope)
+      if (!visiblePatientIds?.length) {
         return NextResponse.json({ rows: [], total: 0, page })
       }
-      query = query.in('location_id', scope.locationIds)
+      query = query.in('id', visiblePatientIds)
     }
 
     if (parsedSearch) {

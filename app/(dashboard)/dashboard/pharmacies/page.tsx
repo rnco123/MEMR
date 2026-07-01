@@ -183,9 +183,7 @@ function PharmaciesPage() {
             {showCreateForm ? t('common.cancel') : t('pharmacies.add_title')}
           </button>
         </div>
-        <p className="text-slate-600 text-sm max-w-3xl">
-          Manage pharmacies, contact details, and activation status in one place.
-        </p>
+        <p className="text-slate-600 text-sm max-w-3xl">{t('pharmacies.page_subtitle')}</p>
       </div>
 
       {showCreateForm && (
@@ -258,7 +256,7 @@ function PharmaciesPage() {
             <input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name, id, phone, email"
+              placeholder={t('pharmacies.search_placeholder')}
               className="xl:col-span-2 bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900"
             />
             <select
@@ -266,18 +264,18 @@ function PharmaciesPage() {
               onChange={(e) => setContactFilter(e.target.value as typeof contactFilter)}
               className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900"
             >
-              <option value="all">All pharmacies</option>
-              <option value="with-contact">With contact info</option>
-              <option value="missing-contact">Missing contact info</option>
+              <option value="all">{t('pharmacies.filter_all')}</option>
+              <option value="with-contact">{t('pharmacies.filter_with_contact')}</option>
+              <option value="missing-contact">{t('pharmacies.filter_missing_contact')}</option>
             </select>
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900"
             >
-              <option value="updated_desc">Recently updated</option>
-              <option value="name_asc">Name A-Z</option>
-              <option value="name_desc">Name Z-A</option>
+              <option value="updated_desc">{t('pharmacies.sort_updated')}</option>
+              <option value="name_asc">{t('pharmacies.sort_name_asc')}</option>
+              <option value="name_desc">{t('pharmacies.sort_name_desc')}</option>
             </select>
           </div>
         </div>

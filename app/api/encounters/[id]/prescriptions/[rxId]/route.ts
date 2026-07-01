@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { encounterPrescriptionUpdateSchema } from '@/lib/validation'
 import {
   AuthenticationError,
@@ -15,8 +16,10 @@ import {
   selectPrescriptionsForEncounter,
   updatePrescriptionRow,
 } from '@/lib/prescriptions/encounter-prescriptions'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { canPrescribe } from '@/lib/roles'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
+import { canEditEncounterPrescriptionsByRole } from '@/lib/roles'
+import { logPrescriptionAudit } from '@/lib/prescriptions/prescription-audit'
+import { assertEncounterPrescriptionsEditable } from '@/lib/prescriptions/prescription-ready'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,11 +29,12 @@ function parseId(raw: string | undefined, label: string): number {
   return id
 }
 
-async function requirePrescriber(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
+async function requireEncounterRxEditor(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
   const roleInfo = await fetchUserRole(supabase, userId)
-  if (!canPrescribe(roleInfo?.role)) {
-    throw new AuthorizationError('Only physicians (doctor, FNP, PA) can prescribe')
+  if (!canEditEncounterPrescriptionsByRole(roleInfo?.role)) {
+    throw new AuthorizationError()
   }
+  return roleInfo!.role!
 }
 
 async function loadPrescription(
@@ -58,8 +62,8 @@ export async function PATCH(
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requirePrescriber(supabase, user.id)
-    await guardEncounterAccess(user.id, encounterId)
+    const role = await requireEncounterRxEditor(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     let body: unknown
     try {
@@ -76,6 +80,9 @@ export async function PATCH(
 
     const encounter = await loadEncounterForRx(supabase, encounterId)
     assertEncounterRxEditable(encounter)
+
+    const admin = createAdminClient()
+    await assertEncounterPrescriptionsEditable(admin, encounterId)
 
     const existing = await loadPrescription(supabase, encounterId, rxId)
     const v = parsed.data
@@ -107,6 +114,18 @@ export async function PATCH(
     }
 
     const data = await updatePrescriptionRow(supabase, encounterId, rxId, patch)
+
+    await logPrescriptionAudit(admin, {
+      encounterId,
+      patientId: encounter.patient_id,
+      prescriptionId: rxId,
+      action: 'update',
+      userId: user.id,
+      role,
+      userEmail: user.email,
+      snapshot: data,
+    })
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)
@@ -127,12 +146,16 @@ export async function DELETE(
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await requirePrescriber(supabase, user.id)
-    await guardEncounterAccess(user.id, encounterId)
+    const role = await requireEncounterRxEditor(supabase, user.id)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     const encounter = await loadEncounterForRx(supabase, encounterId)
     assertEncounterRxEditable(encounter)
-    await loadPrescription(supabase, encounterId, rxId)
+
+    const admin = createAdminClient()
+    await assertEncounterPrescriptionsEditable(admin, encounterId)
+
+    const existing = await loadPrescription(supabase, encounterId, rxId)
 
     const { data, error } = await supabase
       .from('prescriptions')
@@ -143,6 +166,18 @@ export async function DELETE(
       .single()
 
     if (error) throw error
+
+    await logPrescriptionAudit(admin, {
+      encounterId,
+      patientId: encounter.patient_id,
+      prescriptionId: rxId,
+      action: 'cancel',
+      userId: user.id,
+      role,
+      userEmail: user.email,
+      snapshot: { ...existing, status: 'cancelled' },
+    })
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)

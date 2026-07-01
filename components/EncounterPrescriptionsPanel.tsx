@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 import { canEditEncounterPrescriptions } from '@/lib/prescriptions/encounter-prescriptions'
 import {
   emptyStructuredRxForm,
@@ -16,10 +17,12 @@ import {
   PrescriptionTableInputRow,
 } from '@/components/PrescriptionTableRow'
 import { EncounterPharmacyEditor } from '@/components/EncounterPharmacyEditor'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { findPharmacyById, type PharmacyRecord } from '@/lib/pharmacies/normalize'
-import { formatPharmEmailSentAtCentral } from '@/lib/email/format-pharm-sent-at'
 import { printUsPrescriptions } from '@/lib/prescriptions/us-prescription-print'
 import type { PrescriptionPrintContext } from '@/lib/prescriptions/load-prescription-print-context'
+import type { PrescriptionAuditSummary } from '@/lib/prescriptions/prescription-audit'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type PrescriptionRow = {
   id: number
@@ -41,19 +44,17 @@ type PendingRow = {
   form: StructuredRxForm
 }
 
-type PharmEmailLastSend = {
-  sent_at: string
-  sent_by_name: string | null
-  send_count: number
-}
-
 type Props = {
   encounterId: number
   encounterStatus: string
   /** Add/edit/remove prescription rows */
   canEdit?: boolean
-  /** Assign pharmacy or add to registry (admin + clinical staff) */
+  /** Assign pharmacy or add to registry (clinical staff only) */
   canManagePharmacy?: boolean
+  /** View/print saved prescriptions without edit rights (e.g. admin oversight) */
+  canPrintPrescriptions?: boolean
+  /** Physician: send prescriptions to pharmacy (locks edits) */
+  canSendToAdmin?: boolean
   hasDoctor: boolean
   hasPharmacy: boolean
   pharmacyId: number | null
@@ -72,6 +73,8 @@ export function EncounterPrescriptionsPanel({
   encounterStatus,
   canEdit = true,
   canManagePharmacy: canManagePharmacyProp,
+  canPrintPrescriptions = false,
+  canSendToAdmin = false,
   hasDoctor,
   hasPharmacy,
   pharmacyId,
@@ -82,8 +85,12 @@ export function EncounterPrescriptionsPanel({
 }: Props) {
   const { t, language } = useT()
   const canManagePharmacy = canManagePharmacyProp ?? canEdit
-  const editable = canEdit && canEditEncounterPrescriptions(encounterStatus)
-  const rxLocked = !canEditEncounterPrescriptions(encounterStatus)
+  const [released, setReleased] = useState(false)
+  const [sendingReady, setSendingReady] = useState(false)
+  const [sendToPharmacyConfirmOpen, setSendToPharmacyConfirmOpen] = useState(false)
+  const editable = canEdit && canEditEncounterPrescriptions(encounterStatus) && !released
+  const pharmacyEditable = canManagePharmacy && !released
+  const canPrint = editable || canManagePharmacy || canPrintPrescriptions
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [rows, setRows] = useState<PrescriptionRow[]>([])
@@ -92,17 +99,34 @@ export function EncounterPrescriptionsPanel({
   const [editForm, setEditForm] = useState<StructuredRxForm>(() => emptyStructuredRxForm())
   const [dragPendingKey, setDragPendingKey] = useState<string | null>(null)
   const [dragOverPendingKey, setDragOverPendingKey] = useState<string | null>(null)
-  const [sendToPharmacyEmail, setSendToPharmacyEmail] = useState(false)
-  const [sendingEmail, setSendingEmail] = useState(false)
   const [printing, setPrinting] = useState(false)
-  const [lastPharmEmailSend, setLastPharmEmailSend] = useState<PharmEmailLastSend | null>(null)
+  const [lastRxAudit, setLastRxAudit] = useState<PrescriptionAuditSummary>(null)
 
   const resolvedPharmacy = useMemo(
     () => assignedPharmacy ?? findPharmacyById(pharmacies, pharmacyId),
     [assignedPharmacy, pharmacies, pharmacyId]
   )
-  const pharmacyEmail = resolvedPharmacy?.email?.trim() ?? ''
-  const canEmailPharmacy = hasPharmacy && Boolean(pharmacyEmail)
+
+  const formatRxAudit = (audit: NonNullable<PrescriptionAuditSummary>) => {
+    const when = formatClinicDateTimeForLanguage(audit.created_at, language)
+    const name = audit.editor_name || t('common.unknown')
+    const roleLabel =
+      audit.editor_role === 'doctor'
+        ? t('encounter_modal.soap_role_doctor')
+        : audit.editor_role === 'nurse' || audit.editor_role === 'staff'
+          ? t('encounter_modal.soap_role_nurse')
+          : audit.editor_role === 'admin'
+            ? t('encounter_modal.soap_role_admin')
+            : audit.editor_role || ''
+    const actionLabel =
+      audit.action === 'create'
+        ? t('encounter_modal.rx_audit_created')
+        : audit.action === 'cancel'
+          ? t('encounter_modal.rx_audit_cancelled')
+          : t('encounter_modal.rx_audit_updated')
+    const med = audit.medication_name?.trim() || t('encounter_modal.rx_audit_medication')
+    return t('encounter_modal.rx_last_edited', { name, role: roleLabel, action: actionLabel, medication: med, when })
+  }
 
   const loadPrescriptions = useCallback(async () => {
     setLoading(true)
@@ -111,8 +135,16 @@ export function EncounterPrescriptionsPanel({
         credentials: 'include',
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.rx_load_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) {
+          setRows([])
+          return
+        }
+        throw new Error(json.error || t('encounter_modal.rx_load_failed'))
+      }
       setRows((json.data as PrescriptionRow[]) ?? [])
+      setLastRxAudit((json.last_audit as PrescriptionAuditSummary) ?? null)
+      setReleased(Boolean(json.released))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('encounter_modal.rx_load_failed'))
       setRows([])
@@ -121,24 +153,9 @@ export function EncounterPrescriptionsPanel({
     }
   }, [encounterId, t])
 
-  const loadLastPharmEmailSend = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/encounters/${encounterId}/prescriptions/pharm-email-log`, {
-        credentials: 'include',
-      })
-      const json = await res.json()
-      if (!res.ok) return
-      setLastPharmEmailSend((json.data as PharmEmailLastSend | null) ?? null)
-    } catch {
-      setLastPharmEmailSend(null)
-    }
-  }, [encounterId])
-
   useEffect(() => {
     void loadPrescriptions()
-    void loadLastPharmEmailSend()
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- loadPrescriptions omitted: it's recreated when `t` changes (language switch), and refetching prescriptions on a pure language change is unnecessary.
-  }, [encounterId, loadLastPharmEmailSend])
+  }, [encounterId, loadPrescriptions])
 
   const canSaveNew = editable && hasDoctor
   const hasPending = pendingRows.length > 0
@@ -149,7 +166,8 @@ export function EncounterPrescriptionsPanel({
     isEditingSaved ||
     canSaveNew ||
     pharmacyId != null ||
-    canManagePharmacy
+    canManagePharmacy ||
+    released
   const showRowControls = editable && (rows.length > 0 || hasPending || isEditingSaved)
 
   const updatePendingRow = (key: string, form: StructuredRxForm) => {
@@ -181,20 +199,27 @@ export function EncounterPrescriptionsPanel({
     setPendingRows((prev) => [...prev, newPendingRow()])
   }
 
-  const sendCurrentPrescriptionsToPharmacy = async () => {
-    if (!canEmailPharmacy || rows.length === 0 || sendingEmail) return
+  const sendPrescriptionsToAdmin = async () => {
+    if (!canSendToAdmin || released || rows.length === 0 || sendingReady) return
 
-    setSendingEmail(true)
+    setSendingReady(true)
     try {
-      const emailed = await emailPrescriptionsToPharmacy(rows.map((row) => row.id))
-      toast.success(t('encounter_modal.rx_email_pharmacy_sent', { email: emailed.pharmacy_email }))
-      await loadLastPharmEmailSend()
+      const res = await fetch(`/api/encounters/${encounterId}/prescriptions/send-ready`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.rx_send_admin_failed'))
+      }
+      toast.success(t('encounter_modal.rx_send_admin_success'))
+      setSendToPharmacyConfirmOpen(false)
+      await loadPrescriptions()
     } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : t('encounter_modal.rx_email_pharmacy_failed')
-      )
+      toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_send_admin_failed'))
     } finally {
-      setSendingEmail(false)
+      setSendingReady(false)
     }
   }
 
@@ -242,20 +267,6 @@ export function EncounterPrescriptionsPanel({
     }
   }
 
-  const emailPrescriptionsToPharmacy = async (prescriptionIds: number[]) => {
-    const res = await fetch(`/api/encounters/${encounterId}/prescriptions/send-to-pharmacy`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prescription_ids: prescriptionIds }),
-    })
-    const json = await res.json()
-    if (!res.ok) {
-      throw new Error(json.error || t('encounter_modal.rx_email_pharmacy_failed'))
-    }
-    return json.data as { pharmacy_email: string }
-  }
-
   const submitAllPending = async () => {
     if (!canSaveNew || pendingRows.length === 0) return
 
@@ -267,7 +278,6 @@ export function EncounterPrescriptionsPanel({
 
     setSaving(true)
     let saved = 0
-    const savedIds: number[] = []
     try {
       for (const row of valid) {
         const res = await fetch(`/api/encounters/${encounterId}/prescriptions`, {
@@ -277,31 +287,15 @@ export function EncounterPrescriptionsPanel({
           body: JSON.stringify(structuredFormToApiPayload(row.form)),
         })
         const json = await res.json()
-        if (!res.ok) throw new Error(json.error || t('encounter_modal.rx_save_failed'))
-        const rxId = Number(json.data?.id)
-        if (Number.isFinite(rxId) && rxId > 0) savedIds.push(rxId)
+        if (!res.ok) {
+          if (isForbiddenResponse(res.status)) return
+          throw new Error(json.error || t('encounter_modal.rx_save_failed'))
+        }
         saved++
       }
       toast.success(t('encounter_modal.rx_saved_count', { count: saved }))
       setPendingRows([])
-      setSendToPharmacyEmail(false)
       await loadPrescriptions()
-
-      if (sendToPharmacyEmail && savedIds.length > 0) {
-        try {
-          const emailed = await emailPrescriptionsToPharmacy(savedIds)
-          toast.success(
-            t('encounter_modal.rx_email_pharmacy_sent', { email: emailed.pharmacy_email })
-          )
-          await loadLastPharmEmailSend()
-        } catch (emailErr) {
-          toast.error(
-            emailErr instanceof Error
-              ? emailErr.message
-              : t('encounter_modal.rx_email_pharmacy_failed')
-          )
-        }
-      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_save_failed'))
       if (saved > 0) await loadPrescriptions()
@@ -336,28 +330,13 @@ export function EncounterPrescriptionsPanel({
         body: JSON.stringify(structuredFormToApiPayload(editForm)),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.rx_update_failed'))
-      toast.success(t('encounter_modal.rx_updated'))
-      const shouldEmail = sendToPharmacyEmail
-      setEditingId(null)
-      setSendToPharmacyEmail(false)
-      await loadPrescriptions()
-
-      if (shouldEmail) {
-        try {
-          const emailed = await emailPrescriptionsToPharmacy([rxId])
-          toast.success(
-            t('encounter_modal.rx_email_pharmacy_sent', { email: emailed.pharmacy_email })
-          )
-          await loadLastPharmEmailSend()
-        } catch (emailErr) {
-          toast.error(
-            emailErr instanceof Error
-              ? emailErr.message
-              : t('encounter_modal.rx_email_pharmacy_failed')
-          )
-        }
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.rx_update_failed'))
       }
+      toast.success(t('encounter_modal.rx_updated'))
+      setEditingId(null)
+      await loadPrescriptions()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('encounter_modal.rx_update_failed'))
     } finally {
@@ -376,7 +355,10 @@ export function EncounterPrescriptionsPanel({
         credentials: 'include',
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.rx_remove_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.rx_remove_failed'))
+      }
       toast.success(t('encounter_modal.rx_removed'))
       if (editingId === rxId) setEditingId(null)
       await loadPrescriptions()
@@ -389,19 +371,34 @@ export function EncounterPrescriptionsPanel({
 
   return (
     <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-6 shadow-sm ring-1 ring-violet-100">
-      <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2">
+      <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2 flex-wrap">
+        <span className="inline-flex items-center gap-2">
         <svg className="w-5 h-5 text-violet-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
         </svg>
         {t('encounter_modal.rx_pharmacy_title')}
+        </span>
+        {canSendToAdmin && !released && rows.length > 0 && hasDoctor && (
+          <button
+            type="button"
+            disabled={sendingReady || saving || isEditingSaved}
+            onClick={() => setSendToPharmacyConfirmOpen(true)}
+            className="ml-auto inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          >
+            {sendingReady ? t('encounter_modal.rx_send_admin_sending') : t('encounter_modal.rx_send_admin')}
+          </button>
+        )}
       </h3>
+      {lastRxAudit ? (
+        <p className="text-xs text-violet-700 mt-2 font-medium mb-3">{formatRxAudit(lastRxAudit)}</p>
+      ) : null}
       <p className="text-sm text-slate-600 mb-3">{t('encounter_modal.rx_subtitle')}</p>
 
-      {rxLocked && (
-        <p className="mb-4 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-          {t('encounter_modal.rx_locked_completed')}
+      {released ? (
+        <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+          {t('encounter_modal.rx_released_to_admin')}
         </p>
-      )}
+      ) : null}
 
       {editable && !hasDoctor && (
         <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
@@ -430,13 +427,13 @@ export function EncounterPrescriptionsPanel({
                   pharmacyId={pharmacyId}
                   assignedPharmacy={resolvedPharmacy}
                   pharmacies={pharmacies}
-                  editable={canManagePharmacy}
+                  editable={pharmacyEditable}
                   onUpdated={onPharmacyUpdated}
                   onPharmaciesReload={onPharmaciesReload}
                   compact
                   showEditButton
                 />
-                {rows.length > 0 && (editable || canManagePharmacy) && (
+                {rows.length > 0 && canPrint && (
                   <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <button
                       type="button"
@@ -449,41 +446,6 @@ export function EncounterPrescriptionsPanel({
                       </svg>
                       {printing ? t('encounter_modal.rx_printing') : t('encounter_modal.rx_print')}
                     </button>
-                    {(editable || canManagePharmacy) && canEmailPharmacy && (
-                      <button
-                        type="button"
-                        disabled={sendingEmail || saving || isEditingSaved}
-                        onClick={() => void sendCurrentPrescriptionsToPharmacy()}
-                        className="inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-sm font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-50"
-                      >
-                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        {sendingEmail
-                          ? t('encounter_modal.rx_send_to_pharmacy_sending')
-                          : (lastPharmEmailSend?.send_count ?? 0) > 0
-                            ? t('encounter_modal.rx_send_to_pharmacy_again')
-                            : t('encounter_modal.rx_send_to_pharmacy')}
-                      </button>
-                    )}
-                    {(editable || canManagePharmacy) && lastPharmEmailSend?.sent_at && canEmailPharmacy && (
-                      <p className="w-full mt-1 text-xs text-slate-400">
-                        {lastPharmEmailSend.sent_by_name
-                          ? t('encounter_modal.rx_send_to_pharmacy_last_sent', {
-                              datetime: formatPharmEmailSentAtCentral(
-                                lastPharmEmailSend.sent_at,
-                                language
-                              ),
-                              name: lastPharmEmailSend.sent_by_name,
-                            })
-                          : t('encounter_modal.rx_send_to_pharmacy_last_sent_no_name', {
-                              datetime: formatPharmEmailSentAtCentral(
-                                lastPharmEmailSend.sent_at,
-                                language
-                              ),
-                            })}
-                      </p>
-                    )}
                   </div>
                 )}
               </div>
@@ -584,25 +546,6 @@ export function EncounterPrescriptionsPanel({
 
               {(hasPending || isEditingSaved) && (
                 <div className="space-y-3 border-t border-slate-200 bg-slate-50/80 px-4 py-3">
-                  {canEmailPharmacy ? (
-                    <label className="flex items-start gap-2 text-sm text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={sendToPharmacyEmail}
-                        disabled={saving}
-                        onChange={(e) => setSendToPharmacyEmail(e.target.checked)}
-                        className="mt-0.5 h-4 w-4 rounded border-slate-300 text-violet-600 focus:ring-violet-500"
-                      />
-                      <span>
-                        {t('encounter_modal.rx_email_pharmacy', { email: pharmacyEmail })}
-                      </span>
-                    </label>
-                  ) : hasPharmacy ? (
-                    <p className="text-sm text-amber-800">
-                      {t('encounter_modal.rx_email_pharmacy_no_email')}
-                    </p>
-                  ) : null}
-
                   <div className="flex flex-wrap items-center gap-3">
                   {hasPending && (
                     <>
@@ -668,6 +611,34 @@ export function EncounterPrescriptionsPanel({
           )}
         </>
       )}
+
+      <ConfirmDialog
+        open={sendToPharmacyConfirmOpen}
+        onClose={() => {
+          if (!sendingReady) setSendToPharmacyConfirmOpen(false)
+        }}
+        onConfirm={sendPrescriptionsToAdmin}
+        title={t('encounter_modal.rx_send_admin_confirm_title')}
+        message={t('encounter_modal.rx_send_admin_confirm')}
+        confirmLabel={t('encounter_modal.rx_send_admin')}
+        accent="violet"
+        loading={sendingReady}
+        icon={
+          <div
+            className="shrink-0 w-11 h-11 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700"
+            aria-hidden
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z"
+              />
+            </svg>
+          </div>
+        }
+      />
     </div>
   )
 }

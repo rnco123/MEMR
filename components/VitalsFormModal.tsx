@@ -3,6 +3,13 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { VitalsFormFields } from '@/components/VitalsFormFields'
+import {
+  EMPTY_VITALS_FORM_INPUT,
+  validateVitalsForm,
+  type VitalsFormInput,
+} from '@/lib/vitals/vitals-form-ui'
+import { calculateVitalsBmi } from '@/lib/vitals/save-encounter-vitals'
 
 interface VitalsFormModalProps {
   encounterId: number
@@ -11,147 +18,21 @@ interface VitalsFormModalProps {
   onSave: () => void
 }
 
-// Validation ranges based on medical standards
-const VALIDATION_RANGES = {
-  bp_systolic: { min: 70, max: 250 },
-  bp_diastolic: { min: 40, max: 150 },
-  heart_rate: { min: 30, max: 220 },
-  respiratory_rate: { min: 8, max: 40 },
-  temperature_f: { min: 90, max: 110 },
-  temperature_c: { min: 32, max: 43 },
-  spo2: { min: 0, max: 100 },
-  weight_lbs: { min: 1, max: 1000 },
-  weight_kg: { min: 0.5, max: 500 },
-  height_in: { min: 12, max: 96 },
-  height_cm: { min: 30, max: 250 },
-}
-
 export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: VitalsFormModalProps) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [formData, setFormData] = useState({
-    bp_systolic: '',
-    bp_diastolic: '',
-    heart_rate: '',
-    respiratory_rate: '',
-    temperature: '',
-    temperature_unit: 'F',
-    spo2: '',
-    weight: '',
-    weight_unit: 'lbs',
-    height: '',
-    height_unit: 'in',
-    notes: '',
-  })
+  const [formData, setFormData] = useState<VitalsFormInput>({ ...EMPTY_VITALS_FORM_INPUT })
 
-  const validateField = (name: string, value: string): string | null => {
-    if (!value) return null // Allow empty fields
-
-    const numValue = parseFloat(value)
-    if (isNaN(numValue)) return 'Must be a valid number'
-
-    switch (name) {
-      case 'bp_systolic':
-        if (numValue < VALIDATION_RANGES.bp_systolic.min || numValue > VALIDATION_RANGES.bp_systolic.max) {
-          return `Must be between ${VALIDATION_RANGES.bp_systolic.min}-${VALIDATION_RANGES.bp_systolic.max} mmHg`
-        }
-        break
-      case 'bp_diastolic':
-        if (numValue < VALIDATION_RANGES.bp_diastolic.min || numValue > VALIDATION_RANGES.bp_diastolic.max) {
-          return `Must be between ${VALIDATION_RANGES.bp_diastolic.min}-${VALIDATION_RANGES.bp_diastolic.max} mmHg`
-        }
-        if (formData.bp_systolic && parseFloat(formData.bp_systolic) <= numValue) {
-          return 'Diastolic must be less than systolic'
-        }
-        break
-      case 'heart_rate':
-        if (numValue < VALIDATION_RANGES.heart_rate.min || numValue > VALIDATION_RANGES.heart_rate.max) {
-          return `Must be between ${VALIDATION_RANGES.heart_rate.min}-${VALIDATION_RANGES.heart_rate.max} bpm`
-        }
-        break
-      case 'respiratory_rate':
-        if (numValue < VALIDATION_RANGES.respiratory_rate.min || numValue > VALIDATION_RANGES.respiratory_rate.max) {
-          return `Must be between ${VALIDATION_RANGES.respiratory_rate.min}-${VALIDATION_RANGES.respiratory_rate.max} breaths/min`
-        }
-        break
-      case 'temperature':
-        if (formData.temperature_unit === 'F') {
-          if (numValue < VALIDATION_RANGES.temperature_f.min || numValue > VALIDATION_RANGES.temperature_f.max) {
-            return `Must be between ${VALIDATION_RANGES.temperature_f.min}-${VALIDATION_RANGES.temperature_f.max}°F`
-          }
-        } else {
-          if (numValue < VALIDATION_RANGES.temperature_c.min || numValue > VALIDATION_RANGES.temperature_c.max) {
-            return `Must be between ${VALIDATION_RANGES.temperature_c.min}-${VALIDATION_RANGES.temperature_c.max}°C`
-          }
-        }
-        break
-      case 'spo2':
-        if (numValue < VALIDATION_RANGES.spo2.min || numValue > VALIDATION_RANGES.spo2.max) {
-          return `Must be between ${VALIDATION_RANGES.spo2.min}-${VALIDATION_RANGES.spo2.max}%`
-        }
-        break
-      case 'weight':
-        if (formData.weight_unit === 'lbs') {
-          if (numValue < VALIDATION_RANGES.weight_lbs.min || numValue > VALIDATION_RANGES.weight_lbs.max) {
-            return `Must be between ${VALIDATION_RANGES.weight_lbs.min}-${VALIDATION_RANGES.weight_lbs.max} lbs`
-          }
-        } else {
-          if (numValue < VALIDATION_RANGES.weight_kg.min || numValue > VALIDATION_RANGES.weight_kg.max) {
-            return `Must be between ${VALIDATION_RANGES.weight_kg.min}-${VALIDATION_RANGES.weight_kg.max} kg`
-          }
-        }
-        break
-      case 'height':
-        if (formData.height_unit === 'in') {
-          if (numValue < VALIDATION_RANGES.height_in.min || numValue > VALIDATION_RANGES.height_in.max) {
-            return `Must be between ${VALIDATION_RANGES.height_in.min}-${VALIDATION_RANGES.height_in.max} inches`
-          }
-        } else {
-          if (numValue < VALIDATION_RANGES.height_cm.min || numValue > VALIDATION_RANGES.height_cm.max) {
-            return `Must be between ${VALIDATION_RANGES.height_cm.min}-${VALIDATION_RANGES.height_cm.max} cm`
-          }
-        }
-        break
-    }
-    return null
-  }
-
-  const handleFieldChange = (name: string, value: string) => {
-    setFormData({ ...formData, [name]: value })
-    const error = validateField(name, value)
-    if (error) {
-      setErrors({ ...errors, [name]: error })
-    } else {
-      const newErrors = { ...errors }
-      delete newErrors[name]
-      setErrors(newErrors)
-    }
+  const handleFieldValidate = (next: VitalsFormInput) => {
+    setFormData(next)
+    setErrors(validateVitalsForm(next))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
-    // Validate all fields
-    const validationErrors: Record<string, string> = {}
-    Object.keys(formData).forEach((key) => {
-      if (key !== 'notes' && key !== 'temperature_unit' && key !== 'weight_unit' && key !== 'height_unit') {
-        const error = validateField(key, formData[key as keyof typeof formData])
-        if (error) {
-          validationErrors[key] = error
-        }
-      }
-    })
 
-    // Also validate diastolic against systolic
-    if (formData.bp_systolic && formData.bp_diastolic) {
-      const systolic = parseFloat(formData.bp_systolic)
-      const diastolic = parseFloat(formData.bp_diastolic)
-      if (diastolic >= systolic) {
-        validationErrors.bp_diastolic = 'Diastolic must be less than systolic'
-      }
-    }
-
+    const validationErrors = validateVitalsForm(formData)
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors)
       return
@@ -161,19 +42,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
     setErrors({})
 
     try {
-      // Calculate BMI if weight and height are provided
-      let bmi = null
-      if (formData.weight && formData.height) {
-        const weightKg = formData.weight_unit === 'lbs' 
-          ? parseFloat(formData.weight) * 0.453592 
-          : parseFloat(formData.weight)
-        const heightM = formData.height_unit === 'in'
-          ? parseFloat(formData.height) * 0.0254
-          : parseFloat(formData.height) / 100
-        if (heightM > 0) {
-          bmi = weightKg / (heightM * heightM)
-        }
-      }
+      let bmi = calculateVitalsBmi(formData)
 
       const vitalsRes = await fetch(`/api/encounters/${encounterId}/vitals`, {
         method: 'POST',
@@ -253,20 +122,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
 
       onSave()
       // Reset form and errors
-      setFormData({
-        bp_systolic: '',
-        bp_diastolic: '',
-        heart_rate: '',
-        respiratory_rate: '',
-        temperature: '',
-        temperature_unit: 'F',
-        spo2: '',
-        weight: '',
-        weight_unit: 'lbs',
-        height: '',
-        height_unit: 'in',
-        notes: '',
-      })
+      setFormData({ ...EMPTY_VITALS_FORM_INPUT })
       setErrors({})
       onClose()
     } catch (error) {
@@ -280,39 +136,11 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
 
   const handleClose = () => {
     setErrors({})
-    setFormData({
-      bp_systolic: '',
-      bp_diastolic: '',
-      heart_rate: '',
-      respiratory_rate: '',
-      temperature: '',
-      temperature_unit: 'F',
-      spo2: '',
-      weight: '',
-      weight_unit: 'lbs',
-      height: '',
-      height_unit: 'in',
-      notes: '',
-    })
+    setFormData({ ...EMPTY_VITALS_FORM_INPUT })
     onClose()
   }
 
   if (!isOpen) return null
-
-  const inputCls = (name: keyof typeof errors) =>
-    `w-full px-4 py-2.5 bg-[#f9fbff] border rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] ${
-      errors[name] ? 'border-red-500' : 'border-slate-200'
-    }`
-
-  const inputFlexCls = (name: keyof typeof errors) =>
-    `flex-1 px-4 py-2.5 bg-[#f9fbff] border rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] ${
-      errors[name] ? 'border-red-500' : 'border-slate-200'
-    }`
-
-  const selectCls =
-    'px-3 py-2.5 bg-[#f9fbff] border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] min-w-[70px]'
-
-  const labelCls = 'block text-slate-500 text-xs font-medium uppercase tracking-wide mb-2'
 
   return (
     <div
@@ -339,220 +167,14 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
         </div>
 
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
-          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            {/* Blood Pressure */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_bp_systolic')}</label>
-              <input
-                type="number"
-                min={VALIDATION_RANGES.bp_systolic.min}
-                max={VALIDATION_RANGES.bp_systolic.max}
-                value={formData.bp_systolic}
-                onChange={(e) => handleFieldChange('bp_systolic', e.target.value)}
-                placeholder={`${VALIDATION_RANGES.bp_systolic.min}-${VALIDATION_RANGES.bp_systolic.max}`}
-                className={inputCls('bp_systolic')}
-              />
-              {errors.bp_systolic && <p className="text-red-600 text-xs mt-1">{errors.bp_systolic}</p>}
-            </div>
-            <div>
-              <label className={labelCls}>{t('vitals.label_bp_diastolic')}</label>
-              <input
-                type="number"
-                min={VALIDATION_RANGES.bp_diastolic.min}
-                max={VALIDATION_RANGES.bp_diastolic.max}
-                value={formData.bp_diastolic}
-                onChange={(e) => handleFieldChange('bp_diastolic', e.target.value)}
-                placeholder={`${VALIDATION_RANGES.bp_diastolic.min}-${VALIDATION_RANGES.bp_diastolic.max}`}
-                className={inputCls('bp_diastolic')}
-              />
-              {errors.bp_diastolic && <p className="text-red-600 text-xs mt-1">{errors.bp_diastolic}</p>}
-            </div>
-
-            {/* Heart Rate */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_hr')}</label>
-              <input
-                type="number"
-                min={VALIDATION_RANGES.heart_rate.min}
-                max={VALIDATION_RANGES.heart_rate.max}
-                value={formData.heart_rate}
-                onChange={(e) => handleFieldChange('heart_rate', e.target.value)}
-                placeholder={`${VALIDATION_RANGES.heart_rate.min}-${VALIDATION_RANGES.heart_rate.max}`}
-                className={inputCls('heart_rate')}
-              />
-              {errors.heart_rate && <p className="text-red-600 text-xs mt-1">{errors.heart_rate}</p>}
-            </div>
-
-            {/* Respiratory Rate */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_rr')}</label>
-              <input
-                type="number"
-                min={VALIDATION_RANGES.respiratory_rate.min}
-                max={VALIDATION_RANGES.respiratory_rate.max}
-                value={formData.respiratory_rate}
-                onChange={(e) => handleFieldChange('respiratory_rate', e.target.value)}
-                placeholder="16"
-                className={inputCls('respiratory_rate')}
-              />
-              {errors.respiratory_rate && <p className="text-red-600 text-xs mt-1">{errors.respiratory_rate}</p>}
-            </div>
-
-            {/* Temperature */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_temperature')}</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  min={
-                    formData.temperature_unit === 'F'
-                      ? VALIDATION_RANGES.temperature_f.min
-                      : VALIDATION_RANGES.temperature_c.min
-                  }
-                  max={
-                    formData.temperature_unit === 'F'
-                      ? VALIDATION_RANGES.temperature_f.max
-                      : VALIDATION_RANGES.temperature_c.max
-                  }
-                  value={formData.temperature}
-                  onChange={(e) => handleFieldChange('temperature', e.target.value)}
-                  placeholder={
-                    formData.temperature_unit === 'F'
-                      ? `${VALIDATION_RANGES.temperature_f.min}-${VALIDATION_RANGES.temperature_f.max}`
-                      : `${VALIDATION_RANGES.temperature_c.min}-${VALIDATION_RANGES.temperature_c.max}`
-                  }
-                  className={inputFlexCls('temperature')}
-                />
-                <select
-                  value={formData.temperature_unit}
-                  onChange={(e) => {
-                    setFormData({ ...formData, temperature_unit: e.target.value, temperature: '' })
-                    if (errors.temperature) {
-                      const newErrors = { ...errors }
-                      delete newErrors.temperature
-                      setErrors(newErrors)
-                    }
-                  }}
-                  className={`${selectCls} min-w-[80px]`}
-                >
-                  <option value="F">°F</option>
-                  <option value="C">°C</option>
-                </select>
-              </div>
-              {errors.temperature && <p className="text-red-600 text-xs mt-1">{errors.temperature}</p>}
-            </div>
-
-            {/* SpO2 */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_spo2')}</label>
-              <input
-                type="number"
-                min={VALIDATION_RANGES.spo2.min}
-                max={VALIDATION_RANGES.spo2.max}
-                value={formData.spo2}
-                onChange={(e) => handleFieldChange('spo2', e.target.value)}
-                placeholder={`${VALIDATION_RANGES.spo2.min}-${VALIDATION_RANGES.spo2.max}`}
-                className={inputCls('spo2')}
-              />
-              {errors.spo2 && <p className="text-red-600 text-xs mt-1">{errors.spo2}</p>}
-            </div>
-
-            {/* Weight */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_weight')}</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  min={
-                    formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.min : VALIDATION_RANGES.weight_kg.min
-                  }
-                  max={
-                    formData.weight_unit === 'lbs' ? VALIDATION_RANGES.weight_lbs.max : VALIDATION_RANGES.weight_kg.max
-                  }
-                  value={formData.weight}
-                  onChange={(e) => handleFieldChange('weight', e.target.value)}
-                  placeholder={
-                    formData.weight_unit === 'lbs'
-                      ? `${VALIDATION_RANGES.weight_lbs.min}-${VALIDATION_RANGES.weight_lbs.max}`
-                      : `${VALIDATION_RANGES.weight_kg.min}-${VALIDATION_RANGES.weight_kg.max}`
-                  }
-                  className={inputFlexCls('weight')}
-                />
-                <select
-                  value={formData.weight_unit}
-                  onChange={(e) => {
-                    setFormData({ ...formData, weight_unit: e.target.value, weight: '' })
-                    if (errors.weight) {
-                      const newErrors = { ...errors }
-                      delete newErrors.weight
-                      setErrors(newErrors)
-                    }
-                  }}
-                  className={selectCls}
-                >
-                  <option value="lbs">lbs</option>
-                  <option value="kg">kg</option>
-                </select>
-              </div>
-              {errors.weight && <p className="text-red-600 text-xs mt-1">{errors.weight}</p>}
-            </div>
-
-            {/* Height */}
-            <div>
-              <label className={labelCls}>{t('vitals.label_height')}</label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  step="0.1"
-                  min={
-                    formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.min : VALIDATION_RANGES.height_cm.min
-                  }
-                  max={
-                    formData.height_unit === 'in' ? VALIDATION_RANGES.height_in.max : VALIDATION_RANGES.height_cm.max
-                  }
-                  value={formData.height}
-                  onChange={(e) => handleFieldChange('height', e.target.value)}
-                  placeholder={
-                    formData.height_unit === 'in'
-                      ? `${VALIDATION_RANGES.height_in.min}-${VALIDATION_RANGES.height_in.max}`
-                      : `${VALIDATION_RANGES.height_cm.min}-${VALIDATION_RANGES.height_cm.max}`
-                  }
-                  className={inputFlexCls('height')}
-                />
-                <select
-                  value={formData.height_unit}
-                  onChange={(e) => {
-                    setFormData({ ...formData, height_unit: e.target.value, height: '' })
-                    if (errors.height) {
-                      const newErrors = { ...errors }
-                      delete newErrors.height
-                      setErrors(newErrors)
-                    }
-                  }}
-                  className={selectCls}
-                >
-                  <option value="in">in</option>
-                  <option value="cm">cm</option>
-                </select>
-              </div>
-              {errors.height && <p className="text-red-600 text-xs mt-1">{errors.height}</p>}
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div>
-            <label className={labelCls}>{t('vitals.label_notes')}</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              placeholder={t('vitals.placeholder_notes')}
-              rows={3}
-              className="w-full px-4 py-2.5 bg-[#f9fbff] border border-slate-200 rounded-xl text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3]"
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            <VitalsFormFields
+              form={formData}
+              onChange={handleFieldValidate}
+              errors={errors}
+              disabled={saving}
+              clearValueOnUnitChange
             />
-          </div>
           </div>
 
           <div className="flex gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50/90 shrink-0">

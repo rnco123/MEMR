@@ -20,6 +20,7 @@ import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
 import { AuditTracker } from '@/components/AuditTracker'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { maintenanceTickerShellClassName } from '@/lib/maintenance-ticker'
 
 const adminNavItems = [
   {
@@ -83,6 +84,15 @@ const adminNavItems = [
     icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6M4 4h16v16H4V4z" />
+      </svg>
+    ),
+  },
+  {
+    nameKey: 'admin.nav.prescriptions',
+    href: '/admin/prescriptions',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
       </svg>
     ),
   },
@@ -178,7 +188,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         title: t('admin.nav.section.administration'),
         items: [
           ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/support'].includes(item.href)
+            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
           ),
           profileNavItem,
         ],
@@ -187,8 +197,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [adminNav, t])
 
   useEffect(() => {
-    if (!loading && (!user || role !== 'admin')) {
-      router.push('/login')
+    if (loading) return
+    if (!user) {
+      router.replace('/login')
+      return
+    }
+    if (role && role !== 'admin') {
+      router.replace('/dashboard')
     }
   }, [user, role, loading, router])
 
@@ -237,7 +252,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ]
 
   return (
-    <div className="flex h-[calc(100vh_-_var(--mtk-h))] flex-col overflow-hidden bg-[#f6f2ff] mt-[var(--mtk-h)]">
+    <div className={`flex flex-col overflow-hidden bg-[#f6f2ff] ${maintenanceTickerShellClassName()}`}>
       <header className="bg-[#fdfbff] border-b border-purple-100 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center gap-2 h-16 min-h-[4rem]">

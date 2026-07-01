@@ -9,7 +9,7 @@ import {
   handleApiError,
 } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { getProfileId, insertStatusTimeline, type StatusTimelineStatus } from '@/lib/status-timeline'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
 
@@ -99,7 +99,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     }
 
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterId)
+    await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     const { data, error } = await admin
       .from('encounters')

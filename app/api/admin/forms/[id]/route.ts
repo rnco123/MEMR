@@ -2,11 +2,10 @@ import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { FORM_SELECT, resolveAdminFormUpdater, rowToApi } from '@/lib/forms/form-admin-api'
 import { consentFormUpdateSchema } from '@/lib/validation'
 
 export const dynamic = 'force-dynamic'
-
-const FORM_SELECT = 'id, tenant_id, name, is_active, content, created_at, updated_at'
 
 function parseFormId(raw: string | undefined): number {
   const id = Number(raw)
@@ -14,23 +13,9 @@ function parseFormId(raw: string | undefined): number {
   return id
 }
 
-function rowToApi(row: Record<string, unknown>) {
-  const content = row.content as { html?: string; updated_at?: string } | null
-  return {
-    id: Number(row.id),
-    tenant_id: Number(row.tenant_id),
-    name: String(row.name ?? ''),
-    is_active: Boolean(row.is_active),
-    html: typeof content?.html === 'string' ? content.html : '',
-    content_updated_at: content?.updated_at ?? null,
-    created_at: (row.created_at as string | null) ?? null,
-    updated_at: (row.updated_at as string | null) ?? content?.updated_at ?? null,
-  }
-}
-
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
-    await requireAdminUser()
+    const user = await requireAdminUser()
     const admin = createAdminClient()
     const formId = parseFormId(params.id)
 
@@ -46,7 +31,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     const v = parsed.data
     const now = new Date().toISOString()
-    const patch: Record<string, unknown> = { updated_at: now }
+    const updater = await resolveAdminFormUpdater(admin, user)
+    const patch: Record<string, unknown> = {
+      updated_at: now,
+      updated_by: updater.updated_by,
+      updated_by_name: updater.updated_by_name,
+    }
 
     if (v.name !== undefined) patch.name = v.name
     if (v.is_active !== undefined) patch.is_active = v.is_active
@@ -58,7 +48,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       }
     }
 
-    if (Object.keys(patch).length === 1) {
+    if (v.name === undefined && v.is_active === undefined && v.html === undefined) {
       throw new ValidationError('No fields to update')
     }
 
@@ -84,17 +74,22 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
     const admin = createAdminClient()
     const formId = parseFormId(params.id)
 
-    const { data, error } = await admin
+    const { data: existing, error: fetchError } = await admin
       .from('forms')
-      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .select('id, is_active')
       .eq('id', formId)
-      .select(FORM_SELECT)
-      .single()
+      .maybeSingle()
 
+    if (fetchError) throw fetchError
+    if (!existing) throw new ValidationError('Form not found')
+    if (existing.is_active) {
+      throw new ValidationError('Deactivate the form before deleting it permanently')
+    }
+
+    const { error } = await admin.from('forms').delete().eq('id', formId)
     if (error) throw error
-    if (!data) throw new ValidationError('Form not found')
 
-    return NextResponse.json({ success: true, data: rowToApi(data as Record<string, unknown>) })
+    return NextResponse.json({ success: true, id: formId })
   } catch (e) {
     return handleApiError(e)
   }

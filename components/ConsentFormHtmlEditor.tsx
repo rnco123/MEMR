@@ -1,6 +1,6 @@
 'use client'
 
-import { useId, useMemo, useState } from 'react'
+import { useId, useEffect, useMemo, useState } from 'react'
 import { useEditor, EditorContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useT } from '@/lib/i18n'
@@ -66,6 +66,14 @@ export function ConsentFormHtmlEditor({
       },
     },
   })
+
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return
+    const current = editor.getHTML()
+    if ((value || '') !== current) {
+      editor.commands.setContent(value || '', { emitUpdate: false })
+    }
+  }, [editor, value])
 
   const insertPlaceholder = (token: string) => {
     if (mode === 'html') {

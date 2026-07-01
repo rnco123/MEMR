@@ -13,6 +13,7 @@ import {
   canJoinTelemedicine,
   getStatusAccentBarClass,
 } from '@/lib/encounter-status'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
 import {
@@ -473,7 +474,7 @@ function FlowboardPage() {
                   <option value="all">{t('common.all')}</option>
                   {ENCOUNTER_STATUSES.map((status) => (
                     <option key={status.value} value={status.value}>
-                      {status.label}
+                      {translateEncounterStatus(t, status.value)}
                     </option>
                   ))}
                 </select>
@@ -620,7 +621,7 @@ function FlowboardPage() {
                 )}
                 <div
                   className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
-                  title={getStatusInfo(appointment.encounter_status as EncounterStatus)?.label ?? 'Status'}
+                  title={translateEncounterStatus(t, appointment.encounter_status)}
                   aria-hidden
                 />
                 <div className="flex flex-1 flex-col md:flex-row md:items-center md:justify-between gap-4 p-5 min-w-0">
@@ -677,7 +678,7 @@ function FlowboardPage() {
                         appointment.encounter_status === 'final_review' ? 'bg-teal-50 text-teal-800 border-teal-200' :
                         'bg-emerald-50 text-emerald-800 border-emerald-200'
                       }`}>
-                        {getStatusInfo(appointment.encounter_status as EncounterStatus)?.label || appointment.encounter_status}
+                        {translateEncounterStatus(t, appointment.encounter_status) || appointment.encounter_status}
                       </div>
                     )}
                     <button
@@ -807,7 +808,7 @@ function FlowboardPage() {
                           appointment.encounter_status === 'final_review' ? 'bg-teal-50 text-teal-800 border-teal-200' :
                           'bg-emerald-50 text-emerald-800 border-emerald-200'
                         }`}>
-                          {statusInfo?.label ?? appointment.encounter_status}
+                          {translateEncounterStatus(t, appointment.encounter_status) ?? appointment.encounter_status}
                         </span>
                       )}
                     </div>

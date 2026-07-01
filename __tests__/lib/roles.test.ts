@@ -9,6 +9,7 @@ import {
   isPhysicianNurseAdminRole,
   canViewClinicalEncounterContent,
   canEditClinicalEncounterContent,
+  canEditEncounterPrescriptionsByRole,
   canManageEncounterPharmacy,
   CLINICAL_STAFF_ROLE_SET,
 } from '@/lib/roles'
@@ -116,9 +117,17 @@ describe('Role utilities', () => {
       expect(canEditClinicalEncounterContent('nurse')).toBe(true)
     })
 
-    test('canManageEncounterPharmacy includes admin', () => {
-      expect(canManageEncounterPharmacy('admin')).toBe(true)
+    test('canManageEncounterPharmacy excludes admin (read-only oversight)', () => {
+      expect(canManageEncounterPharmacy('admin')).toBe(false)
       expect(canManageEncounterPharmacy('nurse')).toBe(true)
+      expect(canManageEncounterPharmacy('doctor')).toBe(true)
+    })
+
+    test('canEditEncounterPrescriptionsByRole includes nurses and physicians', () => {
+      expect(canEditEncounterPrescriptionsByRole('nurse')).toBe(true)
+      expect(canEditEncounterPrescriptionsByRole('doctor')).toBe(true)
+      expect(canEditEncounterPrescriptionsByRole('fnp')).toBe(true)
+      expect(canEditEncounterPrescriptionsByRole('admin')).toBe(false)
     })
   })
 

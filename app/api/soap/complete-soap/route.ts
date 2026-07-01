@@ -5,7 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { isPhysicianNurseAdminRole } from '@/lib/roles'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
 
     // H-05c: Assert encounter-level access before proxying to external API.
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterIdNum)
+    await assertEncounterAccess(admin, user.id, encounterIdNum, ENCOUNTER_WRITE_ACCESS)
 
     const encounterIdStr = String(encounterId)
 

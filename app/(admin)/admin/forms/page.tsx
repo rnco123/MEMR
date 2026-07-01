@@ -21,6 +21,8 @@ type FormRow = {
   content_updated_at: string | null
   created_at: string | null
   updated_at: string | null
+  updated_by: string | null
+  updated_by_name: string | null
 }
 
 type CreateMode = 'pick' | 'new' | 'copy'
@@ -254,8 +256,10 @@ function AdminFormsPage() {
     if (!window.confirm(t('admin.forms.deactivate_confirm', { name: row.name }))) return
     try {
       const res = await fetch(`/api/admin/forms/${row.id}`, {
-        method: 'DELETE',
+        method: 'PATCH',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: false }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || t('admin.forms.save_failed'))
@@ -266,9 +270,32 @@ function AdminFormsPage() {
     }
   }
 
+  const deleteForm = async (row: FormRow) => {
+    if (!window.confirm(t('admin.forms.delete_confirm', { name: row.name }))) return
+    try {
+      const res = await fetch(`/api/admin/forms/${row.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || t('admin.forms.delete_failed'))
+      toast.success(t('admin.forms.deleted'))
+      await Promise.all([loadForms(), refreshAllForms()])
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('admin.forms.delete_failed'))
+    }
+  }
+
   const tenantLabel = tenants.find((x) => x.id === tenantId)?.name ?? String(tenantId)
   const selectedTenantFormCount = formCountByTenant[tenantId] ?? rows.length
   const selectedSource = allForms.find((f) => f.id === selectedSourceId)
+  const copySourceForms = useMemo(
+    () =>
+      allForms
+        .filter((f) => f.tenant_id !== tenantId)
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [allForms, tenantId]
+  )
   const templateGap = useMemo(
     () => buildTenantFormTemplateGap(tenantId, allForms),
     [tenantId, allForms]
@@ -407,10 +434,19 @@ function AdminFormsPage() {
                           {templateGap.missing.map((item) => (
                             <li
                               key={item.templateName}
-                              className={`rounded-md border px-2.5 py-2 ${
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => onSelectSourceForm(item.source.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault()
+                                  onSelectSourceForm(item.source.id)
+                                }
+                              }}
+                              className={`rounded-md border px-2.5 py-2 cursor-pointer transition-colors ${
                                 selectedSourceId === item.source.id
                                   ? 'border-violet-300 bg-violet-50'
-                                  : 'border-amber-100 bg-amber-50/50'
+                                  : 'border-amber-100 bg-amber-50/50 hover:border-amber-200'
                               }`}
                             >
                               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -439,7 +475,7 @@ function AdminFormsPage() {
                 )}
               </div>
 
-              {copyOptions.length > 0 && (
+              {copySourceForms.length > 0 && (
                 <label className="block">
                   <span className="font-medium text-slate-700">{t('admin.forms.choose_existing')}</span>
                   <select
@@ -448,13 +484,17 @@ function AdminFormsPage() {
                     className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2"
                   >
                     <option value="">{t('admin.forms.choose_existing_placeholder')}</option>
-                    {copyOptions.map((item) => (
-                      <option key={item.source.id} value={item.source.id}>
-                        {item.templateName} — {tenantNameById(item.source.tenant_id)}
+                    {copySourceForms.map((form) => (
+                      <option key={form.id} value={form.id}>
+                        {form.name} — {tenantNameById(form.tenant_id)}
                       </option>
                     ))}
                   </select>
                 </label>
+              )}
+
+              {copySourceForms.length === 0 && allForms.length > 0 && (
+                <p className="text-sm text-slate-500">{t('admin.forms.choose_existing_empty_other_tenant')}</p>
               )}
 
               {selectedSource && (
@@ -495,7 +535,7 @@ function AdminFormsPage() {
           </div>
           <button
             type="submit"
-            disabled={creating || (createMode === 'copy' && selectedSourceId === '')}
+            disabled={creating || (createMode === 'copy' && copySourceForms.length > 0 && selectedSourceId === '')}
             className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700 disabled:opacity-50"
           >
             {creating ? t('common.saving') : t('admin.forms.create')}
@@ -566,12 +606,20 @@ function AdminFormsPage() {
                         {(row.updated_at ?? row.content_updated_at ?? row.created_at) && (
                           <>
                             {' · '}
-                            {t('admin.forms.last_edited', {
-                              when: formatClinicDateTimeForLanguage(
-                                row.updated_at ?? row.content_updated_at ?? row.created_at!,
-                                language
-                              ),
-                            })}
+                            {row.updated_by_name
+                              ? t('admin.forms.last_edited_by', {
+                                  when: formatClinicDateTimeForLanguage(
+                                    row.updated_at ?? row.content_updated_at ?? row.created_at!,
+                                    language
+                                  ),
+                                  name: row.updated_by_name,
+                                })
+                              : t('admin.forms.last_edited', {
+                                  when: formatClinicDateTimeForLanguage(
+                                    row.updated_at ?? row.content_updated_at ?? row.created_at!,
+                                    language
+                                  ),
+                                })}
                           </>
                         )}
                       </p>
@@ -584,13 +632,21 @@ function AdminFormsPage() {
                       >
                         {t('common.edit')}
                       </button>
-                      {row.is_active && (
+                      {row.is_active ? (
                         <button
                           type="button"
                           onClick={() => void deactivate(row)}
                           className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
                         >
                           {t('admin.forms.deactivate')}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void deleteForm(row)}
+                          className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100"
+                        >
+                          {t('admin.forms.delete')}
                         </button>
                       )}
                     </div>

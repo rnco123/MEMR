@@ -13,7 +13,7 @@ import {
 } from '@/lib/encounters/encounter-detail-selects'
 import { loadAiSoapRiskContextForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
 import { loadIntakeForEncounter } from '@/lib/encounters/load-intake-for-encounter'
-import { loadLatestVitalsForEncounter } from '@/lib/vitals/load-encounter-vitals'
+import { loadLatestVitalsForEncounter } from '@/lib/vitals/save-encounter-vitals'
 
 export type I693ClinicalBundle = {
   patient: Record<string, unknown> | null

@@ -9,8 +9,9 @@ import {
 } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { resolveEncounterWriteAllowed, isEncounterCompleted } from '@/lib/encounters/access-helpers'
 import { loadEncounterDetail } from '@/lib/encounters/load-encounter-detail'
-import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, canEditClinicalEncounterContent, mapRoleToEnum } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,7 +51,22 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       includePreSales,
     })
 
-    return NextResponse.json(data)
+    const mappedRole = mapRoleToEnum(roleInfo.role)
+    const can_edit_workflow =
+      mappedRole != null
+        ? await resolveEncounterWriteAllowed(admin, user.id, mappedRole, {
+            doctor_id: data.encounter.doctor_id as number | null | undefined,
+          })
+        : false
+    const encounterCompleted = isEncounterCompleted(data.encounter.status as string | null | undefined)
+    const can_edit_intake =
+      mappedRole != null && canEditClinicalEncounterContent(mappedRole) && !encounterCompleted
+    const can_edit_vitals = can_edit_intake
+
+    return NextResponse.json({
+      ...data,
+      permissions: { can_edit_workflow, can_edit_intake, can_edit_vitals },
+    })
   } catch (e) {
     return handleApiError(e)
   }

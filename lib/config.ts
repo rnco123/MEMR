@@ -53,7 +53,7 @@ export const config = {
   openai: {
     apiKey: getEnvVar('OPENAI_API_KEY', false),
   },
-  /** Server-only: Resend transactional email (prescriptions to pharmacy). */
+  /** Server-only: Resend transactional email (e.g. SOAP notes to patients). */
   email: {
     resendApiKey: getEnvVar('RESEND_API_KEY', false),
     fromEmail: getEnvVar('RESEND_FROM_EMAIL', false),

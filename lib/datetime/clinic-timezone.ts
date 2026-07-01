@@ -105,6 +105,71 @@ export function getClinicTodayDateString(now: Date = new Date()): string {
   }).format(now)
 }
 
+/** Offset in minutes from UTC for clinic local time at a given instant (positive = ahead of UTC). */
+function getClinicOffsetMinutesAt(instant: Date): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIME_ZONE,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant)
+  const filled: Record<string, string> = {}
+  for (const part of parts) {
+    if (part.type !== 'literal') filled[part.type] = part.value
+  }
+  const asUtc = Date.UTC(
+    Number(filled.year),
+    Number(filled.month) - 1,
+    Number(filled.day),
+    Number(filled.hour),
+    Number(filled.minute),
+    Number(filled.second)
+  )
+  return (asUtc - instant.getTime()) / 60_000
+}
+
+function addDaysToClinicDateString(dateStr: string, days: number): string {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const shifted = new Date(Date.UTC(year, month - 1, day + days))
+  return shifted.toISOString().slice(0, 10)
+}
+
+/** UTC instant for 00:00:00 on a YYYY-MM-DD calendar day in clinic (Central) time. */
+export function clinicMidnightUtc(dateStr: string): Date {
+  const [year, month, day] = dateStr.split('-').map(Number)
+  const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
+  const offsetMinutes = getClinicOffsetMinutesAt(probe)
+  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60_000)
+}
+
+export type PrescriptionReadyDateFilter = 'all' | 'today' | 'this_month'
+
+/** Inclusive start and exclusive end for filtering sent_to_admin_at in clinic calendar ranges. */
+export function getClinicPrescriptionDateRangeUtc(
+  preset: Exclude<PrescriptionReadyDateFilter, 'all'>,
+  now: Date = new Date()
+): { startIso: string; endExclusiveIso: string } {
+  const todayStr = getClinicTodayDateString(now)
+
+  if (preset === 'today') {
+    const start = clinicMidnightUtc(todayStr)
+    const endExclusive = clinicMidnightUtc(addDaysToClinicDateString(todayStr, 1))
+    return { startIso: start.toISOString(), endExclusiveIso: endExclusive.toISOString() }
+  }
+
+  const monthStartStr = `${todayStr.slice(0, 8)}01`
+  const [year, month] = monthStartStr.split('-').map(Number)
+  const nextMonthStartStr =
+    month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`
+  const start = clinicMidnightUtc(monthStartStr)
+  const endExclusive = clinicMidnightUtc(nextMonthStartStr)
+  return { startIso: start.toISOString(), endExclusiveIso: endExclusive.toISOString() }
+}
+
 function centralTimeOnly(date: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
     timeZone: CLINIC_TIME_ZONE,

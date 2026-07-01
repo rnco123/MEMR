@@ -1,3 +1,5 @@
+import { occupationNameById } from '@/lib/intake/occupations'
+
 /**
  * Flatten intake + SOAP + vitals into a single string for clinical risk triage (LLM input).
  */
@@ -33,7 +35,10 @@ export function formatIntakeForRisk(intake: Record<string, unknown> | null): str
   if (intake.fh_heart_disease) fh.push('heart disease')
   if (fh.length) lines.push(`Family history: ${fh.join(', ')}`)
 
-  if (intake.occupation != null) lines.push(`Occupation level: ${s(intake.occupation)}`)
+  if (intake.occupation != null) {
+    const name = occupationNameById(Number(intake.occupation))
+    lines.push(`Occupation: ${name ?? s(intake.occupation)}`)
+  }
 
   return lines.filter(Boolean).join('\n')
 }
