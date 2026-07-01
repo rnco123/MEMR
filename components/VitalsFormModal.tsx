@@ -18,6 +18,59 @@ interface VitalsFormModalProps {
   onSave: () => void
 }
 
+/**
+ * Fire the SOAP completion request as a separate, non-blocking step. This is
+ * intentionally decoupled from the vitals save so that a SOAP failure never
+ * surfaces as a "vitals save failed" error to the nurse.
+ */
+async function triggerSoapCompletion(encounterId: number) {
+  toast.info('AI is completing SOAP note…', {
+    description: 'Objective, assessment, and plan will appear when ready.',
+  })
+  try {
+    const soapRes = await fetch('/api/soap/complete-soap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ encounter_id: encounterId.toString() }),
+    })
+
+    const soapJson = (await soapRes.json().catch(() => ({}))) as
+      | {
+          success?: boolean
+          message?: string
+          error?: string
+          details?: { message?: string } | string
+        }
+      | undefined
+
+    if (!soapRes.ok || !soapJson?.success) {
+      console.error('SOAP complete-soap failed:', soapRes.status, soapJson)
+      const detailMessage =
+        typeof soapJson?.details === 'object' && soapJson?.details
+          ? soapJson.details.message
+          : typeof soapJson?.details === 'string'
+            ? soapJson.details
+            : undefined
+      toast.error('SOAP note could not be started', {
+        description:
+          soapJson?.message ||
+          detailMessage ||
+          soapJson?.error ||
+          `Server returned ${soapRes.status}. Check console.`,
+      })
+    } else {
+      toast.success('SOAP note saved successfully', {
+        description: soapJson.message || 'SOAP data stored successfully.',
+      })
+    }
+  } catch (apiError) {
+    console.error('Error calling SOAP complete-soap:', apiError)
+    toast.error('SOAP note could not be started', {
+      description: apiError instanceof Error ? apiError.message : 'Network or server error.',
+    })
+  }
+}
+
 export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: VitalsFormModalProps) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
@@ -42,10 +95,12 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
     setErrors({})
 
     try {
-      let bmi = calculateVitalsBmi(formData)
+      const bmi = calculateVitalsBmi(formData)
 
+      // Upsert (PUT) so re-saving updates the existing row instead of creating
+      // duplicate vitals records for the same encounter.
       const vitalsRes = await fetch(`/api/encounters/${encounterId}/vitals`, {
-        method: 'POST',
+        method: 'PUT',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -68,67 +123,29 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       const vitalsJson = await vitalsRes.json().catch(() => ({}))
       if (!vitalsRes.ok) {
         console.error('Error saving vitals:', vitalsJson)
-        alert(`Failed to save vitals: ${vitalsJson.error || vitalsJson.message || 'Unknown error'}. Please check the console for details.`)
+        toast.error('Failed to save vitals', {
+          description: vitalsJson.error || vitalsJson.message || 'Please try again.',
+        })
         setSaving(false)
         return
       }
 
-      // Trigger SOAP completion via our API route (proxies to external API; avoids CORS and env)
-      toast.info('AI is completing SOAP note…', {
-        description: 'Objective, assessment, and plan will appear when ready.',
-      })
-      try {
-        const soapRes = await fetch('/api/soap/complete-soap', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ encounter_id: encounterId.toString() }),
-        })
-
-        const soapJson = await soapRes.json().catch(() => ({} as any))
-
-        if (!soapRes.ok || !soapJson?.success) {
-          console.error('SOAP complete-soap failed:', soapRes.status, soapJson)
-          const payload = soapJson as
-            | {
-                message?: string
-                error?: string
-                details?: { message?: string } | string
-              }
-            | undefined
-          const detailMessage =
-            typeof payload?.details === 'object' && payload?.details
-              ? payload.details.message
-              : typeof payload?.details === 'string'
-                ? payload.details
-                : undefined
-          toast.error('SOAP note could not be started', {
-            description:
-              payload?.message ||
-              detailMessage ||
-              payload?.error ||
-              `Server returned ${soapRes.status}. Check console.`,
-          })
-        } else {
-          toast.success('SOAP note saved successfully', {
-            description: soapJson.message || 'SOAP data stored successfully.',
-          })
-        }
-      } catch (apiError) {
-        console.error('Error calling SOAP complete-soap:', apiError)
-        toast.error('SOAP note could not be started', {
-          description: apiError instanceof Error ? apiError.message : 'Network or server error.',
-        })
-      }
-
+      // Vitals saved successfully — confirm and refresh immediately.
+      toast.success('Vitals saved')
       onSave()
-      // Reset form and errors
       setFormData({ ...EMPTY_VITALS_FORM_INPUT })
       setErrors({})
       onClose()
+
+      // SOAP generation is a separate, best-effort step. It runs after the
+      // vitals save is confirmed so a SOAP failure can never make a successful
+      // vitals save look like it failed.
+      void triggerSoapCompletion(encounterId)
     } catch (error) {
       console.error('Error in handleSubmit:', error)
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-      alert(`Failed to save vitals: ${errorMessage}. Please check the console for details.`)
+      toast.error('Failed to save vitals', {
+        description: error instanceof Error ? error.message : 'Please try again.',
+      })
     } finally {
       setSaving(false)
     }

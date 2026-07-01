@@ -26,6 +26,32 @@ export type SaveEncounterVitalsEditor = {
   editorName: string
 }
 
+/**
+ * Encounter workflow order. Vitals recording should advance the encounter to
+ * `vitals_assessed` only when it is still earlier in the flow — never regress an
+ * encounter that is already in consultation or beyond.
+ */
+const ENCOUNTER_STATUS_ORDER = [
+  'appointment_initiated',
+  'provider_assigned',
+  'vitals_assessed',
+  'in_consultation',
+  'consultation_concluded',
+  'final_review',
+  'completed',
+] as const
+
+function shouldAdvanceToVitalsAssessed(currentStatus: string | null | undefined): boolean {
+  if (!currentStatus) return true
+  const currentIndex = ENCOUNTER_STATUS_ORDER.indexOf(
+    currentStatus as (typeof ENCOUNTER_STATUS_ORDER)[number]
+  )
+  const targetIndex = ENCOUNTER_STATUS_ORDER.indexOf('vitals_assessed')
+  // Unknown status → be safe and don't touch it.
+  if (currentIndex === -1) return false
+  return currentIndex < targetIndex
+}
+
 const VITALS_SELECT =
   'id, encounter_id, bp_systolic, bp_diastolic, heart_rate, respiratory_rate, temperature, temperature_unit, spo2, weight, weight_unit, height, height_unit, bmi, notes, created_at, updated_at, edited_by, editor_role, editor_name'
 
@@ -96,6 +122,8 @@ export async function saveEncounterVitals(
     throw new ValidationError('Vitals cannot be changed after the encounter is completed')
   }
 
+  const currentStatus = encounter.status as string | null
+
   const now = new Date().toISOString()
   const rowPayload = {
     bp_systolic: vitals.bp_systolic ?? null,
@@ -149,22 +177,36 @@ export async function saveEncounterVitals(
     saved = data as EncounterVitalsRow
   }
 
-  const { error: statusError } = await admin
-    .from('encounters')
-    .update({
-      status: 'vitals_assessed',
-      updated_at: now,
-    })
-    .eq('id', encounterId)
+  // The vitals row is already persisted above. Everything below is best-effort
+  // workflow bookkeeping — never throw here, or the API would return 500 for a
+  // save that actually succeeded (causing duplicate retries from the client).
+  if (shouldAdvanceToVitalsAssessed(currentStatus)) {
+    const { error: statusError } = await admin
+      .from('encounters')
+      .update({
+        status: 'vitals_assessed',
+        updated_at: now,
+      })
+      .eq('id', encounterId)
 
-  if (statusError) throw statusError
-
-  if (profileId) {
-    await insertStatusTimeline(admin, {
-      encounterId,
-      status: 'vitals_assessed',
-      profileId,
-    })
+    if (statusError) {
+      console.error(
+        `[vitals] Saved vitals ${saved.id} for encounter ${encounterId} but failed to advance status:`,
+        statusError
+      )
+    } else if (profileId) {
+      const { error: timelineError } = await insertStatusTimeline(admin, {
+        encounterId,
+        status: 'vitals_assessed',
+        profileId,
+      })
+      if (timelineError) {
+        console.error(
+          `[vitals] Saved vitals ${saved.id} for encounter ${encounterId} but failed to write status timeline:`,
+          timelineError
+        )
+      }
+    }
   }
 
   return saved

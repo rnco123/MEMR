@@ -136,6 +136,24 @@ export default function AdminOverviewPage() {
   }
 
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [pendingRxCount, setPendingRxCount] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/admin/prescription-ready?status=pending', { credentials: 'include' })
+      .then(async (r) => {
+        if (!r.ok) return
+        const d = await r.json()
+        const count = typeof d.totalCount === 'number' ? d.totalCount : (d.rows ?? []).length
+        if (!cancelled) setPendingRxCount(count)
+      })
+      .catch(() => {
+        /* non-critical banner, ignore errors */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -255,6 +273,36 @@ export default function AdminOverviewPage() {
         <h1 className="text-3xl font-bold text-slate-900">{t('admin.overview_title')}</h1>
         <p className="text-sm text-slate-500 mt-1 max-w-3xl">{t('admin.overview_subtitle')}</p>
       </div>
+
+      {pendingRxCount > 0 && (
+        <div
+          className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400 text-white">
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+            </span>
+            <span className="font-medium">
+              {t(
+                pendingRxCount === 1 ? 'admin.pending_rx_banner_one' : 'admin.pending_rx_banner',
+                { count: pendingRxCount }
+              )}
+            </span>
+          </div>
+          <Link
+            href="/admin/prescriptions"
+            className="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-sm font-semibold text-amber-800 hover:bg-amber-100 transition-colors"
+          >
+            {t('admin.pending_rx_review')}
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+            </svg>
+          </Link>
+        </div>
+      )}
 
       {loadError && (
         <div

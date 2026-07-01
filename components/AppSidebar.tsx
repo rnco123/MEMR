@@ -11,6 +11,8 @@ export type SidebarNavItem = {
   icon: React.ReactNode
   onClick?: () => void
   isActive?: (pathname: string) => boolean
+  /** Show a small yellow attention dot on this item (e.g. pending items to review). */
+  badgeDot?: boolean
 }
 
 export type SidebarNavSection = {
@@ -93,7 +95,13 @@ function NavRow({ item, isActive, collapsed, theme, onNavigate }: NavRowProps) {
       }`}
     >
       {item.icon}
-      {collapsed && isActive && (
+      {collapsed && item.badgeDot && (
+        <span
+          className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white"
+          aria-hidden
+        />
+      )}
+      {collapsed && isActive && !item.badgeDot && (
         <span
           className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-white ${styles.activeDot}`}
           aria-hidden
@@ -102,7 +110,14 @@ function NavRow({ item, isActive, collapsed, theme, onNavigate }: NavRowProps) {
     </span>
   )
 
-  const label = !collapsed ? <span className="truncate">{item.name}</span> : null
+  const label = !collapsed ? (
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="truncate">{item.name}</span>
+      {item.badgeDot && (
+        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" aria-hidden />
+      )}
+    </span>
+  ) : null
 
   const content = (
     <>

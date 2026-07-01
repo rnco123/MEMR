@@ -143,6 +143,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [hasPendingPrescriptions, setHasPendingPrescriptions] = useState(false)
 
   const displayName =
     profile?.display_name ??
@@ -159,11 +160,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       adminNavItems.map((item) => ({
         ...item,
         name: t(item.nameKey),
+        badgeDot: item.href === '/admin/prescriptions' && hasPendingPrescriptions,
         isActive: (pathname: string) =>
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t]
+    [t, hasPendingPrescriptions]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
@@ -210,6 +212,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     setMobileNavOpen(false)
   }, [pathname])
+
+  useEffect(() => {
+    if (loading || !user || role !== 'admin') return
+    let cancelled = false
+    const checkPending = async () => {
+      try {
+        const res = await fetch('/api/admin/prescription-ready?status=pending', {
+          credentials: 'include',
+        })
+        if (!res.ok) return
+        const json = await res.json()
+        const count =
+          typeof json.totalCount === 'number' ? json.totalCount : (json.rows ?? []).length
+        if (!cancelled) setHasPendingPrescriptions(count > 0)
+      } catch {
+        /* ignore */
+      }
+    }
+    void checkPending()
+    const interval = setInterval(() => void checkPending(), 60000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [loading, user, role, pathname])
 
   if (loading || !user || role !== 'admin') {
     return (

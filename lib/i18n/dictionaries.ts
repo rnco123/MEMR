@@ -519,6 +519,9 @@ const en: Dictionary = {
   'admin.overview_title': 'Admin Overview',
   'admin.overview_subtitle':
     'Full control center for staff accounts, clinic locations, patient access, clinical flow, pharmacies, and audit.',
+  'admin.pending_rx_banner': 'You have {count} pending prescriptions to review.',
+  'admin.pending_rx_banner_one': 'You have {count} pending prescription to review.',
+  'admin.pending_rx_review': 'Review now',
   'admin.quick_access': 'Quick access',
   'admin.open': 'Open',
   'admin.locations': 'Locations',
@@ -2174,6 +2177,9 @@ const es: Dictionary = {
   'admin.overview_title': 'Resumen de administración',
   'admin.overview_subtitle':
     'Centro de control para cuentas del personal, ubicaciones, acceso a pacientes, flujo clínico, farmacias y auditoría.',
+  'admin.pending_rx_banner': 'Tienes {count} recetas pendientes por revisar.',
+  'admin.pending_rx_banner_one': 'Tienes {count} receta pendiente por revisar.',
+  'admin.pending_rx_review': 'Revisar ahora',
   'admin.quick_access': 'Acceso rápido',
   'admin.open': 'Abrir',
   'admin.locations': 'Ubicaciones',
