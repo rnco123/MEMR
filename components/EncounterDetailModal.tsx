@@ -98,6 +98,7 @@ interface IntakeForm {
   last_prostate_exam_status: string | null
   last_prostate_exam_month_year: string | null
   occupation: number | null
+  [key: string]: unknown
 }
 
 interface Vitals {
@@ -117,6 +118,7 @@ interface Vitals {
   bmi: number | null
   notes: string | null
   created_at: string
+  [key: string]: unknown
 }
 
 interface SOAPNotes {
@@ -950,14 +952,18 @@ export function EncounterDetailModal({
                 encounterId={encounterId}
                 intake={intake}
                 canEdit={intakeEditable}
-                onUpdated={refreshEncounterFromApi}
+                onUpdated={() => {
+                  void refreshEncounterFromApi()
+                }}
               />
 
               <EncounterVitalsPanel
                 encounterId={encounterId}
                 vitals={vitals}
                 canEdit={vitalsEditable}
-                onUpdated={refreshEncounterFromApi}
+                onUpdated={() => {
+                  void refreshEncounterFromApi()
+                }}
               />
 
               <EncounterSoapPanel

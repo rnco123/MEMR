@@ -133,14 +133,14 @@ function getClinicOffsetMinutesAt(instant: Date): number {
 }
 
 function addDaysToClinicDateString(dateStr: string, days: number): string {
-  const [year, month, day] = dateStr.split('-').map(Number)
+  const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
   const shifted = new Date(Date.UTC(year, month - 1, day + days))
   return shifted.toISOString().slice(0, 10)
 }
 
 /** UTC instant for 00:00:00 on a YYYY-MM-DD calendar day in clinic (Central) time. */
 export function clinicMidnightUtc(dateStr: string): Date {
-  const [year, month, day] = dateStr.split('-').map(Number)
+  const [year, month, day] = dateStr.split('-').map(Number) as [number, number, number]
   const probe = new Date(Date.UTC(year, month - 1, day, 12, 0, 0))
   const offsetMinutes = getClinicOffsetMinutesAt(probe)
   return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - offsetMinutes * 60_000)
@@ -162,7 +162,7 @@ export function getClinicPrescriptionDateRangeUtc(
   }
 
   const monthStartStr = `${todayStr.slice(0, 8)}01`
-  const [year, month] = monthStartStr.split('-').map(Number)
+  const [year, month] = monthStartStr.split('-').map(Number) as [number, number]
   const nextMonthStartStr =
     month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`
   const start = clinicMidnightUtc(monthStartStr)
