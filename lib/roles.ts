@@ -150,14 +150,19 @@ export function canEditClinicalEncounterContent(role: string | null | undefined)
   return isClinicalStaffRole(role)
 }
 
-/** Create/edit/delete prescriptions — physicians only (doctor, FNP, PA); excludes nurse/admin. */
+/** Standalone prescribe API — physicians only (doctor, FNP, PA). */
 export function canPrescribe(role: string | null | undefined): boolean {
   return isPhysicianRole(role)
 }
 
-/** Assign or create pharmacy on an encounter (includes admin). */
+/** Add/edit/remove prescription rows on an encounter — nurses and physicians. */
+export function canEditEncounterPrescriptionsByRole(role: string | null | undefined): boolean {
+  return canEditClinicalEncounterContent(role)
+}
+
+/** Assign or create pharmacy on an encounter (clinical staff only — admin is read-only). */
 export function canManageEncounterPharmacy(role: string | null | undefined): boolean {
-  return isClinicalStaffWithAdminRole(role)
+  return isClinicalStaffRole(role)
 }
 
 export function isPhysicianNurseAdminRole(role: string | null | undefined): boolean {
@@ -220,4 +225,11 @@ export function getRoleI18nKey(role: string | null | undefined): string {
   if (mapped === UserRole.NURSE) return 'admin.role_nurse'
   if (role === 'staff') return 'admin.role_staff'
   return 'common.unknown'
+}
+
+/** Label above assigned provider on patient encounter cards (Doctor / FNP / PA). */
+export function getEncounterProviderLabelKey(role: string | null | undefined): string {
+  if (!role?.trim()) return 'patient_file.provider'
+  const key = getRoleI18nKey(role)
+  return key === 'common.unknown' ? 'patient_file.provider' : key
 }

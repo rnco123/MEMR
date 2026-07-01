@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import {
@@ -129,7 +130,10 @@ export function EncounterPhysicalExamPanel({
 
   const isDirty = JSON.stringify(rosExam) !== JSON.stringify(savedRosExam)
   const locked = !editable
-  const canSave = !locked && (isDirty || !lastAudit)
+
+  const cancelChanges = () => {
+    setRosExam(savedRosExam)
+  }
 
   const formatAudit = (audit: NonNullable<PhysicalExamAuditSummary>) => {
     const when = formatClinicDateTimeForLanguage(audit.updated_at, language)
@@ -147,7 +151,13 @@ export function EncounterPhysicalExamPanel({
     try {
       const res = await fetch(`/api/encounters/${encounterId}/physical-examination`, { credentials: 'include' })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.pe_load_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) {
+          setEditable(false)
+          return
+        }
+        throw new Error(json.error || t('encounter_modal.pe_load_failed'))
+      }
       const data = (json.ros_exam as RosExamData) ?? {}
       setRosExam(data)
       setSavedRosExam(data)
@@ -199,7 +209,7 @@ export function EncounterPhysicalExamPanel({
   }
 
   const save = async () => {
-    if (!canSave) return
+    if (locked || !isDirty) return
     setSaving(true)
     try {
       const res = await fetch(`/api/encounters/${encounterId}/physical-examination`, {
@@ -209,7 +219,10 @@ export function EncounterPhysicalExamPanel({
         body: JSON.stringify({ physical_examination: {}, ros_exam: rosExam }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.toast_save_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.toast_save_failed'))
+      }
       const data = (json.ros_exam as RosExamData) ?? rosExam
       setRosExam(data)
       setSavedRosExam(data)
@@ -313,19 +326,13 @@ export function EncounterPhysicalExamPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="text-lg font-bold text-slate-900">{t('encounter_modal.pe_title')}</h3>
-          <p className="text-sm text-slate-500 mt-1">{t('encounter_modal.pe_subtitle')}</p>
-          <p className="text-xs text-slate-400 mt-1">{t('encounter_modal.pe_all_optional')}</p>
           {lastAudit && (
             <p className="text-xs text-violet-700 mt-2 font-medium">{formatAudit(lastAudit)}</p>
           )}
+          <p className="text-sm text-slate-500 mt-1">{t('encounter_modal.pe_subtitle')}</p>
+          <p className="text-xs text-slate-400 mt-1">{t('encounter_modal.pe_all_optional')}</p>
         </div>
       </div>
-
-      {locked && (
-        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
-          {t('encounter_modal.pe_locked')}
-        </p>
-      )}
 
       {loading ? (
         <div className="py-8 flex justify-center"><LoadingSpinner /></div>
@@ -408,22 +415,27 @@ export function EncounterPhysicalExamPanel({
             />
           </div>
 
-          {/* Save */}
-          {!locked && (
-            <div className="flex flex-wrap items-center gap-3 pt-1">
+          {/* Save / Cancel — only when there are unsaved changes */}
+          {!locked && isDirty ? (
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
               <button
                 type="button"
-                disabled={saving || !canSave}
+                disabled={saving}
+                onClick={cancelChanges}
+                className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
                 onClick={() => void save()}
                 className="px-4 py-2 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#256ae8] transition-colors disabled:opacity-50"
               >
                 {saving ? t('encounter_modal.pe_saving') : t('encounter_modal.pe_save')}
               </button>
-              {isDirty && (
-                <span className="text-xs text-slate-500">{t('encounter_modal.pe_unsaved')}</span>
-              )}
             </div>
-          )}
+          ) : null}
         </>
       )}
     </div>

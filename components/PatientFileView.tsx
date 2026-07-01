@@ -9,6 +9,7 @@ import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPrev
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { printPatientDocument } from '@/lib/patient-documents/print-document'
+import { getEncounterProviderLabelKey } from '@/lib/roles'
 
 const DOCUMENTS_VIEW_STORAGE_KEY = 'memr.patientDocumentsView'
 
@@ -81,6 +82,7 @@ interface PatientEncounter {
   doctors?: {
     full_name?: string | null
     specialty?: string | null
+    role?: string | null
   } | null
   vitals?: {
     bp_systolic?: number | null
@@ -880,7 +882,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                               </div>
                               {encounter.doctors && (
                                 <div className="text-right">
-                                  <p className="text-sm text-slate-600">{t('patient_file.doctor')}</p>
+                                  <p className="text-sm text-slate-600">
+                                    {t(getEncounterProviderLabelKey(encounter.doctors.role))}
+                                  </p>
                                   <p className="text-slate-900 font-medium">{encounter.doctors.full_name}</p>
                                   {encounter.doctors.specialty && (
                                     <p className="text-xs text-slate-500/70">{encounter.doctors.specialty}</p>

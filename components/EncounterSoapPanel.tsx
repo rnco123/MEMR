@@ -3,7 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { EncounterSectionEditButton } from '@/components/EncounterSectionEditButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { cleanSoapSection } from '@/lib/soap/clean-soap-section'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
@@ -99,7 +101,13 @@ export function EncounterSoapPanel({
     try {
       const res = await fetch(`/api/encounters/${encounterId}/doctor-soap`, { credentials: 'include' })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.soap_load_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) {
+          setEditable(false)
+          return
+        }
+        throw new Error(json.error || t('encounter_modal.soap_load_failed'))
+      }
 
       const doc = (json.doctor_soap as DoctorSoap | null) ?? null
       setDoctorSoap(doc)
@@ -121,8 +129,6 @@ export function EncounterSoapPanel({
     if (doctorSoap) return soapFromDoctor(doctorSoap)
     return soapFromAi(aiSoap)
   }, [doctorSoap, aiSoap])
-
-  const isCompleted = encounterStatus === 'completed'
 
   const hasDoctorSoap = Boolean(doctorSoap)
   const showingAiDraft = !hasDoctorSoap && Boolean(aiSoap)
@@ -173,7 +179,10 @@ export function EncounterSoapPanel({
         }),
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.soap_save_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.soap_save_failed'))
+      }
 
       setDoctorSoap(json.doctor_soap as DoctorSoap)
       setLastAudit((json.last_audit as SoapAudit | null) ?? null)
@@ -268,33 +277,19 @@ export function EncounterSoapPanel({
               </span>
             ) : null}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {hasDoctorSoap
-              ? t('encounter_modal.soap_saved_hint')
-              : showingAiDraft
-                ? t('encounter_modal.soap_ai_draft_hint')
-                : null}
-          </p>
           {lastAudit ? (
             <p className="text-xs text-violet-700 mt-2 font-medium">{formatAudit(lastAudit)}</p>
           ) : null}
-          {isCompleted && !editable ? (
-            <p className="text-xs text-amber-700 mt-2 font-medium">{t('encounter_modal.soap_locked_completed')}</p>
-          ) : isCompleted && editable ? (
-            <p className="text-xs text-emerald-700 mt-2">{t('encounter_modal.soap_editable_doctor_after_completed')}</p>
-          ) : editable ? (
-            <p className="text-xs text-emerald-700 mt-2">{t('encounter_modal.soap_editable_until_completed')}</p>
+          {showingAiDraft ? (
+            <p className="text-xs text-slate-500 mt-1">{t('encounter_modal.soap_ai_draft_hint')}</p>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {editable && !editing ? (
-            <button
-              type="button"
+            <EncounterSectionEditButton
               onClick={startEdit}
-              className="px-3 py-2 rounded-lg bg-violet-600 text-white text-sm font-medium hover:bg-violet-700"
-            >
-              {hasAnySoap ? t('common.edit') : t('encounter_modal.soap_start_blank')}
-            </button>
+              label={hasAnySoap ? undefined : t('encounter_modal.soap_start_blank')}
+            />
           ) : null}
           {canDownloadDoctorSoap ? (
             <button

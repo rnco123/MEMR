@@ -2,6 +2,8 @@
 
 import { useMemo, type ReactNode } from 'react'
 import { ENCOUNTER_STATUSES, getStatusVisualStyle } from '@/lib/encounter-status'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
+import { useT } from '@/lib/i18n'
 
 export type FlowboardKanbanAppointment = {
   id: number
@@ -66,6 +68,7 @@ export function FlowboardKanban({
   pendingEncounterLabel = 'Awaiting encounter setup',
   accentTheme = 'blue',
 }: FlowboardKanbanProps) {
+  const { t } = useT()
   const primaryBtn =
     accentTheme === 'purple'
       ? 'bg-purple-600 hover:bg-purple-700'
@@ -95,12 +98,15 @@ export function FlowboardKanban({
     }
 
     const cols = visibleStatuses.map((status) => ({
-      status,
+      status: {
+        ...status,
+        label: translateEncounterStatus(t, status.value),
+      },
       items: groups.get(status.value) ?? [],
     }))
 
     return { columns: cols, notStartedItems: notStarted }
-  }, [appointments, filterStatus])
+  }, [appointments, filterStatus, t])
 
   const showNotStartedColumn =
     notStartedItems.length > 0 && (filterStatus === 'all' || filterStatus === NO_STATUS_KEY)
@@ -167,7 +173,7 @@ export function FlowboardKanban({
               >
                 {items.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-8 text-center">
-                    <p className="text-xs text-slate-400">No patients</p>
+                    <p className="text-xs text-slate-400">{t('flow.kanban_no_patients')}</p>
                   </div>
                 ) : (
                   items.map((apt) => (

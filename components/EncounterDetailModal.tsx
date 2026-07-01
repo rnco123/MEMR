@@ -12,6 +12,8 @@ import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { EncounterRoomingPanel } from './EncounterRoomingPanel'
 import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
+import { EncounterIntakePanel } from './EncounterIntakePanel'
+import { EncounterVitalsPanel } from './EncounterVitalsPanel'
 import {
   normalizePharmacyRow,
   type PharmacyRecord,
@@ -23,11 +25,12 @@ import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-do
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import {
   isPhysicianRole,
-  canEditClinicalEncounterContent,
+  UserRole,
   canManageEncounterPharmacy,
 } from '@/lib/roles'
 import { canEditPhysicalExamination } from '@/lib/encounter/physical-examination'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import { isForbiddenResponse } from '@/lib/http/api-response'
 
 function patientAgeFromDob(dob: string | null): number | null {
   if (!dob) return null
@@ -95,6 +98,7 @@ interface IntakeForm {
   last_prostate_exam_status: string | null
   last_prostate_exam_month_year: string | null
   occupation: number | null
+  [key: string]: unknown
 }
 
 interface Vitals {
@@ -114,6 +118,7 @@ interface Vitals {
   bmi: number | null
   notes: string | null
   created_at: string
+  [key: string]: unknown
 }
 
 interface SOAPNotes {
@@ -155,6 +160,7 @@ interface Appointment {
   appointment_time: string | null
   onsite_type: string
   services?: { title_en?: string | null; title_es?: string | null } | null
+  locations?: { title?: string | null; location_code?: string | null } | null
 }
 
 interface Pharmacy {
@@ -209,8 +215,11 @@ export function EncounterDetailModal({
   const [soapNotes, setSoapNotes] = useState<SOAPNotes | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [pharmacy, setPharmacy] = useState<Pharmacy | null>(null)
-  const [appointment, setAppointment] = useState<Appointment | null>(null)
   const [pharmacies, setPharmacies] = useState<PharmacyRecord[]>([])
+  const [appointment, setAppointment] = useState<Appointment | null>(null)
+  const [canEditWorkflow, setCanEditWorkflow] = useState(false)
+  const [canEditIntake, setCanEditIntake] = useState(false)
+  const [canEditVitals, setCanEditVitals] = useState(false)
 
   type IcdSuggestionRow = {
     code: string
@@ -237,6 +246,17 @@ export function EncounterDetailModal({
     () => severityBandFromIntake(intake?.severity),
     [intake?.severity]
   )
+
+  const appointmentServiceTitle = useMemo(() => {
+    const svc = appointment?.services
+    if (!svc) return t('common.na')
+    if (language === 'es' && svc.title_es) return svc.title_es
+    return svc.title_en || t('common.na')
+  }, [appointment?.services, language, t])
+
+  const appointmentLocationTitle = useMemo(() => {
+    return appointment?.locations?.title?.trim() || t('common.na')
+  }, [appointment?.locations?.title, t])
 
   useEffect(() => {
     setModalTab('details')
@@ -276,6 +296,7 @@ export function EncounterDetailModal({
             appointment_time: appointmentData.appointment_time as string | null,
             onsite_type: appointmentData.onsite_type as string,
             services: appointmentData.services as Appointment['services'],
+            locations: appointmentData.locations as Appointment['locations'],
           })
         }
 
@@ -297,6 +318,9 @@ export function EncounterDetailModal({
         setSoapNotes(soapData)
         setPharmacy((pharmacyData as Pharmacy) ?? null)
         setPharmacies(pharmacyRegistry)
+        setCanEditWorkflow(Boolean(json.permissions?.can_edit_workflow))
+        setCanEditIntake(Boolean(json.permissions?.can_edit_intake))
+        setCanEditVitals(Boolean(json.permissions?.can_edit_vitals))
       } catch (error) {
         console.error('Error fetching encounter details:', error)
       } finally {
@@ -324,6 +348,19 @@ export function EncounterDetailModal({
     const json = await res.json()
     if (!res.ok || !json.encounter) return null
     setEncounter(json.encounter as Encounter)
+    setCanEditWorkflow(Boolean(json.permissions?.can_edit_workflow))
+    setCanEditIntake(Boolean(json.permissions?.can_edit_intake))
+    setCanEditVitals(Boolean(json.permissions?.can_edit_vitals))
+    if (json.intake) {
+      setIntake(json.intake as IntakeForm)
+    } else {
+      setIntake(null)
+    }
+    if (json.vitals) {
+      setVitals(json.vitals as Vitals)
+    } else {
+      setVitals(null)
+    }
     if (json.pharmacy) {
       setPharmacy(json.pharmacy as Pharmacy)
     }
@@ -338,6 +375,9 @@ export function EncounterDetailModal({
     const json = await res.json()
     if (!res.ok || !json.encounter) return
     setEncounter(json.encounter as Encounter)
+    setCanEditWorkflow(Boolean(json.permissions?.can_edit_workflow))
+    setCanEditIntake(Boolean(json.permissions?.can_edit_intake))
+    setCanEditVitals(Boolean(json.permissions?.can_edit_vitals))
     setPharmacy((json.pharmacy as Pharmacy) ?? null)
     setPharmacies(
       ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map((row) =>
@@ -346,10 +386,15 @@ export function EncounterDetailModal({
     )
   }, [encounterId])
 
-  const canEditClinicalEncounter = canEditClinicalEncounterContent(role)
-  const canManagePharmacy = canManageEncounterPharmacy(role)
-  // Prescribing is physicians-only (doctor, FNP, PA) — nurses can still manage pharmacy.
-  const canPrescribeRx = isPhysicianRole(role)
+  const canEditClinicalEncounter = canEditWorkflow
+  const encounterLocked = encounter?.status === 'completed'
+  const intakeEditable = canEditIntake && !encounterLocked
+  const vitalsEditable = canEditVitals && !encounterLocked
+  const canManagePharmacy = canManageEncounterPharmacy(role) && canEditWorkflow
+  const isAdminViewer = role === UserRole.ADMIN
+  const canEditEncounterRx = canEditWorkflow
+  const canSendPrescriptionsToAdmin =
+    isPhysicianRole(role) && canEditWorkflow && encounter?.status !== 'completed'
 
   const canEditSoap = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
@@ -373,7 +418,10 @@ export function EncounterDetailModal({
         credentials: 'include',
       })
       const json = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(json.error || t('encounter_modal.complete_failed'))
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.complete_failed'))
+      }
 
       setEncounter((prev) => (prev ? { ...prev, status: 'completed' } : prev))
       onEncounterStatusChange?.('completed')
@@ -507,6 +555,8 @@ export function EncounterDetailModal({
             { label: t('common.date'), value: formatDateOnly(appointment?.appointment_date ?? null) },
             { label: t('common.time'), value: appointment?.appointment_time?.trim() || t('common.na') },
             { label: t('common.type'), value: apptType },
+            { label: t('nurse_walkin.service'), value: appointmentServiceTitle },
+            { label: t('location.clinic_location'), value: appointmentLocationTitle },
           ],
           sections: [
             {
@@ -530,7 +580,7 @@ export function EncounterDetailModal({
         `Doctor-SOAP-${(encounter?.encounter_code || String(encounterId)).replace(/[^a-zA-Z0-9-_]+/g, '_')}.pdf`
       )
     },
-    [patient, encounter, appointment, encounterId, patientAgeYears, t, localeTag, language]
+    [patient, encounter, appointment, encounterId, patientAgeYears, appointmentServiceTitle, appointmentLocationTitle, t, localeTag, language]
   )
 
   if (!isOpen) return null
@@ -568,6 +618,11 @@ export function EncounterDetailModal({
                 }`}
               >
                 {getStatusInfo(encounter.status as EncounterStatus)?.label ?? encounter.status}
+              </span>
+            )}
+            {encounter?.status === 'completed' && (
+              <span className="px-3 py-1 rounded-lg text-xs font-medium border border-amber-200 bg-amber-50 text-amber-800">
+                {t('encounter_modal.completed_no_changes')}
               </span>
             )}
             {!loading && intakeSeverityBand && (
@@ -799,34 +854,46 @@ export function EncounterDetailModal({
                     </svg>
                     {t('encounter_modal.appointment_info')}
                   </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.date')}</p>
-                      <p className="text-slate-900 font-semibold">{formatDate(appointment.appointment_date)}</p>
+                  <div className="space-y-5">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+                      <div>
+                        <p className="text-slate-500 text-sm mb-1">{t('common.date')}</p>
+                        <p className="text-slate-900 font-semibold">{formatDate(appointment.appointment_date)}</p>
+                      </div>
+                      <div>
+                        <p className="text-slate-500 text-sm mb-1">{t('common.time')}</p>
+                        <p className="text-slate-900 font-semibold">
+                          {appointment.appointment_time
+                            ? formatClinicTimeSlot(appointment.appointment_time)
+                            : t('common.na')}
+                        </p>
+                      </div>
+                      <div className="col-span-2 sm:col-span-1">
+                        <p className="text-slate-500 text-sm mb-1">{t('common.type')}</p>
+                        <p className="text-slate-900 font-semibold">
+                          <span
+                            className={`inline-flex px-3 py-1 rounded-lg text-sm border ${
+                              appointment.onsite_type === 'onsite'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                : 'bg-blue-50 text-[#2E6EF3] border-blue-200'
+                            }`}
+                          >
+                            {appointment.onsite_type === 'onsite'
+                              ? t('encounter_modal.type_onsite')
+                              : t('encounter_modal.type_offsite')}
+                          </span>
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.time')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {appointment.appointment_time
-                          ? formatClinicTimeSlot(appointment.appointment_time)
-                          : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('common.type')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        <span
-                          className={`inline-flex px-3 py-1 rounded-lg text-sm border ${
-                            appointment.onsite_type === 'onsite'
-                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                              : 'bg-blue-50 text-[#2E6EF3] border-blue-200'
-                          }`}
-                        >
-                          {appointment.onsite_type === 'onsite'
-                            ? t('encounter_modal.type_onsite')
-                            : t('encounter_modal.type_offsite')}
-                        </span>
-                      </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-slate-100">
+                      <div className="min-w-0">
+                        <p className="text-slate-500 text-sm mb-1">{t('nurse_walkin.service')}</p>
+                        <p className="text-slate-900 font-semibold break-words">{appointmentServiceTitle}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-slate-500 text-sm mb-1">{t('location.clinic_location')}</p>
+                        <p className="text-slate-900 font-semibold break-words">{appointmentLocationTitle}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -865,8 +932,10 @@ export function EncounterDetailModal({
                 <EncounterPrescriptionsPanel
                   encounterId={encounterId}
                   encounterStatus={encounter.status}
-                  canEdit={canPrescribeRx}
+                  canEdit={canEditEncounterRx}
+                  canSendToAdmin={canSendPrescriptionsToAdmin}
                   canManagePharmacy={canManagePharmacy}
+                  canPrintPrescriptions={isAdminViewer}
                   hasDoctor={encounter.doctor_id != null}
                   hasPharmacy={encounter.pharmacy_id != null}
                   pharmacyId={encounter.pharmacy_id}
@@ -879,175 +948,23 @@ export function EncounterDetailModal({
                 />
               )}
 
-              {/* Intake Form */}
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  {t('encounter_modal.intake_form')}
-                </h3>
-                {intake ? (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.chief_complaint')}</p>
-                      <p className="text-slate-900">{intake.chief_complaint || t('common.na')}</p>
-                    </div>
-                    {intake.symptoms_description && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.symptoms_description')}</p>
-                        <p className="text-slate-900">{intake.symptoms_description}</p>
-                      </div>
-                    )}
-                    {intake.location && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.location')}</p>
-                        <p className="text-slate-900">{intake.location}</p>
-                      </div>
-                    )}
-                    {intake.severity && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.severity')}</p>
-                        <p className="text-slate-900">{intake.severity}/10</p>
-                      </div>
-                    )}
-                    {intake.onset && (
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.onset')}</p>
-                        <p className="text-slate-900">{formatDate(intake.onset)}</p>
-                      </div>
-                    )}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      {intake.medical_conditions && (
-                        <div>
-                          <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.medical_conditions')}</p>
-                          <p className="text-slate-900 text-sm">
-                            {Array.isArray(intake.medical_conditions)
-                              ? intake.medical_conditions.join(', ')
-                              : t('common.na')}
-                          </p>
-                        </div>
-                      )}
-                      {intake.allergies && (
-                        <div>
-                          <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.allergies')}</p>
-                          <p className="text-slate-900 text-sm">
-                            {Array.isArray(intake.allergies) ? intake.allergies.join(', ') : t('common.na')}
-                          </p>
-                        </div>
-                      )}
-                      {intake.current_medications && (
-                        <div>
-                          <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.current_medications')}</p>
-                          <p className="text-slate-900 text-sm">
-                            {Array.isArray(intake.current_medications)
-                              ? intake.current_medications.join(', ')
-                              : t('common.na')}
-                          </p>
-                        </div>
-                      )}
-                      {intake.surgeries && (
-                        <div>
-                          <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.surgeries')}</p>
-                          <p className="text-slate-900 text-sm">
-                            {Array.isArray(intake.surgeries) ? intake.surgeries.join(', ') : t('common.na')}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4 border-t border-slate-200">
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.tobacco_use')}</p>
-                        <p className="text-slate-900">{intake.tobacco_use ? t('encounter_modal.yes') : t('encounter_modal.no')}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.alcohol_use')}</p>
-                        <p className="text-slate-900">{intake.alcohol_use ? t('encounter_modal.yes') : t('encounter_modal.no')}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.drug_use')}</p>
-                        <p className="text-slate-900">{intake.drug_use ? t('encounter_modal.yes') : t('encounter_modal.no')}</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-slate-600">{t('encounter_modal.intake_not_available')}</p>
-                )}
-              </div>
+              <EncounterIntakePanel
+                encounterId={encounterId}
+                intake={intake}
+                canEdit={intakeEditable}
+                onUpdated={() => {
+                  void refreshEncounterFromApi()
+                }}
+              />
 
-              {/* Vitals */}
-              <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  {t('patient_file.vitals')}
-                </h3>
-                {vitals ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.bp')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.bp_systolic && vitals.bp_diastolic
-                          ? `${vitals.bp_systolic}/${vitals.bp_diastolic} mmHg`
-                          : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.hr')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.heart_rate ? `${vitals.heart_rate} bpm` : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.temp')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.temperature
-                          ? `${vitals.temperature}°${vitals.temperature_unit || 'F'}`
-                          : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.spo2')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.spo2 ? `${vitals.spo2}%` : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.rr')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.respiratory_rate ? `${vitals.respiratory_rate} /min` : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.weight')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.weight ? `${vitals.weight} ${vitals.weight_unit || 'lbs'}` : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.height')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.height ? `${vitals.height} ${vitals.height_unit || 'in'}` : t('common.na')}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500 text-sm mb-1">{t('patient_file.bmi')}</p>
-                      <p className="text-slate-900 font-semibold">
-                        {vitals.bmi ? vitals.bmi.toFixed(1) : t('common.na')}
-                      </p>
-                    </div>
-                    {vitals.notes && (
-                      <div className="col-span-full">
-                        <p className="text-slate-500 text-sm mb-1">{t('common.notes')}</p>
-                        <p className="text-slate-900">{vitals.notes}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-slate-600">{t('encounter_modal.vitals_not_recorded')}</p>
-                )}
-              </div>
+              <EncounterVitalsPanel
+                encounterId={encounterId}
+                vitals={vitals}
+                canEdit={vitalsEditable}
+                onUpdated={() => {
+                  void refreshEncounterFromApi()
+                }}
+              />
 
               <EncounterSoapPanel
                 encounterId={encounterId}

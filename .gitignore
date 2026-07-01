@@ -15,3 +15,6 @@ out/
 # misc
 .DS_Store
 .cache/
+
+# Claude Code local session settings (MCP permissions, etc.)
+.claude/settings.local.json

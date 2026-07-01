@@ -6,6 +6,9 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
 import { useT } from '@/lib/i18n'
 import { calculateAgeFromDob } from '@/lib/nurse/walk-in-intake'
+import { emptyIntakeFormInput, intakeRowToFormInput } from '@/lib/intake/intake-form-mappers'
+import { IntakeFormFields } from '@/components/IntakeFormFields'
+import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { parseSearchDateToIso } from '@/lib/nurse/patient-search-query'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
@@ -28,19 +31,6 @@ type PatientRow = {
 type ServiceRow = { id: number; title_en: string; title_es?: string | null }
 
 type Step = 'search' | 'select' | 'form'
-
-const RELIEVING_OPTIONS = [
-  'Rest',
-  'Ice',
-  'Heat',
-  'Elevation',
-  'Medication',
-  'Stretching',
-  'Massage',
-  'Support or compression',
-  'Time',
-  'Other',
-] as const
 
 const INPUT =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]'
@@ -94,25 +84,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [showManualPharmacy, setShowManualPharmacy] = useState(false)
   const [manualPharmacy, setManualPharmacy] = useState({ name: '', address: '', phone: '', email: '' })
   const [submitting, setSubmitting] = useState(false)
-
-  const [chiefComplaint, setChiefComplaint] = useState('')
-  const [onset, setOnset] = useState('')
-  const [symptomLocation, setSymptomLocation] = useState('')
-  const [severity, setSeverity] = useState('')
-  const [symptomDetails, setSymptomDetails] = useState('')
-  const [relievingFactors, setRelievingFactors] = useState<string[]>([])
-  const [currentMedications, setCurrentMedications] = useState('')
-  const [medicalConditions, setMedicalConditions] = useState('')
-  const [surgeries, setSurgeries] = useState<'yes' | 'no' | ''>('')
-  const [allergies, setAllergies] = useState<'yes' | 'no' | ''>('')
-  const [fhHypertension, setFhHypertension] = useState(false)
-  const [fhDiabetes, setFhDiabetes] = useState(false)
-  const [fhCancer, setFhCancer] = useState(false)
-  const [fhHeart, setFhHeart] = useState(false)
-  const [occupation, setOccupation] = useState('')
-  const [tobaccoUse, setTobaccoUse] = useState(false)
-  const [alcoholUse, setAlcoholUse] = useState(false)
-  const [drugUse, setDrugUse] = useState(false)
+  const [intakeForm, setIntakeForm] = useState<NurseWalkInIntakeInput>(emptyIntakeFormInput())
 
   const resetForm = useCallback(() => {
     setStep('search')
@@ -130,24 +102,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     setPharmacyQuery('')
     setShowManualPharmacy(false)
     setManualPharmacy({ name: '', address: '', phone: '', email: '' })
-    setChiefComplaint('')
-    setOnset('')
-    setSymptomLocation('')
-    setSeverity('')
-    setSymptomDetails('')
-    setRelievingFactors([])
-    setCurrentMedications('')
-    setMedicalConditions('')
-    setSurgeries('')
-    setAllergies('')
-    setFhHypertension(false)
-    setFhDiabetes(false)
-    setFhCancer(false)
-    setFhHeart(false)
-    setOccupation('')
-    setTobaccoUse(false)
-    setAlcoholUse(false)
-    setDrugUse(false)
+    setIntakeForm(emptyIntakeFormInput())
   }, [])
 
   useEffect(() => {
@@ -214,8 +169,30 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
 
   const selectPatient = (p: PatientRow) => {
     setSelectedPatient(p)
+    setIntakeForm(emptyIntakeFormInput())
     setStep('form')
   }
+
+  useEffect(() => {
+    if (!selectedPatient || step !== 'form') return
+    let cancelled = false
+    void (async () => {
+      try {
+        const res = await fetch(`/api/patients/${selectedPatient.id}/clinical-history`, {
+          credentials: 'include',
+        })
+        const json = await res.json().catch(() => ({}))
+        if (cancelled || !res.ok || !json.latest_intake) return
+        const prefill = intakeRowToFormInput(json.latest_intake as Record<string, unknown>)
+        setIntakeForm((prev) => (Object.keys(prev).length > 0 ? prev : prefill))
+      } catch {
+        // Prefill is optional.
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedPatient, step])
 
   const filteredPharmacies = useMemo(() => {
     const q = pharmacyQuery.trim().toLowerCase()
@@ -235,12 +212,6 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       .filter(Boolean)
       .join(', ')
   }, [selectedPatient])
-
-  const toggleRelieving = (value: string) => {
-    setRelievingFactors((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
-    )
-  }
 
   const addManualPharmacy = async () => {
     if (!manualPharmacy.name.trim()) {
@@ -280,25 +251,6 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     }
     setSubmitting(true)
     try {
-      const intake: Record<string, unknown> = {}
-      if (chiefComplaint.trim()) intake.chief_complaint = chiefComplaint.trim()
-      if (onset) intake.onset = onset
-      if (symptomLocation.trim()) intake.location = symptomLocation.trim()
-      if (severity) intake.severity = Number(severity)
-      if (symptomDetails.trim()) intake.symptoms_description = symptomDetails.trim()
-      if (relievingFactors.length) intake.relieving_factors = relievingFactors
-      if (currentMedications.trim()) intake.current_medications = currentMedications.trim()
-      if (medicalConditions.trim()) intake.medical_conditions = medicalConditions.trim()
-      if (surgeries) intake.surgeries = surgeries
-      if (allergies) intake.allergies = allergies
-      if (fhHypertension) intake.fh_hypertension = true
-      if (fhDiabetes) intake.fh_diabetes = true
-      if (fhCancer) intake.fh_cancer = true
-      if (fhHeart) intake.fh_heart_disease = true
-      if (tobaccoUse) intake.tobacco_use = true
-      if (alcoholUse) intake.alcohol_use = true
-      if (drugUse) intake.drug_use = true
-
       const res = await fetch('/api/nurse/walk-in', {
         method: 'POST',
         credentials: 'include',
@@ -311,7 +263,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           location_id: defaultLocationId ?? selectedPatient.location_id,
           onsite_type: onsiteType,
           pharmacy_id: pharmacyId ? Number(pharmacyId) : null,
-          intake: Object.keys(intake).length > 0 ? intake : undefined,
+          intake: Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
         }),
       })
       const json = await res.json().catch(() => ({}))
@@ -532,134 +484,14 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 </div>
               </section>
 
-              <section>
-                <h3 className={SECTION}>{t('nurse_walkin.medical_info')}</h3>
-                <p className="text-xs text-slate-500 mb-3">{t('nurse_walkin.optional_hint')}</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="md:col-span-2">
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.reason')}</label>
-                    <input value={chiefComplaint} onChange={(e) => setChiefComplaint(e.target.value)} className={`${INPUT} mt-1`} placeholder={t('nurse_walkin.reason_ph')} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.feeling_since')}</label>
-                    <input type="date" value={onset} onChange={(e) => setOnset(e.target.value)} className={`${INPUT} mt-1`} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.symptom_location')}</label>
-                    <input value={symptomLocation} onChange={(e) => setSymptomLocation(e.target.value)} className={`${INPUT} mt-1`} placeholder={t('nurse_walkin.symptom_location_ph')} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.severity')}</label>
-                    <select value={severity} onChange={(e) => setSeverity(e.target.value)} className={`${INPUT} mt-1`}>
-                      <option value="">{t('nurse_walkin.select')}</option>
-                      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.symptom_details')}</label>
-                    <input value={symptomDetails} onChange={(e) => setSymptomDetails(e.target.value)} className={`${INPUT} mt-1`} placeholder={t('nurse_walkin.symptom_details_ph')} />
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="text-xs text-slate-600 block mb-2">{t('nurse_walkin.relieving')}</label>
-                    <div className="flex flex-wrap gap-2">
-                      {RELIEVING_OPTIONS.map((opt) => (
-                        <label key={opt} className="inline-flex items-center gap-1.5 text-sm text-slate-700 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={relievingFactors.includes(opt)}
-                            onChange={() => toggleRelieving(opt)}
-                            className="rounded border-slate-300"
-                          />
-                          {opt}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.medications')}</label>
-                    <input value={currentMedications} onChange={(e) => setCurrentMedications(e.target.value)} className={`${INPUT} mt-1`} />
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.conditions')}</label>
-                    <input value={medicalConditions} onChange={(e) => setMedicalConditions(e.target.value)} className={`${INPUT} mt-1`} />
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h3 className={SECTION}>{t('nurse_walkin.medical_history')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <span className="text-xs text-slate-600">{t('nurse_walkin.surgeries')}</span>
-                    <div className="flex gap-4 mt-2">
-                      {(['yes', 'no'] as const).map((v) => (
-                        <label key={v} className="inline-flex items-center gap-1.5 text-sm">
-                          <input type="radio" name="surgeries" checked={surgeries === v} onChange={() => setSurgeries(v)} />
-                          {v === 'yes' ? t('common.yes') : t('common.no')}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-600">{t('nurse_walkin.allergies')}</span>
-                    <div className="flex gap-4 mt-2">
-                      {(['yes', 'no'] as const).map((v) => (
-                        <label key={v} className="inline-flex items-center gap-1.5 text-sm">
-                          <input type="radio" name="allergies" checked={allergies === v} onChange={() => setAllergies(v)} />
-                          {v === 'yes' ? t('common.yes') : t('common.no')}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="md:col-span-2">
-                    <span className="text-xs text-slate-600 block mb-2">{t('nurse_walkin.family_history')}</span>
-                    <div className="flex flex-wrap gap-3">
-                      {[
-                        { key: 'fhHypertension', label: t('nurse_walkin.fh_hypertension'), checked: fhHypertension, set: setFhHypertension },
-                        { key: 'fhDiabetes', label: t('nurse_walkin.fh_diabetes'), checked: fhDiabetes, set: setFhDiabetes },
-                        { key: 'fhCancer', label: t('nurse_walkin.fh_cancer'), checked: fhCancer, set: setFhCancer },
-                        { key: 'fhHeart', label: t('nurse_walkin.fh_heart'), checked: fhHeart, set: setFhHeart },
-                      ].map(({ key, label, checked, set }) => (
-                        <label key={key} className="inline-flex items-center gap-1.5 text-sm">
-                          <input type="checkbox" checked={checked} onChange={(e) => set(e.target.checked)} />
-                          {label}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <section>
-                <h3 className={SECTION}>{t('nurse_walkin.social_history')}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.occupation')}</label>
-                    <input value={occupation} onChange={(e) => setOccupation(e.target.value)} className={`${INPUT} mt-1`} placeholder={t('nurse_walkin.occupation_ph')} />
-                  </div>
-                  <div>
-                    <span className="text-xs text-slate-600 block mb-2">{t('nurse_walkin.lifestyle')}</span>
-                    <div className="flex flex-wrap gap-3">
-                      <label className="inline-flex items-center gap-1.5 text-sm">
-                        <input type="checkbox" checked={tobaccoUse} onChange={(e) => setTobaccoUse(e.target.checked)} />
-                        {t('nurse_walkin.tobacco')}
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 text-sm">
-                        <input type="checkbox" checked={alcoholUse} onChange={(e) => setAlcoholUse(e.target.checked)} />
-                        {t('nurse_walkin.alcohol')}
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 text-sm">
-                        <input type="checkbox" checked={drugUse} onChange={(e) => setDrugUse(e.target.checked)} />
-                        {t('nurse_walkin.drug')}
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              </section>
+              <IntakeFormFields
+                value={intakeForm}
+                onChange={setIntakeForm}
+                fieldPrefix="walkin"
+                inputClassName={INPUT}
+                sectionClassName={SECTION}
+                showOptionalHint
+              />
 
               <section>
                 <h3 className={SECTION}>{t('nurse_walkin.pharmacy')}</h3>

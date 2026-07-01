@@ -1437,8 +1437,8 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           {pdfReady && (
             <p className="text-xs text-emerald-700 mt-1 font-medium">
               {mode === 'editor'
-                ? 'Editor mode with PDF fields + lightweight annotations (text, cross, image).'
-                : 'Preview mode — auto-saved view with custom controls.'}
+                ? t('i693.pdf_editor_mode_active')
+                : t('i693.pdf_preview_mode_active')}
             </p>
           )}
         </div>
@@ -1453,7 +1453,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                 mode === 'editor' ? 'bg-slate-900 text-white' : 'text-slate-600'
               }`}
             >
-              Editor mode
+              {t('i693.pdf_mode_edit')}
             </button>
             <button
               type="button"
@@ -1463,7 +1463,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
                 mode === 'preview' ? 'bg-slate-900 text-white' : 'text-slate-600'
               }`}
             >
-              Preview mode
+              {t('i693.pdf_mode_filled')}
             </button>
           </div>
 
@@ -1472,7 +1472,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               <LoadingSpinner
                 compact
                 size="xs"
-                message={mode === 'editor' ? 'Saving editor changes...' : 'Preparing preview...'}
+                message={mode === 'editor' ? t('i693.pdf_saving_editor') : t('i693.pdf_preparing_preview')}
               />
             </div>
           )}
@@ -1481,7 +1481,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
             <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
               <button
                 type="button"
-                title="Select / normal edit mode"
+                title={t('i693.pdf_tool_select')}
                 onClick={() => setTool('none')}
                 className={`h-8 w-8 rounded-md border text-base leading-none ${
                   tool === 'none' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
@@ -1491,7 +1491,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               </button>
               <button
                 type="button"
-                title="Add text"
+                title={t('i693.pdf_tool_text')}
                 onClick={() => setTool('text')}
                 className={`h-8 w-8 rounded-md border text-base font-semibold leading-none ${
                   tool === 'text' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
@@ -1501,7 +1501,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               </button>
               <button
                 type="button"
-                title="Add cross"
+                title={t('i693.pdf_tool_cross')}
                 onClick={() => setTool('cross')}
                 className={`h-8 w-8 rounded-md border text-base font-semibold leading-none ${
                   tool === 'cross' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
@@ -1511,7 +1511,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               </button>
               <button
                 type="button"
-                title="Add image"
+                title={t('i693.pdf_tool_image')}
                 onClick={onPickImage}
                 className={`flex h-8 w-8 items-center justify-center rounded-md border leading-none ${
                   tool === 'image' ? 'border-sky-500 bg-sky-50 text-sky-700' : 'border-transparent text-slate-700 hover:bg-slate-50'
@@ -1540,7 +1540,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
             <>
               <button
                 type="button"
-                title="Refresh preview"
+                title={t('i693.pdf_refresh_preview')}
                 onClick={() => void refreshPreview()}
                 disabled={previewLoading || downloadLoading}
                 className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"
@@ -1549,7 +1549,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               </button>
               <button
                 type="button"
-                title="Zoom out"
+                title={t('i693.pdf_zoom_out')}
                 onClick={() => setScale((s) => Math.max(MIN_SCALE, Number((s - 0.1).toFixed(2))))}
                 disabled={previewLoading || downloadLoading}
                 className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"
@@ -1559,7 +1559,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
               <div className="px-3 py-2 text-sm text-slate-600">{Math.round(scale * 100)}%</div>
               <button
                 type="button"
-                title="Zoom in"
+                title={t('i693.pdf_zoom_in')}
                 onClick={() => setScale((s) => Math.min(MAX_SCALE, Number((s + 0.1).toFixed(2))))}
                 disabled={previewLoading || downloadLoading}
                 className="h-8 w-8 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-base font-medium disabled:opacity-50"

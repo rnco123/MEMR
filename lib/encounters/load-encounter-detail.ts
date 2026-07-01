@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
 import { PATIENT_INFO_SELECT } from '@/lib/encounter/encounter-patient-info'
-import { loadLatestVitalsForEncounter } from '@/lib/vitals/load-encounter-vitals'
+import { loadLatestVitalsForEncounter } from '@/lib/vitals/save-encounter-vitals'
 import { loadActivePharmacyRegistry, loadPharmacyById } from '@/lib/pharmacies/load-active-registry'
 import {
   AI_SOAP_SELECT,

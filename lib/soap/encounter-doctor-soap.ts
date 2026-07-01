@@ -134,7 +134,7 @@ export async function loadEncounterSoapContext(
     ai_soap: aiSoap,
     doctor_soap: doctorSoap,
     last_audit: (lastAudit as SoapAuditSummary) ?? null,
-    editable: canEditEncounterSoap(encounter.status as string, role),
+    editable: canEditSoapByRole(role) && canEditEncounterSoap(encounter.status as string, role),
   }
 }
 

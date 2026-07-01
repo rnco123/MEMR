@@ -14,7 +14,7 @@ import {
 
 import { isClinicalStaffRole } from '@/lib/roles'
 
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 
 export async function POST(
@@ -153,7 +153,7 @@ export async function POST(
     const suggestions = validateFinalReviewSuggestions(parsed, catalogProducts)
     const generatedAt = new Date().toISOString()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
 
     const { error: updateError } = await admin

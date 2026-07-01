@@ -9,8 +9,8 @@ import {
   handleApiError,
 } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
-import { canEditClinicalEncounterContent } from '@/lib/roles'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
+import { canViewClinicalEncounterContent } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,8 +40,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!canEditClinicalEncounterContent(roleInfo?.role)) {
-      throw new AuthorizationError('Clinical staff only')
+    if (!canViewClinicalEncounterContent(roleInfo?.role)) {
+      throw new AuthorizationError()
     }
 
     await guardEncounterAccess(user.id, encounterId)
@@ -70,11 +70,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!canEditClinicalEncounterContent(roleInfo?.role)) {
-      throw new AuthorizationError('Clinical staff only')
+    if (!canViewClinicalEncounterContent(roleInfo?.role)) {
+      throw new AuthorizationError()
     }
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     let body: unknown
     try {

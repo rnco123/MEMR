@@ -5,6 +5,8 @@ import {
   formatClinicDateTime,
   formatClinicTimeSlot,
   getClinicTodayDateString,
+  getClinicPrescriptionDateRangeUtc,
+  clinicMidnightUtc,
 } from '@/lib/datetime/clinic-timezone'
 
 describe('clinic-timezone', () => {
@@ -32,5 +34,24 @@ describe('clinic-timezone', () => {
     const formatted = getClinicTodayDateString(new Date('2026-06-25T06:00:00.000Z'))
     expect(formatted).toMatch(/^\d{4}-\d{2}-\d{2}$/)
     expect(formatted).toBe('2026-06-25')
+  })
+
+  test('clinicMidnightUtc maps Central calendar midnight to UTC', () => {
+    const start = clinicMidnightUtc('2026-06-25')
+    expect(start.toISOString()).toBe('2026-06-25T05:00:00.000Z')
+  })
+
+  test('getClinicPrescriptionDateRangeUtc covers today in Central time', () => {
+    const now = new Date('2026-06-25T18:00:00.000Z')
+    const range = getClinicPrescriptionDateRangeUtc('today', now)
+    expect(range.startIso).toBe('2026-06-25T05:00:00.000Z')
+    expect(range.endExclusiveIso).toBe('2026-06-26T05:00:00.000Z')
+  })
+
+  test('getClinicPrescriptionDateRangeUtc covers this month in Central time', () => {
+    const now = new Date('2026-06-25T18:00:00.000Z')
+    const range = getClinicPrescriptionDateRangeUtc('this_month', now)
+    expect(range.startIso).toBe('2026-06-01T05:00:00.000Z')
+    expect(range.endExclusiveIso).toBe('2026-07-01T05:00:00.000Z')
   })
 })

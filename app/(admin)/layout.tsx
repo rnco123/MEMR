@@ -20,6 +20,7 @@ import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
 import { AuditTracker } from '@/components/AuditTracker'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { maintenanceTickerShellClassName } from '@/lib/maintenance-ticker'
 
 const adminNavItems = [
   {
@@ -87,6 +88,15 @@ const adminNavItems = [
     ),
   },
   {
+    nameKey: 'admin.nav.prescriptions',
+    href: '/admin/prescriptions',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
     nameKey: 'admin.nav.patients_history',
     href: '/admin/patients-history',
     icon: (
@@ -133,6 +143,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isSigningOut, setIsSigningOut] = useState(false)
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [hasPendingPrescriptions, setHasPendingPrescriptions] = useState(false)
 
   const displayName =
     profile?.display_name ??
@@ -149,11 +160,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       adminNavItems.map((item) => ({
         ...item,
         name: t(item.nameKey),
+        badgeDot: item.href === '/admin/prescriptions' && hasPendingPrescriptions,
         isActive: (pathname: string) =>
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t]
+    [t, hasPendingPrescriptions]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
@@ -178,7 +190,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         title: t('admin.nav.section.administration'),
         items: [
           ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/support'].includes(item.href)
+            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
           ),
           profileNavItem,
         ],
@@ -187,14 +199,44 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   }, [adminNav, t])
 
   useEffect(() => {
-    if (!loading && (!user || role !== 'admin')) {
-      router.push('/login')
+    if (loading) return
+    if (!user) {
+      router.replace('/login')
+      return
+    }
+    if (role && role !== 'admin') {
+      router.replace('/dashboard')
     }
   }, [user, role, loading, router])
 
   useEffect(() => {
     setMobileNavOpen(false)
   }, [pathname])
+
+  useEffect(() => {
+    if (loading || !user || role !== 'admin') return
+    let cancelled = false
+    const checkPending = async () => {
+      try {
+        const res = await fetch('/api/admin/prescription-ready?status=pending', {
+          credentials: 'include',
+        })
+        if (!res.ok) return
+        const json = await res.json()
+        const count =
+          typeof json.totalCount === 'number' ? json.totalCount : (json.rows ?? []).length
+        if (!cancelled) setHasPendingPrescriptions(count > 0)
+      } catch {
+        /* ignore */
+      }
+    }
+    void checkPending()
+    const interval = setInterval(() => void checkPending(), 60000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [loading, user, role, pathname])
 
   if (loading || !user || role !== 'admin') {
     return (
@@ -237,7 +279,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   ]
 
   return (
-    <div className="flex h-[calc(100vh_-_var(--mtk-h))] flex-col overflow-hidden bg-[#f6f2ff] mt-[var(--mtk-h)]">
+    <div className={`flex flex-col overflow-hidden bg-[#f6f2ff] ${maintenanceTickerShellClassName()}`}>
       <header className="bg-[#fdfbff] border-b border-purple-100 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center gap-2 h-16 min-h-[4rem]">

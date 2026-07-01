@@ -21,6 +21,7 @@ import {
   getStatusInfo,
   type EncounterStatus,
 } from '@/lib/encounter-status'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { useRouter } from 'next/navigation'
 import { useMemo, useState, useEffect, useCallback } from 'react'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
@@ -276,7 +277,7 @@ export default function AdminFlowboardPage() {
                   <option value="all">{t('common.all')}</option>
                   {ENCOUNTER_STATUSES.map((status) => (
                     <option key={status.value} value={status.value}>
-                      {status.label}
+                      {translateEncounterStatus(t, status.value)}
                     </option>
                   ))}
                 </select>
@@ -380,7 +381,7 @@ export default function AdminFlowboardPage() {
               >
                 <div
                   className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
-                  title={getStatusInfo(appointment.encounter_status as EncounterStatus)?.label ?? 'Status'}
+                  title={translateEncounterStatus(t, appointment.encounter_status)}
                   aria-hidden
                 />
                 <div className="flex flex-1 flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 min-w-0">
@@ -420,7 +421,7 @@ export default function AdminFlowboardPage() {
                   <div className="flex items-center gap-2">
                     {appointment.encounter_status && (
                       <div className="px-2.5 py-1 rounded-lg text-[11px] font-semibold border bg-slate-50 text-slate-700 border-slate-200">
-                        {getStatusInfo(appointment.encounter_status as EncounterStatus)?.label || appointment.encounter_status}
+                        {translateEncounterStatus(t, appointment.encounter_status) || appointment.encounter_status}
                       </div>
                     )}
                     <button

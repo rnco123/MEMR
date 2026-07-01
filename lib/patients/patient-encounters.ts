@@ -57,3 +57,65 @@ export async function loadEncountersForPatient<T = Record<string, unknown>>(
 
   return merged
 }
+
+type EncounterDoctorRow = {
+  user_id?: string | null
+  role?: string | null
+  [key: string]: unknown
+}
+
+type EncounterWithDoctor = {
+  doctors?: EncounterDoctorRow | EncounterDoctorRow[] | null
+}
+
+function normalizeDoctorRow(
+  doctors: EncounterWithDoctor['doctors']
+): EncounterDoctorRow | null {
+  if (!doctors) return null
+  return Array.isArray(doctors) ? (doctors[0] ?? null) : doctors
+}
+
+/** Attach profiles.role to each encounter's assigned provider for UI labels (Doctor / FNP / PA). */
+export async function enrichEncountersWithProviderRoles(
+  admin: SupabaseClient,
+  encounters: EncounterWithDoctor[]
+): Promise<void> {
+  const userIds = [
+    ...new Set(
+      encounters
+        .map((enc) => normalizeDoctorRow(enc.doctors)?.user_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    ),
+  ]
+  if (userIds.length === 0) return
+
+  const roleByUserId = new Map<string, string>()
+
+  const { data: byUid, error: byUidError } = await admin
+    .from('profiles')
+    .select('uid, role')
+    .in('uid', userIds)
+  if (byUidError) throw byUidError
+  for (const row of byUid ?? []) {
+    const uid = row.uid as string | null
+    const role = row.role as string | null
+    if (uid && role) roleByUserId.set(uid, role)
+  }
+
+  const { data: byId, error: byIdError } = await admin
+    .from('profiles')
+    .select('id, role')
+    .in('id', userIds)
+  if (byIdError) throw byIdError
+  for (const row of byId ?? []) {
+    const id = row.id as string | null
+    const role = row.role as string | null
+    if (id && role && !roleByUserId.has(id)) roleByUserId.set(id, role)
+  }
+
+  for (const enc of encounters) {
+    const doctor = normalizeDoctorRow(enc.doctors)
+    if (!doctor?.user_id) continue
+    doctor.role = roleByUserId.get(doctor.user_id) ?? null
+  }
+}

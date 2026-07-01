@@ -1,6 +1,8 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
+import { useT } from '@/lib/i18n'
 import { splitAddressForPatientRecord } from '@/lib/address/parse-patient-address'
 import { normalizeStateAbbrev } from '@/lib/i693/ai-fill'
 
@@ -20,6 +22,43 @@ type Props = {
   addressColSpanClass?: string
 }
 
+function useDropdownPosition(
+  anchorRef: RefObject<HTMLElement | null>,
+  open: boolean
+) {
+  const [style, setStyle] = useState<{ top: number; left: number; width: number } | null>(null)
+
+  const update = useCallback(() => {
+    const el = anchorRef.current
+    if (!el) {
+      setStyle(null)
+      return
+    }
+    const rect = el.getBoundingClientRect()
+    setStyle({
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    })
+  }, [anchorRef])
+
+  useEffect(() => {
+    if (!open) {
+      setStyle(null)
+      return
+    }
+    update()
+    window.addEventListener('scroll', update, true)
+    window.addEventListener('resize', update)
+    return () => {
+      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', update)
+    }
+  }, [open, update])
+
+  return style
+}
+
 export function AddressLookupFields({
   streetAddress,
   state,
@@ -35,12 +74,14 @@ export function AddressLookupFields({
   disabled = false,
   addressColSpanClass = 'md:col-span-2',
 }: Props) {
+  const { t } = useT()
   const [lookupEnabled, setLookupEnabled] = useState<boolean | null>(null)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const lastSelectedRef = useRef('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const requestSeqRef = useRef(0)
+  const streetFieldRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     fetch('/api/address/status', { credentials: 'include' })
@@ -71,7 +112,6 @@ export function AddressLookupFields({
         const res = await fetch(`/api/address/suggestions?search=${encodeURIComponent(query)}`, {
           credentials: 'include',
         })
-        // Ignore responses from superseded requests (stale-response race).
         if (seq !== requestSeqRef.current) return
         if (!res.ok) {
           setSuggestions([])
@@ -97,7 +137,6 @@ export function AddressLookupFields({
 
   const applySuggestion = (suggestion: string) => {
     lastSelectedRef.current = suggestion
-    // Bump the sequence so any in-flight suggestion fetch is ignored.
     requestSeqRef.current++
     const split = splitAddressForPatientRecord(suggestion)
     onStreetAddressChange(split.street_address)
@@ -111,10 +150,11 @@ export function AddressLookupFields({
   }
 
   const showSuggestions = suggestions.length > 0 && !disabled
+  const dropdownStyle = useDropdownPosition(streetFieldRef, showSuggestions)
 
   return (
     <>
-      <div className={`relative ${addressColSpanClass}`}>
+      <div ref={streetFieldRef} className={`relative ${addressColSpanClass}`}>
         <label className="text-slate-500 text-sm mb-1 font-semibold block">{streetLabel}</label>
         <input
           value={streetAddress}
@@ -125,25 +165,40 @@ export function AddressLookupFields({
           autoComplete="street-address"
         />
         {loadingSuggestions ? (
-          <p className="text-xs text-slate-400 mt-1">Searching addresses…</p>
+          <p className="text-xs text-slate-400 mt-1">{t('address.lookup_searching')}</p>
         ) : null}
-        {showSuggestions ? (
-          <ul className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg">
-            {suggestions.map((suggestion, index) => (
-              <li key={`${suggestion}-${index}`}>
-                <button
-                  type="button"
-                  className="w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => applySuggestion(suggestion)}
-                >
-                  {suggestion}
-                </button>
-              </li>
-            ))}
-          </ul>
+        {lookupEnabled === false && streetAddress.trim().length >= 4 ? (
+          <p className="text-xs text-slate-400 mt-1">{t('address.lookup_unconfigured')}</p>
         ) : null}
       </div>
+      {showSuggestions && dropdownStyle && typeof document !== 'undefined'
+        ? createPortal(
+            <ul
+              style={{
+                position: 'fixed',
+                top: dropdownStyle.top,
+                left: dropdownStyle.left,
+                width: dropdownStyle.width,
+                zIndex: 9999,
+              }}
+              className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg"
+            >
+              {suggestions.map((suggestion, index) => (
+                <li key={`${suggestion}-${index}`}>
+                  <button
+                    type="button"
+                    className="w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => applySuggestion(suggestion)}
+                  >
+                    {suggestion}
+                  </button>
+                </li>
+              ))}
+            </ul>,
+            document.body
+          )
+        : null}
       <div>
         <label className="text-slate-500 text-sm mb-1 font-semibold block">{stateLabel}</label>
         <input

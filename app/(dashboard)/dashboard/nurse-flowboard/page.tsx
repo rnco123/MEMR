@@ -11,7 +11,9 @@ import {
   getStatusInfo,
   type EncounterStatus,
   getStatusAccentBarClass,
+  ENCOUNTER_STATUSES,
 } from '@/lib/encounter-status'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { VitalsFormModal } from '@/components/VitalsFormModal'
 import { AssignProviderModal } from '@/components/AssignProviderModal'
 import { BatchAssignProviderModal } from '@/components/BatchAssignProviderModal'
@@ -516,13 +518,11 @@ function NurseFlowboardPage() {
                   className={FLOWBOARD_SELECT_CLASS}
                 >
                   <option value="all">{t('common.all')}</option>
-                  <option value="appointment_initiated">Appointment Initiated</option>
-                  <option value="provider_assigned">Provider Assigned</option>
-                  <option value="vitals_assessed">Vitals Assessed</option>
-                  <option value="in_consultation">In Consultation</option>
-                  <option value="consultation_concluded">Consultation Concluded</option>
-                  <option value="final_review">Final Review</option>
-                  <option value="completed">Completed</option>
+                  {ENCOUNTER_STATUSES.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {translateEncounterStatus(t, status.value)}
+                    </option>
+                  ))}
                 </select>
               </FlowboardFilterField>
               <FlowboardViewToggleSlot>
@@ -725,7 +725,7 @@ function NurseFlowboardPage() {
                     className={`w-1.5 flex-shrink-0 self-stretch ${getStatusAccentBarClass(appointment.encounter_status)}`}
                     title={
                       appointment.encounter_status
-                        ? getStatusInfo(appointment.encounter_status as EncounterStatus)?.label
+                        ? translateEncounterStatus(t, appointment.encounter_status)
                         : undefined
                     }
                     aria-hidden
@@ -781,7 +781,7 @@ function NurseFlowboardPage() {
 
                         return (
                           <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${baseColor}`}>
-                            {info?.label || appointment.encounter_status}
+                            {translateEncounterStatus(t, appointment.encounter_status) || appointment.encounter_status}
                           </span>
                         )
                       })()

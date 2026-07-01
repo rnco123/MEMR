@@ -53,6 +53,8 @@ export function buildIntakeFormRow(
   if (intake.alcohol_use != null) row.alcohol_use = intake.alcohol_use
   if (intake.drug_use != null) row.drug_use = intake.drug_use
 
+  if (intake.occupation != null) row.occupation = intake.occupation
+
   return Object.keys(row).length > 0 ? row : null
 }
 

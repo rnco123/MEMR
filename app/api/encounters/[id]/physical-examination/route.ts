@@ -14,8 +14,9 @@ import {
   saveEncounterPhysicalExamination,
 } from '@/lib/encounter/physical-examination-store'
 import { normalizePhysicalExamination, normalizeRosExamData } from '@/lib/encounter/physical-examination'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
-import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, canEditClinicalEncounterContent } from '@/lib/roles'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
+import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
+import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, mapRoleToEnum } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,15 +41,27 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const roleInfo = await fetchUserRole(supabase, user.id)
     const role = roleInfo?.role
     if (!role || !VIEWER_ROLES.has(role)) {
-      throw new AuthorizationError('You are not allowed to view this physical examination')
+      throw new AuthorizationError()
     }
 
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId)
 
     const result = await loadEncounterPhysicalExamination(admin, encounterId, { role })
+    const { data: encounterRow } = await admin
+      .from('encounters')
+      .select('doctor_id')
+      .eq('id', encounterId)
+      .maybeSingle()
+    const mappedRole = mapRoleToEnum(role)
+    const canWrite =
+      mappedRole != null
+        ? await resolveEncounterWriteAllowed(admin, user.id, mappedRole, {
+            doctor_id: encounterRow?.doctor_id,
+          })
+        : false
 
-    return NextResponse.json({ success: true, ...result })
+    return NextResponse.json({ success: true, ...result, editable: canWrite && result.editable })
   } catch (e) {
     return handleApiError(e)
   }
@@ -67,10 +80,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     const roleInfo = await fetchUserRole(supabase, user.id)
     const role = roleInfo?.role
     if (!role || !VIEWER_ROLES.has(role)) {
-      throw new AuthorizationError('You are not allowed to update this physical examination')
-    }
-    if (!canEditClinicalEncounterContent(role)) {
-      throw new AuthorizationError('Doctors and nurses only')
+      throw new AuthorizationError()
     }
 
     let body: unknown
@@ -84,7 +94,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (!parsed.success) throw parsed.error
 
     const admin = createAdminClient()
-    await assertEncounterAccess(admin, user.id, encounterId)
+    await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     const result = await saveEncounterPhysicalExamination(admin, {
       encounterId,

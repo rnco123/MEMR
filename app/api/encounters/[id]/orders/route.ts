@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { encounterOrderCreateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { getDoctorRowId } from '@/lib/clinical'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import { loadEncounterOrders } from '@/lib/clinical/load-encounter-orders'
 import { ENCOUNTER_ORDER_SELECT } from '@/lib/encounters/encounter-detail-selects'
 
@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     } = await supabase.auth.getUser()
     if (authError || !user) throw new AuthenticationError()
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     let body: unknown
     try {

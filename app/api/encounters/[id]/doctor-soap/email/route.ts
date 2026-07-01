@@ -9,7 +9,7 @@ import {
   ValidationError,
   handleApiError,
 } from '@/lib/api-error-handler'
-import { guardEncounterAccess } from '@/lib/encounters/guard'
+import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +37,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       throw new AuthorizationError('Doctors and nurses only')
     }
 
-    await guardEncounterAccess(user.id, encounterId)
+    await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
 
     const result = await sendSoapNoteToPatient({
       supabase,

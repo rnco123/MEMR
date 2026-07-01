@@ -10,7 +10,7 @@ import {
 } from '@/lib/api-error-handler'
 import { isPhysicianRole } from '@/lib/roles'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { assertEncounterAccess } from '@/lib/encounters/assert-access'
+import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { batchCompleteEncounters } from '@/lib/encounter/batch-complete'
 
 export const dynamic = 'force-dynamic'
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
     const encounterIds = parsed.data.encounter_ids
 
     for (const encounterId of encounterIds) {
-      await assertEncounterAccess(admin, user.id, encounterId)
+      await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
     }
 
     const result = await batchCompleteEncounters(admin, {

@@ -5,6 +5,7 @@ import { requireNurseUser } from '@/lib/nurse/require-nurse'
 import { getLocationScopeForUser } from '@/lib/locations/scope'
 import { applyParsedPatientSearchToQuery } from '@/lib/nurse/patient-search-apply'
 import { resolvePatientSearch } from '@/lib/nurse/patient-search-openai'
+import { listPatientIdsVisibleInScope } from '@/lib/patients/patient-location-visibility'
 import { UserRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
@@ -37,7 +38,11 @@ export async function GET(req: NextRequest) {
       .limit(MAX_RESULTS)
 
     if (!scope.unrestricted) {
-      query = query.in('location_id', scope.locationIds)
+      const visiblePatientIds = await listPatientIdsVisibleInScope(admin, scope)
+      if (!visiblePatientIds?.length) {
+        return NextResponse.json({ patients: [] })
+      }
+      query = query.in('id', visiblePatientIds)
     }
 
     query = applyParsedPatientSearchToQuery(query, parsedSearch)
@@ -46,13 +51,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query
     if (error) throw error
 
-    const patients = (data ?? [])
-      .filter((p) => {
-        if (scope.unrestricted) return true
-        if (scope.locationIds.length === 0) return false
-        return p.location_id != null && scope.locationIds.includes(p.location_id)
-      })
-      .map((p) => {
+    const patients = (data ?? []).map((p) => {
         const loc = p.locations as { title?: string } | null
         return {
           id: p.id,

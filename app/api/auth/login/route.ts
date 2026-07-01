@@ -5,13 +5,27 @@ import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { resolveAuthenticatedRole } from '@/lib/admin-auth'
 import { getSupabasePublishableKey, getSupabaseUrl } from '@/lib/supabase/keys'
 import { z } from 'zod'
-import { createRateLimiter } from '@/lib/rate-limit'
+import { peekRateLimit, recordAttempt, resetRateLimit } from '@/lib/rate-limit'
 import { isTurnstileEnabled, verifyTurnstileToken } from '@/lib/security/turnstile'
 
 export const dynamic = 'force-dynamic'
 
-// M-08a: Dedicated stricter rate limit for login — 5 attempts per 15 min per IP.
-const loginRateLimiter = createRateLimiter({ limit: 5, windowMs: 15 * 60 * 1000 })
+// M-08a: Dedicated brute-force throttle for login — only FAILED attempts count,
+// so legitimate users are never locked out by successful sign-ins. Fixed 15-min
+// window per IP; a successful login clears the counter.
+const LOGIN_RATE_LIMIT = { limit: 10, windowMs: 15 * 60 * 1000 }
+
+function rateLimitKey(ip: string): string {
+  return `login:${ip}`
+}
+
+function tooManyAttempts(retryAfterMs: number): NextResponse {
+  const retryAfterSec = Math.max(1, Math.ceil(retryAfterMs / 1000))
+  return NextResponse.json(
+    { error: 'Too many login attempts. Please try again later.' },
+    { status: 429, headers: { 'Retry-After': String(retryAfterSec) } }
+  )
+}
 
 const bodySchema = z.object({
   email: z.string().email(),
@@ -33,11 +47,10 @@ export async function POST(request: NextRequest) {
       request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
       request.headers.get('x-real-ip') ||
       'unknown'
-    if (!loginRateLimiter(ip)) {
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
-      )
+    const rlKey = rateLimitKey(ip)
+    const preCheck = peekRateLimit(rlKey, LOGIN_RATE_LIMIT)
+    if (preCheck.blocked) {
+      return tooManyAttempts(preCheck.retryAfterMs)
     }
 
     let body: unknown
@@ -90,16 +103,29 @@ export async function POST(request: NextRequest) {
     })
 
     if (error) {
+      // Count only failed attempts toward the brute-force limit.
+      const status = recordAttempt(rlKey, LOGIN_RATE_LIMIT)
+      if (status.blocked) {
+        return tooManyAttempts(status.retryAfterMs)
+      }
+      // Generic message — never reveal whether the email exists.
       return NextResponse.json(
-        { error: error.message || 'Invalid login credentials' },
+        { error: 'Invalid login credentials' },
         { status: 401 }
       )
     }
 
     const user = data.user
     if (!user) {
+      const status = recordAttempt(rlKey, LOGIN_RATE_LIMIT)
+      if (status.blocked) {
+        return tooManyAttempts(status.retryAfterMs)
+      }
       return NextResponse.json({ error: 'Sign in failed' }, { status: 401 })
     }
+
+    // Successful login clears any accumulated failure count for this IP.
+    resetRateLimit(rlKey)
 
     const role = await resolveAuthenticatedRole(supabase, user)
 

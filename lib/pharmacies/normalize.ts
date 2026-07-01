@@ -9,7 +9,7 @@ export type PharmacyRecord = {
 export function normalizePharmacyRow(row: Record<string, unknown>): PharmacyRecord {
   const phone = (row.phone ?? row.phone_number ?? null) as string | null
   const fallbackAddress = [row.city, row.state, row.zip_code].filter(Boolean).join(', ')
-  const address = (row.address ?? (fallbackAddress || null)) as string | null
+  const address = formatPharmacyDisplayAddress(row) ?? (fallbackAddress || null)
   return {
     id: Number(row.id),
     name: (row.name as string | null) ?? null,
@@ -17,6 +17,16 @@ export function normalizePharmacyRow(row: Record<string, unknown>): PharmacyReco
     phone,
     email: (row.email as string | null) ?? null,
   }
+}
+
+export function formatPharmacyDisplayAddress(row: Record<string, unknown>): string | null {
+  const street = String(row.address ?? '').trim()
+  const cityLine = [row.city, row.state, row.zip_code]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .map((part) => part.trim())
+    .join(', ')
+  const combined = [street, cityLine].filter(Boolean).join(', ')
+  return combined || null
 }
 
 export function findPharmacyById(
