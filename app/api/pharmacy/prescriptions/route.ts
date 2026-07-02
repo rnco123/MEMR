@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requirePharmacyAdminUser } from '@/lib/pharmacy-keys'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,7 +19,7 @@ const querySchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    await requirePharmacyAdminUser()
+    const { user } = await requirePharmacyAdminUser()
     const admin = createAdminClient()
 
     const url = new URL(request.url)
@@ -141,6 +142,17 @@ export async function GET(request: Request) {
         .in('id', ids)
         .eq('status', 'recorded')
     }
+
+    // Bulk prescription pull destined for an external pharmacy — record the disclosure.
+    auditPhi({
+      user,
+      role: user.role,
+      action: 'data_exported',
+      resourceType: 'prescription',
+      resourceId: pharmacyId,
+      metadata: { destination: 'pharmacy', pharmacy_id: pharmacyId, count: prescriptions.length },
+      request,
+    })
 
     return NextResponse.json({
       success: true,

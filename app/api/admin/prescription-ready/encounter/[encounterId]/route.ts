@@ -7,6 +7,7 @@ import {
   handleApiError,
 } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +56,20 @@ export async function PATCH(
     if (!data?.length) {
       throw new NotFoundError('No prescriptions in queue for this encounter')
     }
+
+    auditPhi({
+      user,
+      role: 'admin',
+      action: 'prescription_updated',
+      resourceType: 'prescription',
+      resourceId: encounterId,
+      metadata: {
+        scope: 'admin_queue_encounter',
+        admin_status: parsed.data.admin_status,
+        updated_count: data.length,
+      },
+      request,
+    })
 
     return NextResponse.json({
       success: true,

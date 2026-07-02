@@ -4,6 +4,7 @@ import { encounterOrderUpdateSchema } from '@/lib/validation'
 import { handleApiError, AuthenticationError, ValidationError } from '@/lib/api-error-handler'
 import { guardOrderAccess } from '@/lib/encounters/guard'
 import { ENCOUNTER_ORDER_SELECT } from '@/lib/encounters/encounter-detail-selects'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -55,6 +56,16 @@ export async function PATCH(request: Request, { params }: { params: { orderId: s
       .single()
 
     if (error) throw error
+
+    auditPhi({
+      user,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: (data as { encounter_id?: number | null })?.encounter_id ?? orderId,
+      metadata: { section: 'order', order_id: orderId, status: parsed.data.status ?? null },
+      request,
+    })
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)

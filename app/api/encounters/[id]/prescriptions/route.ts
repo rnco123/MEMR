@@ -27,6 +27,7 @@ import {
   isEncounterPrescriptionsReleased,
   listPrescriptionReadyForEncounter,
 } from '@/lib/prescriptions/prescription-ready'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,7 @@ async function requireEncounterRxEditor(supabase: Awaited<ReturnType<typeof crea
   return roleInfo!.role!
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -78,6 +79,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (roleInfo?.role === 'admin') {
       payload.ready_queue = await listPrescriptionReadyForEncounter(admin, encounterId)
     }
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'prescription_viewed',
+      resourceType: 'prescription',
+      resourceId: encounterId,
+      metadata: { scope: 'encounter_list' },
+      request,
+    })
 
     return NextResponse.json(payload)
   } catch (e) {
@@ -137,6 +148,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
       role,
       userEmail: user.email,
       snapshot: data,
+    })
+
+    auditPhi({
+      user,
+      role,
+      action: 'prescription_created',
+      resourceType: 'prescription',
+      resourceId: data.id,
+      metadata: { encounter_id: encounterId, patient_id: encounter.patient_id },
+      request,
     })
 
     return NextResponse.json({ success: true, data })
