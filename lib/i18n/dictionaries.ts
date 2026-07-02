@@ -28,6 +28,13 @@ const en: Dictionary = {
   'common.no_results': 'No Results Found',
   'common.try_adjust_filters': 'Try adjusting your search or filters.',
   'common.actions': 'Actions',
+
+  // ---- idle auto-logout ----
+  'idle.title': 'Are you still there?',
+  'idle.body': 'For your security, you will be signed out in {seconds} seconds.',
+  'idle.stay': 'Keep me signed in',
+  'idle.logout_now': 'Log out now',
+  'idle.signing_out': 'Signing out…',
   'common.status': 'Status',
   'common.created': 'Created',
   'common.title': 'Title',
@@ -1684,6 +1691,13 @@ const es: Dictionary = {
   'common.no_results': 'Sin resultados',
   'common.try_adjust_filters': 'Intenta ajustar tu búsqueda o filtros.',
   'common.actions': 'Acciones',
+
+  // ---- idle auto-logout ----
+  'idle.title': '¿Sigues ahí?',
+  'idle.body': 'Por tu seguridad, se cerrará tu sesión en {seconds} segundos.',
+  'idle.stay': 'Mantener mi sesión iniciada',
+  'idle.logout_now': 'Cerrar sesión ahora',
+  'idle.signing_out': 'Cerrando sesión…',
   'common.status': 'Estado',
   'common.created': 'Creado',
   'common.title': 'Título',
