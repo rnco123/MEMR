@@ -6,6 +6,7 @@ import { getDoctorRowId } from '@/lib/clinical'
 import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import { loadEncounterOrders } from '@/lib/clinical/load-encounter-orders'
 import { ENCOUNTER_ORDER_SELECT } from '@/lib/encounters/encounter-detail-selects'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,6 +82,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
       .single()
 
     if (error) throw error
+
+    auditPhi({
+      user,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'orders', order_type: parsed.data.order_type },
+      request,
+    })
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)

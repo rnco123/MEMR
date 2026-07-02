@@ -20,6 +20,7 @@ import { toDateInputValue } from '@/lib/datetime/date-input'
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
 import { mapRoleToEnum } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,7 +49,7 @@ function normalizePayload(input: PatientInfoSaveInput): PatientInfoUpdatePayload
   }
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -76,6 +77,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
             doctor_id: encounterRow?.doctor_id,
           })
         : false
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'patient_info' },
+      request,
+    })
 
     return NextResponse.json({
       patient: ctx.patient,
@@ -119,6 +130,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       userEmail: user.email,
       role: role!,
       payload: normalizePayload(parsed.data),
+    })
+
+    auditPhi({
+      user,
+      role,
+      action: 'patient_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'patient_info' },
+      request,
     })
 
     return NextResponse.json({

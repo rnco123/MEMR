@@ -12,6 +12,7 @@ import {
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { PHYSICIAN_NURSE_ADMIN_ROLE_SET } from '@/lib/roles'
 import { handleApiError } from '@/lib/api-error-handler'
+import { auditPhi } from '@/lib/audit-phi'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'patient_consent_forms'
@@ -25,7 +26,7 @@ export type ConsentFormPayload = {
   updated_at: string | null
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const supabaseAuth = await createClient()
     const {
@@ -49,6 +50,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     await guardEncounterAccess(user.id, encounterId)
 
+    // Serves signed consent forms (patient name, DOB, signatures).
+    auditPhi({
+      user,
+      role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'consent_forms' },
+      request,
+    })
 
     const admin = createAdminClient()
 

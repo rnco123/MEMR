@@ -13,6 +13,7 @@ import { loadIntakePrefillForPatient } from '@/lib/intake/load-intake-prefill'
 import { intakeLastAuditFromRow, saveEncounterIntake } from '@/lib/intake/save-encounter-intake'
 import { canEditClinicalEncounterContent, mapRoleToEnum } from '@/lib/roles'
 import { nurseWalkInIntakeSchema } from '@/lib/validation'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -22,7 +23,7 @@ function parseEncounterId(raw: string | undefined): number {
   return id
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -33,6 +34,15 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (authError || !user) throw new AuthenticationError()
 
     const admin = await guardEncounterAccess(user.id, encounterId)
+
+    auditPhi({
+      user,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'intake' },
+      request,
+    })
 
     const { data: encounter, error: encError } = await admin
       .from('encounters')
@@ -113,6 +123,17 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       role: mappedRole,
       editorName,
     })
+
+    auditPhi({
+      user,
+      role: mappedRole,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'intake' },
+      request,
+    })
+
     return NextResponse.json({
       data: intake,
       last_audit: intakeLastAuditFromRow(intake),

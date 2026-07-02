@@ -7,6 +7,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { isClinicalStaffRole } from '@/lib/roles'
 
 import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
+import { auditPhi } from '@/lib/audit-phi'
 export const dynamic = 'force-dynamic'
 
 const SUMMARY_SYSTEM_PROMPT = `You are a clinical documentation assistant. Given a telemedicine session transcript, extract and return a JSON object with these fields:
@@ -74,7 +75,8 @@ export async function POST(
       .order('created_at', { ascending: true })
 
     if (txError) {
-      return NextResponse.json({ error: txError.message }, { status: 500 })
+      console.error('[ai-summary] transcript fetch failed:', txError)
+      return NextResponse.json({ error: 'Failed to load transcript' }, { status: 500 })
     }
 
     // Also accept inline transcript from request body (for lines not yet saved to DB)
@@ -122,11 +124,23 @@ export async function POST(
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text()
+      console.error('[ai-summary] OpenAI request failed:', aiResponse.status, errText)
       return NextResponse.json(
-        { error: 'OpenAI request failed', details: errText },
+        { error: 'OpenAI request failed' },
         { status: 502 }
       )
     }
+
+    // Transcript PHI was sent to OpenAI — record the disclosure.
+    auditPhi({
+      user,
+      role,
+      action: 'data_exported',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { destination: 'openai', purpose: 'ai_summary', lines: allLines.length },
+      request,
+    })
 
     const aiData = await aiResponse.json()
     const rawContent = aiData.choices?.[0]?.message?.content ?? '{}'

@@ -47,10 +47,10 @@ export interface AuditPhiParams {
   /** Small, structured context — e.g. { section: 'soap' }. Never put PHI values here. */
   metadata?: Record<string, unknown>
   /** Pass the route's request to capture ip/user-agent/path. */
-  request?: NextRequest
+  request?: NextRequest | Request
 }
 
-function requestContext(request?: NextRequest): {
+function requestContext(request?: NextRequest | Request): {
   ip: string
   userAgent: string
   pageUrl: string | null
@@ -61,10 +61,18 @@ function requestContext(request?: NextRequest): {
     request.headers.get('x-real-ip') ||
     request.headers.get('cf-connecting-ip') ||
     'unknown'
+  let pageUrl: string | null = (request as NextRequest).nextUrl?.pathname ?? null
+  if (!pageUrl && request.url) {
+    try {
+      pageUrl = new URL(request.url).pathname
+    } catch {
+      pageUrl = null
+    }
+  }
   return {
     ip,
     userAgent: request.headers.get('user-agent') || 'unknown',
-    pageUrl: request.nextUrl?.pathname ?? null,
+    pageUrl,
   }
 }
 
