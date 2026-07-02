@@ -10,12 +10,13 @@ import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string; encounterId: string } }
 ) {
   try {
@@ -47,6 +48,17 @@ export async function GET(
 
     if (error) throw error
     if (!sub) throw new ValidationError('I-693 form not found for this encounter')
+
+    // Serves the I-693 PDF bytes — covers both cached and regenerated paths below.
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'document_viewed',
+      resourceType: 'document',
+      resourceId: `i693-${encounterId}`,
+      metadata: { type: 'i693_pdf', patient_id: patientId, encounter_id: encounterId },
+      request,
+    })
 
     const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
     const annotations = resolveStoredI693Annotations(sub.annotations, formData)

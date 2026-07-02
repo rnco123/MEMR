@@ -3,11 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { AuthenticationError, handleApiError } from '@/lib/api-error-handler'
 import { guardPatientAccess } from '@/lib/encounters/guard'
 import { loadPatientClinicalHistory } from '@/lib/patients/load-patient-clinical-history'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -25,6 +26,15 @@ export async function GET(
 
     const admin = await guardPatientAccess(user.id, patientId)
     const data = await loadPatientClinicalHistory(admin, patientId)
+
+    auditPhi({
+      user,
+      action: 'patient_viewed',
+      resourceType: 'patient',
+      resourceId: patientId,
+      metadata: { section: 'clinical_history' },
+      request,
+    })
 
     return NextResponse.json(data)
   } catch (e) {

@@ -4,11 +4,12 @@ import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
 import { loadEncountersForPatient, enrichEncountersWithProviderRoles } from '@/lib/patients/patient-encounters'
 import { filterEncountersForClinicalViewer } from '@/lib/patients/patient-location-visibility'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -32,6 +33,15 @@ export async function GET(
     const encounters = await loadEncountersForPatient(admin, patientId)
     await enrichEncountersWithProviderRoles(admin, encounters)
     const visible = await filterEncountersForClinicalViewer(admin, user.id, encounters)
+
+    auditPhi({
+      user,
+      action: 'patient_viewed',
+      resourceType: 'patient',
+      resourceId: patientId,
+      metadata: { section: 'encounters' },
+      request,
+    })
 
     return NextResponse.json({ encounters: visible })
   } catch (error) {

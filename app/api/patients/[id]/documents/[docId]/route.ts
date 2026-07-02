@@ -3,13 +3,14 @@ import { requireClinicalRole } from '@/lib/locations/scope'
 import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
 import { NextRequest, NextResponse } from 'next/server'
+import { auditPhi } from '@/lib/audit-phi'
 
 // Force dynamic rendering since we use cookies for authentication
 export const dynamic = 'force-dynamic'
 
 // DELETE - Delete a document
 export async function DELETE(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string; docId: string } }
 ) {
   try {
@@ -73,6 +74,15 @@ export async function DELETE(
         // Don't fail the request if storage deletion fails
       }
     }
+
+    auditPhi({
+      user,
+      action: 'document_deleted',
+      resourceType: 'document',
+      resourceId: docId,
+      metadata: { patient_id: patientId },
+      request,
+    })
 
     return NextResponse.json({ success: true })
   } catch (error) {
