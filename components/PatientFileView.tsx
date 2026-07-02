@@ -8,6 +8,7 @@ import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { printPatientDocument } from '@/lib/patient-documents/print-document'
 import { getEncounterProviderLabelKey } from '@/lib/roles'
 
@@ -326,13 +327,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return t('common.na')
-    const date = new Date(dateString)
-    if (isNaN(date.getTime())) return t('common.na')
-    return date.toLocaleDateString(locale, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
+    return formatCalendarDate(dateString, locale, { month: 'short' }) || t('common.na')
   }
 
   const formatTime = (timeString: string | null) => {
@@ -408,16 +403,8 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
   }
 
   const calculateAge = (dob: string | null): string | number => {
-    if (!dob) return t('common.na')
-    const birthDate = new Date(dob)
-    if (isNaN(birthDate.getTime())) return t('common.na')
-    const today = new Date()
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--
-    }
-    return age
+    const age = ageFromCalendarDate(dob)
+    return age != null ? age : t('common.na')
   }
 
   const patientTabs = useMemo(

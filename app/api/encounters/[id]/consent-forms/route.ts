@@ -13,6 +13,7 @@ import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { PHYSICIAN_NURSE_ADMIN_ROLE_SET } from '@/lib/roles'
 import { handleApiError } from '@/lib/api-error-handler'
 import { auditPhi } from '@/lib/audit-phi'
+import { formatCalendarDate } from '@/lib/datetime/date-input'
 export const dynamic = 'force-dynamic'
 
 const BUCKET = 'patient_consent_forms'
@@ -100,15 +101,8 @@ export async function GET(request: Request, { params }: { params: { id: string }
         patientName = [pat.first_name, pat.last_name].filter(Boolean).join(' ').trim() || patientName
         const raw = pat.date_of_birth as string | null | undefined
         if (raw) {
-          try {
-            dateOfBirthDisplay = new Date(raw).toLocaleDateString(undefined, {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-            })
-          } catch {
-            dateOfBirthDisplay = raw
-          }
+          dateOfBirthDisplay =
+            formatCalendarDate(raw, 'en-US', { month: 'long' }) || raw
         }
       }
     }

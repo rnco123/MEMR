@@ -11,6 +11,7 @@ import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
 import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
 import { PreVisitSummary } from '@/components/PreVisitSummary'
+import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 
 interface Patient {
   id: number
@@ -106,23 +107,12 @@ function cleanSoapSection(
 
 function formatDate(dateString: string | null) {
   if (!dateString) return 'N/A'
-  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(dateString) ? `${dateString}T00:00:00` : dateString)
-  if (Number.isNaN(d.getTime())) return 'N/A'
-  return d.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
+  return formatCalendarDate(dateString, 'en-US', { month: 'short' }) || 'N/A'
 }
 
 function calculateAge(dob: string | null) {
-  if (!dob) return 'N/A'
-  const birthDate = new Date(dob)
-  const today = new Date()
-  let age = today.getFullYear() - birthDate.getFullYear()
-  const monthDiff = today.getMonth() - birthDate.getMonth()
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--
-  return `${age} years`
+  const age = ageFromCalendarDate(dob)
+  return age != null ? `${age} years` : 'N/A'
 }
 
 function mergeParticipantsIntoNames(

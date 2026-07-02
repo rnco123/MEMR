@@ -1,15 +1,37 @@
 import type { EncounterRxRow } from '@/lib/prescriptions/encounter-prescriptions'
 
+function sigPartIncluded(sig: string, part: string): boolean {
+  return sig.toLowerCase().includes(part.toLowerCase())
+}
+
 /** US-style SIG line for print / fax prescription sheets. */
 export function formatUsRxSig(rx: EncounterRxRow): string {
   const explicit = (rx.dosage_instruction ?? rx.instructions ?? rx.dosage ?? '').trim()
-  if (explicit) return explicit
+  const route = rx.route?.trim() ?? ''
+  const frequency = rx.frequency?.trim() ?? ''
+  const duration = rx.duration?.trim() ?? ''
 
-  const parts: string[] = []
-  if (rx.route?.trim()) parts.push(rx.route.trim())
-  if (rx.frequency?.trim()) parts.push(rx.frequency.trim())
-  if (rx.duration?.trim()) parts.push(`for ${rx.duration.trim()}`)
-  return parts.join(' ') || '—'
+  const structuredParts: string[] = []
+  if (route) structuredParts.push(route)
+  if (frequency) structuredParts.push(frequency)
+  if (duration) structuredParts.push(`for ${duration}`)
+  const structuredSig = structuredParts.join(' ')
+
+  if (!explicit) return structuredSig || '—'
+
+  const missingParts: string[] = []
+  if (route && !sigPartIncluded(explicit, route)) missingParts.push(route)
+  if (frequency && !sigPartIncluded(explicit, frequency)) missingParts.push(frequency)
+  if (
+    duration &&
+    !sigPartIncluded(explicit, duration) &&
+    !sigPartIncluded(explicit, `for ${duration}`)
+  ) {
+    missingParts.push(`for ${duration}`)
+  }
+
+  if (missingParts.length === 0) return explicit
+  return `${explicit} ${missingParts.join(' ')}`.trim()
 }
 
 export function formatUsRxMedicationLine(rx: EncounterRxRow): string {

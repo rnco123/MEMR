@@ -7,6 +7,7 @@ import { useT } from '@/lib/i18n'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { patientMatchesParsedSearch } from '@/lib/nurse/patient-search-apply'
+import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 
 type Patient = {
   id: number
@@ -82,21 +83,12 @@ export default function AdminPatientsHistoryPage() {
 
   const formatDate = (dateString: string | null | undefined) => {
     if (!dateString) return t('common.na')
-    return new Date(dateString).toLocaleDateString(localeTag, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
+    return formatCalendarDate(dateString, localeTag, { month: 'short' }) || t('common.na')
   }
 
   const calculateAge = (dob: string | null) => {
-    if (!dob) return t('common.na')
-    const birthDate = new Date(dob)
-    const today = new Date()
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--
-    return age
+    const age = ageFromCalendarDate(dob)
+    return age != null ? age : t('common.na')
   }
 
   return (

@@ -1,4 +1,5 @@
 import type { Language } from '@/lib/i18n'
+import { parseCalendarDate } from '@/lib/datetime/date-input'
 
 /** Clinic display timezone — values are stored in UTC (TIMESTAMPTZ / ISO strings). */
 export const CLINIC_TIME_ZONE = 'America/Chicago'
@@ -61,8 +62,8 @@ export function formatClinicDateOnly(
   options?: Pick<Intl.DateTimeFormatOptions, 'weekday' | 'year' | 'month' | 'day'>
 ): string {
   if (!dateString?.trim()) return ''
-  const date = new Date(`${dateString.trim().slice(0, 10)}T12:00:00`)
-  if (Number.isNaN(date.getTime())) return ''
+  const date = parseCalendarDate(dateString)
+  if (!date) return ''
   return new Intl.DateTimeFormat(clinicLocale(language), {
     year: 'numeric',
     month: options?.month ?? 'short',

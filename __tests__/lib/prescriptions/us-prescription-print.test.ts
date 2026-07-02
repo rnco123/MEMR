@@ -29,6 +29,9 @@ describe('formatUsRxSig', () => {
     expect(
       formatUsRxSig({
         ...baseRx,
+        route: null,
+        frequency: null,
+        duration: null,
         dosage_instruction: 'Take 1 capsule by mouth three times daily for 10 days',
       })
     ).toBe('Take 1 capsule by mouth three times daily for 10 days')
@@ -36,6 +39,54 @@ describe('formatUsRxSig', () => {
 
   test('builds SIG from route frequency duration', () => {
     expect(formatUsRxSig(baseRx)).toBe('Oral TID for 10 days')
+  })
+
+  test('structured-only Ibuprofen example includes frequency', () => {
+    expect(
+      formatUsRxSig({
+        ...baseRx,
+        medication_name: 'Ibuprofen',
+        strength: '600 mg',
+        route: null,
+        dosage_instruction: null,
+        instructions: null,
+        dosage: null,
+        frequency: 'TID',
+        duration: '5 days',
+      })
+    ).toBe('TID for 5 days')
+  })
+
+  test('appends frequency and duration when dosage instruction omits them', () => {
+    expect(
+      formatUsRxSig({
+        ...baseRx,
+        medication_name: 'Ibuprofen',
+        strength: '600 mg',
+        route: null,
+        dosage_instruction: '1 tablet',
+        instructions: '1 tablet',
+        dosage: '1 tablet',
+        frequency: 'TID',
+        duration: '5 days',
+      })
+    ).toBe('1 tablet TID for 5 days')
+  })
+
+  test('appends only missing structured sig parts', () => {
+    expect(
+      formatUsRxSig({
+        ...baseRx,
+        medication_name: 'Ibuprofen',
+        strength: '600 mg',
+        route: null,
+        dosage_instruction: '1 tablet for 5 days',
+        instructions: '1 tablet for 5 days',
+        dosage: '1 tablet for 5 days',
+        frequency: 'TID',
+        duration: '5 days',
+      })
+    ).toBe('1 tablet for 5 days TID')
   })
 
   test('formats medication line with strength', () => {
