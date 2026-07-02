@@ -693,6 +693,14 @@ const en: Dictionary = {
   'audit.action.i693_pdf_exported': 'I-693 PDF Export',
   'audit.action.i693_workflow_updated': 'I-693 Workflow Updated',
   'audit.action.user_updated': 'User Updated',
+  'audit.action.encounter_viewed': 'Encounter Viewed',
+  'audit.action.vitals_recorded': 'Vitals Recorded',
+  'audit.action.document_deleted': 'Doc Deleted',
+  'audit.action.prescription_created': 'Rx Created',
+  'audit.action.prescription_updated': 'Rx Updated',
+  'audit.action.prescription_deleted': 'Rx Deleted',
+  'audit.action.prescription_viewed': 'Rx Viewed',
+  'audit.action.video_session_started': 'Video Visit Started',
 
   // ---- i693 ----
   'i693.page_title': 'Form I-693 (Immigration)',
@@ -2358,6 +2366,14 @@ const es: Dictionary = {
   'audit.action.i693_pdf_exported': 'I-693 PDF exportado',
   'audit.action.i693_workflow_updated': 'Flujo I-693 actualizado',
   'audit.action.user_updated': 'Usuario actualizado',
+  'audit.action.encounter_viewed': 'Encuentro visto',
+  'audit.action.vitals_recorded': 'Signos vitales registrados',
+  'audit.action.document_deleted': 'Documento eliminado',
+  'audit.action.prescription_created': 'Receta creada',
+  'audit.action.prescription_updated': 'Receta actualizada',
+  'audit.action.prescription_deleted': 'Receta eliminada',
+  'audit.action.prescription_viewed': 'Receta vista',
+  'audit.action.video_session_started': 'Videoconsulta iniciada',
 
   // ---- i693 ----
   'i693.page_title': 'Formulario I-693 (Inmigración)',

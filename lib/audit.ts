@@ -17,8 +17,14 @@ export type AuditAction =
   | 'appointment_cancelled'
   | 'encounter_created'
   | 'encounter_updated'
+  | 'encounter_viewed'
   | 'vitals_recorded'
   | 'vitals_viewed'
+  | 'prescription_created'
+  | 'prescription_updated'
+  | 'prescription_deleted'
+  | 'prescription_viewed'
+  | 'video_session_started'
   | 'user_logged_in'
   | 'user_logged_out'
   | 'user_created'
@@ -50,6 +56,7 @@ export type ResourceType =
   | 'profile'
   | 'system'
   | 'i693'
+  | 'prescription'
 
 interface AuditLogMetadata {
   [key: string]: any

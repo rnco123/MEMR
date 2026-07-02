@@ -42,25 +42,30 @@ export async function GET(req: NextRequest) {
     const { data, count, error } = await query
     if (error) throw error
 
-    // For rows that have user_id but no snapshot, look up from profiles
+    // For rows missing any snapshot field (PHI audit rows are written with
+    // user_name null by design — see lib/audit-phi.ts), look up from profiles.
     const missingIds = (data ?? [])
-      .filter((r) => r.user_id && !r.user_email)
+      .filter((r) => r.user_id && (!r.user_email || !r.user_name || !r.user_role))
       .map((r) => r.user_id as string)
     const uniqueMissing = [...new Set(missingIds)]
 
     const profileMap: Record<string, { full_name: string | null; email: string | null; role: string | null }> = {}
     if (uniqueMissing.length) {
-      const { data: profs } = await admin
-        .from('profiles')
-        .select('uid, full_name, email, role')
-        .in('uid', uniqueMissing)
-      for (const p of profs ?? []) {
-        profileMap[p.uid] = { full_name: p.full_name, email: p.email, role: p.role }
+      // Profiles are keyed by uid on production with legacy rows keyed by id.
+      const [byUid, byId] = await Promise.all([
+        admin.from('profiles').select('uid, full_name, email, role').in('uid', uniqueMissing),
+        admin.from('profiles').select('id, full_name, email, role').in('id', uniqueMissing),
+      ])
+      for (const p of byId.data ?? []) {
+        profileMap[String(p.id)] = { full_name: p.full_name, email: p.email, role: p.role }
+      }
+      for (const p of byUid.data ?? []) {
+        profileMap[String(p.uid)] = { full_name: p.full_name, email: p.email, role: p.role }
       }
     }
 
     const enriched = (data ?? []).map((r) => {
-      if (r.user_id && !r.user_email) {
+      if (r.user_id && (!r.user_email || !r.user_name || !r.user_role)) {
         const p = profileMap[r.user_id]
         if (p) {
           return { ...r, user_name: r.user_name ?? p.full_name, user_email: r.user_email ?? p.email, user_role: r.user_role ?? p.role }
