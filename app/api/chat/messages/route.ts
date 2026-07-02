@@ -85,8 +85,9 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: true })
 
     if (error) {
+      console.error('[chat/messages] fetch failed:', error)
       return NextResponse.json(
-        { error: `Failed to fetch messages: ${error.message}` },
+        { error: 'Failed to fetch messages' },
         { status: 500 }
       )
     }

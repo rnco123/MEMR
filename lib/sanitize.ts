@@ -3,19 +3,30 @@
  */
 
 /**
- * Sanitize HTML content (for rich text fields)
- * Note: For production, install isomorphic-dompurify: npm install isomorphic-dompurify
+ * Sanitize HTML content (for rich text fields).
+ *
+ * WARNING: regex-based stripping is a defense-in-depth measure only and must
+ * never be the sole barrier before dangerouslySetInnerHTML. For untrusted
+ * rich text, use isomorphic-dompurify instead.
  */
 export function sanitizeHtml(html: string): string {
-  // Basic HTML sanitization - remove script tags and dangerous attributes
-  // For production, use DOMPurify: import DOMPurify from 'isomorphic-dompurify'
-  // return DOMPurify.sanitize(html)
-  
-  // Basic implementation for now
+  if (typeof html !== 'string') {
+    return ''
+  }
+
   return html
+    // Active-content elements (with or without closing tags)
     .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/on\w+="[^"]*"/gi, '')
+    .replace(/<(script|iframe|object|embed|form|meta|link|base)\b[^>]*>/gi, '')
+    .replace(/<\/(script|iframe|object|embed|form|meta|link|base)>/gi, '')
+    // Inline event handlers — double-quoted, single-quoted, or unquoted values
+    .replace(/\son\w+\s*=\s*"[^"]*"/gi, '')
+    .replace(/\son\w+\s*=\s*'[^']*'/gi, '')
+    .replace(/\son\w+\s*=\s*[^\s>]+/gi, '')
+    // Dangerous URL schemes
     .replace(/javascript:/gi, '')
+    .replace(/vbscript:/gi, '')
+    .replace(/data:text\/html/gi, '')
 }
 
 /**

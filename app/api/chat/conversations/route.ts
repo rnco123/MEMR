@@ -59,8 +59,9 @@ export async function GET(request: NextRequest) {
       .order('last_message_at', { ascending: false })
 
     if (error) {
+      console.error('[chat/conversations] fetch failed:', error)
       return NextResponse.json(
-        { error: `Failed to fetch conversations: ${error.message}` },
+        { error: 'Failed to fetch conversations' },
         { status: 500 }
       )
     }

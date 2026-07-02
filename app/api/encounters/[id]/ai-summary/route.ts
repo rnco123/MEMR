@@ -151,9 +151,9 @@ export async function POST(
         .eq('id', encounterId)
 
       if (persistError) {
-        console.error('Failed to persist transcript summary:', persistError.message)
+        console.error('Failed to persist transcript summary:', persistError)
         return NextResponse.json(
-          { error: 'Summary generated but could not be saved', details: persistError.message },
+          { error: 'Summary generated but could not be saved' },
           { status: 500 }
         )
       }

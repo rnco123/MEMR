@@ -11,9 +11,12 @@ function readFile(relPath: string): string {
 }
 
 describe('M-10 — Test endpoints blocked in production', () => {
-  it('H-11 middleware blocks /api/openai/test in production', () => {
-    const middleware = readFile('middleware.ts')
-    expect(middleware).toContain('/api/openai/test')
+  // Middleware excludes /api/* (each route self-protects) — the H-11 guarantee
+  // now lives in the route itself: auth gate + no upstream error passthrough.
+  it('H-11 /api/openai/test route requires authentication', () => {
+    const route = readFile('app/api/openai/test/route.ts')
+    expect(route).toContain('getUser()')
+    expect(route).toContain("{ error: 'Unauthorized' }, { status: 401 }")
   })
 })
 
@@ -41,6 +44,20 @@ describe('H-03 — Role resolution does not trust metadata', () => {
   it('middleware.ts does not use metadata role for authorization', () => {
     const middleware = readFile('middleware.ts')
     expect(middleware).not.toContain('user_metadata?.role')
+  })
+
+  it('api-auth.ts does not use metadata role for authorization', () => {
+    const apiAuth = readFile('lib/security/api-auth.ts')
+    expect(apiAuth).toContain('fetchUserRole')
+    expect(apiAuth).not.toContain('user_metadata?.role')
+  })
+})
+
+describe('PHI — Sentry session replay must mask text and media', () => {
+  it('sentry.client.config.ts masks all text and blocks media in replays', () => {
+    const config = readFile('sentry.client.config.ts')
+    expect(config).toContain('maskAllText: true')
+    expect(config).toContain('blockAllMedia: true')
   })
 })
 

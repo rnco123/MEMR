@@ -8,6 +8,17 @@ function escapeAttr(url: string): string {
   return url.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
 }
 
+// Rendered output goes into dangerouslySetInnerHTML — patient-supplied values
+// (name, DOB) must never be interpreted as markup.
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function signatureImgOrDash(url: string | null | undefined): string {
   if (!url?.trim()) {
     return '<span style="color:#64748b;">—</span>'
@@ -27,12 +38,12 @@ export type ConsentRenderVars = {
 
 export function renderConsentFormHtml(templateHtml: string, vars: ConsentRenderVars): string {
   let html = templateHtml
-  const name = vars.patientName || '—'
-  const dob = vars.dateOfBirthDisplay || '—'
+  const name = escapeHtml(vars.patientName || '—')
+  const dob = escapeHtml(vars.dateOfBirthDisplay || '—')
   const patientSig = signatureImgOrDash(vars.patientSignatureUrl)
 
   html = html.split('{{PATIENT_NAME}}').join(name)
-  html = html.split('{{DATE}}').join(vars.dateDisplay || '—')
+  html = html.split('{{DATE}}').join(escapeHtml(vars.dateDisplay || '—'))
   html = html.split('{{DATE_OF_BIRTH}}').join(dob)
   html = html.split('{{PATIENT_SIGNATURE}}').join(patientSig)
   html = html.split('{{PATIENT_/_GUARDIAN_SIGNATURE}}').join(patientSig)

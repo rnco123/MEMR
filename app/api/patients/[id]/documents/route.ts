@@ -46,8 +46,9 @@ export async function GET(
       .order('created_at', { ascending: false })
 
     if (error) {
+      console.error('[patients/documents] fetch failed:', error)
       return NextResponse.json(
-        { error: `Failed to fetch documents: ${error.message}` },
+        { error: 'Failed to fetch documents' },
         { status: 500 }
       )
     }

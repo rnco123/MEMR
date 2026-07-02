@@ -139,7 +139,8 @@ export async function POST(request: NextRequest) {
       .select('id')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[transcripts/save] insert failed:', error)
+      return NextResponse.json({ error: 'Failed to save transcript' }, { status: 500 })
     }
 
     const ids = (inserted ?? []).map((r) => Number(r.id)).filter((n) => !isNaN(n))

@@ -44,9 +44,11 @@ export async function requireRole(
 
   const { user, supabase } = authResult
 
-  // Get user role (supports both uid and id column schemas)
+  // Get user role (supports both uid and id column schemas).
+  // H-03: profiles table is the only authoritative source — user_metadata.role
+  // is user-controlled and must never grant access.
   const profile = await fetchUserRole(supabase, user.id)
-  const role = profile?.role || (user as any).user_metadata?.role
+  const role = profile?.role
 
   if (!role || !allowedRoles.includes(role)) {
     return handleApiError(
