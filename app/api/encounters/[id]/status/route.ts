@@ -12,6 +12,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { getProfileId, insertStatusTimeline, type StatusTimelineStatus } from '@/lib/status-timeline'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -121,6 +122,16 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         profileId,
       })
     }
+
+    auditPhi({
+      user,
+      role: roleInfo.role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'status', status: nextStatus },
+      request,
+    })
 
     return NextResponse.json({ success: true, data })
   } catch (e) {

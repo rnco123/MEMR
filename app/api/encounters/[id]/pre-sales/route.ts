@@ -11,6 +11,7 @@ import {
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import { canViewClinicalEncounterContent } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,6 +102,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
       .select('id, product_id, product_quantity')
 
     if (error) throw error
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'pre_sales', rows: rows.length },
+      request,
+    })
+
     return NextResponse.json({ success: true, data: data ?? [] })
   } catch (e) {
     return handleApiError(e)

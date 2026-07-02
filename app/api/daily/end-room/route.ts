@@ -92,10 +92,7 @@ export async function POST(request: NextRequest) {
     console.error('[daily/end-room]', error)
     Sentry.captureException(error, { tags: { route: 'daily-end-room' } })
     return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

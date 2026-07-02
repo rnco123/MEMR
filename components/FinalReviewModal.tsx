@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo, type ReactNode } from 'react
 import { LoadingSpinner } from './LoadingSpinner'
 import { toast } from 'sonner'
 import type { FinalReviewSuggestions } from '@/lib/final-review/from-transcript'
+import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 
 interface Patient {
   id: number
@@ -439,23 +440,12 @@ export function FinalReviewModal({
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+    return formatCalendarDate(dateString, 'en-US', { month: 'long' }) || 'N/A'
   }
 
   const calculateAge = (dob: string | null) => {
-    if (!dob) return 'N/A'
-    const birthDate = new Date(dob)
-    const today = new Date()
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--
-    }
-    return age
+    const age = ageFromCalendarDate(dob)
+    return age != null ? age : 'N/A'
   }
 
   const handleAddProduct = () => {

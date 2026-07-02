@@ -129,8 +129,9 @@ export async function GET(request: Request) {
             data: { doctor_id: doctorData.id, is_available: false, updated_at: null }
           })
         }
+        console.error('[doctors/availability] fetch failed:', error)
         return NextResponse.json(
-          { error: error.message },
+          { error: 'Failed to fetch availability' },
           { status: 500 }
         )
       }
@@ -145,8 +146,9 @@ export async function GET(request: Request) {
       .eq('is_available', true)
 
     if (error) {
+      console.error('[doctors/availability] list failed:', error)
       return NextResponse.json(
-        { error: error.message },
+        { error: 'Failed to fetch availability' },
         { status: 500 }
       )
     }

@@ -9,9 +9,9 @@ import { calculateAgeFromDob } from '@/lib/nurse/walk-in-intake'
 import { emptyIntakeFormInput, intakeRowToFormInput } from '@/lib/intake/intake-form-mappers'
 import { IntakeFormFields } from '@/components/IntakeFormFields'
 import type { NurseWalkInIntakeInput } from '@/lib/validation'
-import { parseSearchDateToIso } from '@/lib/nurse/patient-search-query'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
+import { formatDobShort } from '@/lib/datetime/date-input'
 
 type PatientRow = {
   id: number
@@ -36,13 +36,6 @@ const INPUT =
   'w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]'
 const READONLY = `${INPUT} bg-slate-50 text-slate-600 cursor-not-allowed`
 const SECTION = 'text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 mb-3'
-
-function formatDobDisplay(dob: string | null | undefined): string {
-  if (!dob) return '—'
-  const d = new Date(`${dob}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return dob
-  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
-}
 
 function getTodayDate() {
   return new Date().toISOString().slice(0, 10)
@@ -126,46 +119,79 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       .finally(() => setOptionsLoading(false))
   }, [isOpen, resetForm, t])
 
-  const runSearch = async () => {
-    const trimmedSearch = searchQuery.trim()
-    const parsedDob = parseSearchDateToIso(trimmedSearch)
-    if (!trimmedSearch && !dobYear && !parsedDob) {
-      toast.error(t('nurse_walkin.search_required'))
-      return
-    }
+  // Preload every patient in the nurse's assigned location(s) when the modal opens.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
     setSearching(true)
-    try {
-      const params = new URLSearchParams()
-      if (trimmedSearch) params.set('search', trimmedSearch)
-      if (dobYear) params.set('dob_year', dobYear)
-      if (dobMonth) params.set('dob_month', dobMonth)
-      if (dobDay) params.set('dob_day', dobDay)
-      const res = await fetch(`/api/nurse/patient-search?${params}`, { credentials: 'include' })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        throw new Error(
-          (json as { error?: string; message?: string }).error ||
-            (json as { message?: string }).message ||
-            t('nurse_walkin.search_failed')
-        )
-      }
-      const patients = (json.patients ?? []) as PatientRow[]
-      setResults(patients)
-      if (patients.length === 0) {
-        toast.message(t('nurse_walkin.no_patients'))
-        setStep('search')
-      } else if (patients.length === 1) {
-        setSelectedPatient(patients[0]!)
-        setStep('form')
-      } else {
-        setStep('select')
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('nurse_walkin.search_failed'))
-    } finally {
-      setSearching(false)
+    const preloadParams = new URLSearchParams()
+    if (defaultLocationId != null) preloadParams.set('location_id', String(defaultLocationId))
+    fetch(`/api/nurse/patient-search?${preloadParams}`, { credentials: 'include' })
+      .then((r) => r.json().catch(() => ({})))
+      .then((json) => {
+        if (cancelled) return
+        const patients = (json.patients ?? []) as PatientRow[]
+        setResults(patients)
+        if (patients.length > 0) setStep('select')
+      })
+      .catch(() => {
+        // Silent — the nurse can still search manually.
+      })
+      .finally(() => {
+        if (!cancelled) setSearching(false)
+      })
+    return () => {
+      cancelled = true
     }
-  }
+  }, [isOpen, defaultLocationId])
+
+  const runSearch = useCallback(
+    async (opts?: { showAll?: boolean }) => {
+      const showAllMode = opts?.showAll ?? false
+      const trimmedSearch = showAllMode ? '' : searchQuery.trim()
+      const yearParam = showAllMode ? '' : dobYear
+      const monthParam = showAllMode ? '' : dobMonth
+      const dayParam = showAllMode ? '' : dobDay
+      const hasDob = Boolean(yearParam || monthParam || dayParam)
+      // Empty criteria → "show all patients in my location" instead of erroring.
+      const effectiveShowAll = showAllMode || (!trimmedSearch && !hasDob)
+
+      setSearching(true)
+      try {
+        const params = new URLSearchParams()
+        if (trimmedSearch) params.set('search', trimmedSearch)
+        if (yearParam) params.set('dob_year', yearParam)
+        if (monthParam) params.set('dob_month', monthParam)
+        if (dayParam) params.set('dob_day', dayParam)
+        if (defaultLocationId != null) params.set('location_id', String(defaultLocationId))
+        const res = await fetch(`/api/nurse/patient-search?${params}`, { credentials: 'include' })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          throw new Error(
+            (json as { error?: string; message?: string }).error ||
+              (json as { message?: string }).message ||
+              t('nurse_walkin.search_failed')
+          )
+        }
+        const patients = (json.patients ?? []) as PatientRow[]
+        setResults(patients)
+        if (patients.length === 0) {
+          toast.message(effectiveShowAll ? t('nurse_walkin.no_patients_location') : t('nurse_walkin.no_patients'))
+          setStep('search')
+        } else if (!effectiveShowAll && patients.length === 1) {
+          setSelectedPatient(patients[0]!)
+          setStep('form')
+        } else {
+          setStep('select')
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : t('nurse_walkin.search_failed'))
+      } finally {
+        setSearching(false)
+      }
+    },
+    [searchQuery, dobYear, dobMonth, dobDay, defaultLocationId, t]
+  )
 
   const selectPatient = (p: PatientRow) => {
     setSelectedPatient(p)
@@ -342,14 +368,30 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 onMonthChange={setDobMonth}
                 onDayChange={setDobDay}
               />
-              <button
-                type="button"
-                onClick={() => void runSearch()}
-                disabled={searching}
-                className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
-              >
-                {searching ? t('common.loading') : t('nurse_walkin.search_btn')}
-              </button>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void runSearch()}
+                  disabled={searching}
+                  className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
+                >
+                  {searching ? t('common.loading') : t('nurse_walkin.search_btn')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setDobYear('')
+                    setDobMonth('')
+                    setDobDay('')
+                    void runSearch({ showAll: true })
+                  }}
+                  disabled={searching}
+                  className="text-sm font-medium text-[#2E6EF3] hover:underline disabled:opacity-50"
+                >
+                  {t('nurse_walkin.show_all')}
+                </button>
+              </div>
 
               {step === 'select' && results.length > 0 && (
                 <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 max-h-64 overflow-y-auto">
@@ -367,7 +409,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                         {p.first_name} {p.last_name}
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
-                        {formatDobDisplay(p.date_of_birth)}
+                        {formatDobShort(p.date_of_birth) ?? '—'}
                         {p.email ? ` · ${p.email}` : ''}
                         {p.phone ? ` · ${p.phone}` : ''}
                       </p>
@@ -421,7 +463,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.dob')}</label>
-                    <input readOnly value={formatDobDisplay(selectedPatient.date_of_birth)} className={`${READONLY} mt-1`} />
+                    <input readOnly value={formatDobShort(selectedPatient.date_of_birth) ?? '—'} className={`${READONLY} mt-1`} />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.age')}</label>

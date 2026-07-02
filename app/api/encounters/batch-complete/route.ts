@@ -12,6 +12,7 @@ import { isPhysicianRole } from '@/lib/roles'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { batchCompleteEncounters } from '@/lib/encounter/batch-complete'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,6 +54,17 @@ export async function POST(request: Request) {
     const result = await batchCompleteEncounters(admin, {
       encounterIds,
       userId: user.id,
+    })
+
+    // One audit row per batch — completed ids listed in metadata.
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterIds[0],
+      metadata: { section: 'batch_complete', encounter_ids: encounterIds, completed: result.completed },
+      request,
     })
 
     return NextResponse.json({

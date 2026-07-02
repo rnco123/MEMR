@@ -6,16 +6,18 @@ import {
 } from '@/lib/encounter/physical-examination'
 
 describe('physical examination edit rules', () => {
-  it('allows nurse/staff/admin before consultation ends', () => {
+  it('allows clinical staff (nurse/staff) before consultation ends', () => {
     expect(canEditPhysicalExamination('appointment_initiated', 'nurse')).toBe(true)
     expect(canEditPhysicalExamination('vitals_assessed', 'staff')).toBe(true)
-    expect(canEditPhysicalExamination('in_consultation', 'admin')).toBe(true)
+    expect(canEditPhysicalExamination('in_consultation', 'nurse')).toBe(true)
   })
 
-  it('blocks after consultation_concluded and for doctors', () => {
+  it('blocks non-clinical and post-consultation edits', () => {
+    // Only nurse/staff document the physical exam — admins and doctors cannot.
+    expect(canEditPhysicalExamination('in_consultation', 'admin')).toBe(false)
+    expect(canEditPhysicalExamination('vitals_assessed', 'doctor')).toBe(false)
     expect(canEditPhysicalExamination('consultation_concluded', 'nurse')).toBe(false)
     expect(canEditPhysicalExamination('final_review', 'nurse')).toBe(false)
-    expect(canEditPhysicalExamination('vitals_assessed', 'doctor')).toBe(false)
     expect(isPhysicalExaminationLocked('completed')).toBe(true)
   })
 

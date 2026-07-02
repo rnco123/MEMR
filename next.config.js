@@ -70,12 +70,15 @@ const nextConfig = {
             value: 'nosniff',
           },
           {
+            // Deprecated header; '0' is the OWASP-recommended value — the legacy
+            // auditor it enables can itself introduce XS-Leaks in old browsers.
             key: 'X-XSS-Protection',
-            value: '1; mode=block',
+            value: '0',
           },
           {
+            // Never leak path/query (may contain record ids) to external origins.
             key: 'Referrer-Policy',
-            value: 'origin-when-cross-origin',
+            value: 'strict-origin-when-cross-origin',
           },
           {
             key: 'Permissions-Policy',

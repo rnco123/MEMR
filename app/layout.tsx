@@ -9,6 +9,7 @@ import { I18nProvider } from "@/lib/i18n";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "sonner";
 import { ReportBugFab } from "@/components/support/ReportBugFab";
+import { IdleLogoutGuard } from "@/components/IdleLogoutGuard";
 import { PostHogPageview } from "@/components/analytics/PostHogPageview";
 import { MaintenanceTicker } from "@/components/MaintenanceTicker";
 // Import Sentry client-side configuration
@@ -54,6 +55,7 @@ export default function RootLayout({
               <UserProfileProvider>
                 {children}
                 <ReportBugFab />
+                <IdleLogoutGuard />
               </UserProfileProvider>
             </AuthProvider>
           </I18nProvider>

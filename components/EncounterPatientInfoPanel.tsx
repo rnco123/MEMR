@@ -10,19 +10,8 @@ import { DobDateInput } from '@/components/DobDateInput'
 import { AddressLookupFields } from '@/components/AddressLookupFields'
 import type { EncounterPatientInfo, PatientInfoAuditSummary, PatientInfoUpdatePayload } from '@/lib/encounter/encounter-patient-info'
 import { normalizePatientGender } from '@/lib/encounter/patient-gender'
-import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
-
-function patientAgeFromDob(dob: string | null): number | null {
-  if (!dob) return null
-  const birthDate = new Date(dob)
-  const today = new Date()
-  let age = today.getFullYear() - birthDate.getFullYear()
-  const monthDiff = today.getMonth() - birthDate.getMonth()
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--
-  }
-  return age
-}
+import { formatClinicDateOnly, formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
+import { ageFromCalendarDate } from '@/lib/datetime/date-input'
 
 type Props = {
   encounterId: number
@@ -74,7 +63,6 @@ export function EncounterPatientInfoPanel({
   onPatientUpdated,
 }: Props) {
   const { t, language } = useT()
-  const localeTag = language === 'es' ? 'es-ES' : 'en-US'
 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -113,15 +101,13 @@ export function EncounterPatientInfoPanel({
     void loadPatientInfo()
   }, [loadPatientInfo])
 
-  const displayAge = useMemo(() => patientAgeFromDob(patient?.date_of_birth ?? null), [patient?.date_of_birth])
+  const displayAge = useMemo(() => ageFromCalendarDate(patient?.date_of_birth), [patient?.date_of_birth])
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return t('common.na')
-    return new Date(dateString).toLocaleDateString(localeTag, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+    return (
+      formatClinicDateOnly(dateString, language, { month: 'long' }) || t('common.na')
+    )
   }
 
   const formatAudit = (audit: NonNullable<PatientInfoAuditSummary>) => {

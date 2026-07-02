@@ -11,6 +11,7 @@ import { isPhysicianRole } from '@/lib/roles'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { completeEncounter } from '@/lib/encounter/complete-encounter'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ function parseEncounterId(raw: string | undefined): number {
   return id
 }
 
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -38,6 +39,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const admin = createAdminClient()
     await assertEncounterAccess(admin, user.id, encounterId, ENCOUNTER_WRITE_ACCESS)
     const result = await completeEncounter(admin, { encounterId, userId: user.id })
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'complete' },
+      request,
+    })
 
     return NextResponse.json({ success: true, ...result })
   } catch (e) {

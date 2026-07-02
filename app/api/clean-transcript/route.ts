@@ -298,7 +298,8 @@ export async function POST(request: NextRequest) {
       )
       const failed = results.find((r) => r.error)
       if (failed?.error) {
-        return NextResponse.json({ error: failed.error.message }, { status: 500 })
+        console.error('[clean-transcript] update failed:', failed.error)
+        return NextResponse.json({ error: 'Failed to save cleaned transcript' }, { status: 500 })
       }
     }
 

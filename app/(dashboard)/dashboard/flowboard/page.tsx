@@ -38,15 +38,13 @@ import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointme
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
+import { formatDobShort } from '@/lib/datetime/date-input'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
 
 function formatDob(dateString: string | null | undefined): string | null {
-  if (!dateString) return null
-  const d = new Date(dateString + 'T00:00:00')
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  return formatDobShort(dateString)
 }
 
 function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {

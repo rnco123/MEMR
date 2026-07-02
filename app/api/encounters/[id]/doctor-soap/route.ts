@@ -17,6 +17,7 @@ import {
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
 import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
 import { mapRoleToEnum } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -26,7 +27,7 @@ function parseEncounterId(raw: string | undefined): number {
   return id
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -47,6 +48,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       mappedRole != null
         ? await resolveEncounterWriteAllowed(admin, user.id, mappedRole, ctx.encounter)
         : false
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'soap' },
+      request,
+    })
 
     return NextResponse.json({
       ai_soap: ctx.ai_soap,
@@ -92,6 +103,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       role: role!,
       payload: parsed.data,
       seededFromAi: parsed.data.seeded_from_ai === true,
+    })
+
+    auditPhi({
+      user,
+      role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'soap' },
+      request,
     })
 
     return NextResponse.json({

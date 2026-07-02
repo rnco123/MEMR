@@ -10,6 +10,7 @@ import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { resolveClinicalApiRole } from '@/lib/locations/scope'
 import { UserRole, isPhysicianRole } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -303,6 +304,15 @@ export async function POST(request: NextRequest) {
     const dailyDomain = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
     const roomUrl = roomData.name ? `https://${dailyDomain}/${roomData.name}` : undefined
 
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'video_session_started',
+      resourceType: 'encounter',
+      resourceId: encounterIdNum,
+      request,
+    })
+
     return NextResponse.json({
       ...roomData,
       token, // Include token for SDK usage
@@ -312,10 +322,7 @@ export async function POST(request: NextRequest) {
     console.error('[daily/room]', error)
     Sentry.captureException(error, { tags: { route: 'daily-room' } })
     return NextResponse.json(
-      {
-        error: 'Internal server error',
-        details: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

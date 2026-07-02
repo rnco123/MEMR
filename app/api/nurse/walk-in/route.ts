@@ -16,6 +16,7 @@ import {
 import { UserRole } from '@/lib/roles'
 import { nurseWalkInCreateSchema } from '@/lib/validation'
 import { insertEncounter } from '@/lib/encounters/insert-encounter'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -165,6 +166,21 @@ export async function POST(request: Request) {
         profileId,
       })
     }
+
+    auditPhi({
+      user,
+      role: 'nurse',
+      action: 'encounter_created',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: {
+        source: 'walk_in',
+        patient_id: v.patient_id,
+        appointment_id: appointmentId,
+        intake_id: intakeId,
+      },
+      request,
+    })
 
     return NextResponse.json({
       success: true,

@@ -29,30 +29,9 @@ import {
   canManageEncounterPharmacy,
 } from '@/lib/roles'
 import { canEditPhysicalExamination } from '@/lib/encounter/physical-examination'
-import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import { formatClinicDateOnly, formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import { ageFromCalendarDate } from '@/lib/datetime/date-input'
 import { isForbiddenResponse } from '@/lib/http/api-response'
-
-function patientAgeFromDob(dob: string | null): number | null {
-  if (!dob) return null
-  const birthDate = new Date(dob)
-  const today = new Date()
-  let age = today.getFullYear() - birthDate.getFullYear()
-  const monthDiff = today.getMonth() - birthDate.getMonth()
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-    age--
-  }
-  return age
-}
-
-/** Intake severity (1–10) → Low / Medium / High */
-function severityBandFromIntake(severity: number | null | undefined): 'low' | 'medium' | 'high' | null {
-  if (severity == null || Number.isNaN(Number(severity))) return null
-  const n = Math.round(Number(severity))
-  if (n < 1 || n > 10) return null
-  if (n <= 3) return 'low'
-  if (n <= 7) return 'medium'
-  return 'high'
-}
 
 interface Patient {
   id: number
@@ -66,6 +45,16 @@ interface Patient {
   state: string | null
   street_address: string | null
   patient_code: string | null
+}
+
+/** Intake severity (1–10) → Low / Medium / High */
+function severityBandFromIntake(severity: number | null | undefined): 'low' | 'medium' | 'high' | null {
+  if (severity == null || Number.isNaN(Number(severity))) return null
+  const n = Math.round(Number(severity))
+  if (n < 1 || n > 10) return null
+  if (n <= 3) return 'low'
+  if (n <= 7) return 'medium'
+  return 'high'
 }
 
 interface IntakeForm {
@@ -489,17 +478,13 @@ export function EncounterDetailModal({
   }, [isOpen, loading, encounterId, t])
 
   const patientAgeYears = useMemo(
-    () => (patient?.date_of_birth ? patientAgeFromDob(patient.date_of_birth) : null),
+    () => ageFromCalendarDate(patient?.date_of_birth),
     [patient?.date_of_birth]
   )
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return t('common.na')
-    return new Date(dateString).toLocaleDateString(localeTag, {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    })
+    return formatClinicDateOnly(dateString, language, { month: 'long' }) || t('common.na')
   }
 
   const handleDownloadDoctorSoapPdf = useCallback(
@@ -511,11 +496,7 @@ export function EncounterDetailModal({
     }) => {
       const formatDateOnly = (dateString: string | null) => {
         if (!dateString) return t('common.na')
-        return new Date(dateString).toLocaleDateString(localeTag, {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })
+        return formatClinicDateOnly(dateString, language, { month: 'long' }) || t('common.na')
       }
       const generated = formatClinicDateTimeForLanguage(new Date(), language)
       const addr =

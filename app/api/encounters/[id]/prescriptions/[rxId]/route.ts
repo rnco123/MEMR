@@ -20,6 +20,7 @@ import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/g
 import { canEditEncounterPrescriptionsByRole } from '@/lib/roles'
 import { logPrescriptionAudit } from '@/lib/prescriptions/prescription-audit'
 import { assertEncounterPrescriptionsEditable } from '@/lib/prescriptions/prescription-ready'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -126,6 +127,16 @@ export async function PATCH(
       snapshot: data,
     })
 
+    auditPhi({
+      user,
+      role,
+      action: 'prescription_updated',
+      resourceType: 'prescription',
+      resourceId: rxId,
+      metadata: { encounter_id: encounterId },
+      request,
+    })
+
     return NextResponse.json({ success: true, data })
   } catch (e) {
     return handleApiError(e)
@@ -133,7 +144,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: { id: string; rxId: string } }
 ) {
   try {
@@ -176,6 +187,16 @@ export async function DELETE(
       role,
       userEmail: user.email,
       snapshot: { ...existing, status: 'cancelled' },
+    })
+
+    auditPhi({
+      user,
+      role,
+      action: 'prescription_deleted',
+      resourceType: 'prescription',
+      resourceId: rxId,
+      metadata: { encounter_id: encounterId, status: 'cancelled' },
+      request,
     })
 
     return NextResponse.json({ success: true, data })

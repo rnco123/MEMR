@@ -16,6 +16,7 @@ import {
 } from '@/lib/vitals/save-encounter-vitals'
 import { getProfileId } from '@/lib/status-timeline'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, canEditClinicalEncounterContent, mapRoleToEnum } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -53,7 +54,7 @@ async function resolveEditor(supabase: Awaited<ReturnType<typeof createClient>>,
   return { userId: user.id, role, editorName }
 }
 
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -73,6 +74,17 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     })
 
     const data = await loadLatestVitalsForEncounter(admin, encounterId)
+
+    auditPhi({
+      user,
+      role: roleInfo.role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'vitals' },
+      request,
+    })
+
     return NextResponse.json({
       data,
       last_audit: vitalsLastAuditFromRow(data as Record<string, unknown> | null),
@@ -120,6 +132,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
       profileId,
       editor,
       mode: 'insert',
+    })
+
+    auditPhi({
+      user,
+      role: mappedRole,
+      action: 'vitals_recorded',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { mode: 'insert' },
+      request,
     })
 
     return NextResponse.json({
@@ -170,6 +192,16 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       profileId,
       editor,
       mode: 'upsert',
+    })
+
+    auditPhi({
+      user,
+      role: mappedRole,
+      action: 'vitals_recorded',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { mode: 'upsert' },
+      request,
     })
 
     return NextResponse.json({

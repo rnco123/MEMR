@@ -10,6 +10,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
 import { isPhysicianRole } from '@/lib/roles'
 import { releaseEncounterPrescriptionsToAdmin } from '@/lib/prescriptions/prescription-ready'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +21,7 @@ function parseEncounterId(raw: string | undefined): number {
 }
 
 /** Physician releases all encounter prescriptions to the admin queue (locks edits). */
-export async function POST(_request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = parseEncounterId(params.id)
     const supabase = await createClient()
@@ -43,6 +44,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
       userId: user.id,
       userEmail: user.email,
       role: roleInfo!.role!,
+    })
+
+    auditPhi({
+      user,
+      role: roleInfo?.role,
+      action: 'prescription_updated',
+      resourceType: 'prescription',
+      resourceId: encounterId,
+      metadata: { scope: 'released_to_admin', count: rows.length },
+      request,
     })
 
     return NextResponse.json({ success: true, data: rows, released: true })

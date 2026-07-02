@@ -7,6 +7,7 @@ import { UserRole } from '@/lib/roles'
 import { requireNurseUser } from '@/lib/nurse/require-nurse'
 import { getProfileId } from '@/lib/status-timeline'
 import { batchAssignProvider } from '@/lib/nurse/batch-assign-provider'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -45,6 +46,21 @@ export async function POST(request: Request) {
       appointmentDate: parsed.data.appointment_date,
       appointmentTime: parsed.data.appointment_time,
       profileId,
+    })
+
+    auditPhi({
+      user,
+      role: 'nurse',
+      action: 'appointment_updated',
+      resourceType: 'appointment',
+      resourceId: parsed.data.appointment_ids[0],
+      metadata: {
+        scope: 'batch_assign_provider',
+        appointment_ids: parsed.data.appointment_ids,
+        doctor_id: parsed.data.doctor_id,
+        assigned: result.assigned,
+      },
+      request,
     })
 
     return NextResponse.json({

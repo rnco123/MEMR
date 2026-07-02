@@ -6,6 +6,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { CLINICAL_STAFF_ROLE_SET } from '@/lib/roles'
 import { handleApiError } from '@/lib/api-error-handler'
+import { auditPhi } from '@/lib/audit-phi'
 export const dynamic = 'force-dynamic'
 
 const ALLOWED_ROLES = CLINICAL_STAFF_ROLE_SET
@@ -23,7 +24,7 @@ export type AiSoapNoteRow = {
 }
 
 /** Latest AI SOAP row for this encounter (created_at desc). */
-export async function GET(_request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
     const supabaseAuth = await createClient()
     const {
@@ -65,8 +66,18 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
     if (soapErr) {
       console.error('[ai-soapnote]', soapErr)
-      return NextResponse.json({ error: 'Failed to load SOAP note', detail: soapErr.message }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to load SOAP note' }, { status: 500 })
     }
+
+    auditPhi({
+      user,
+      role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'ai_soap' },
+      request,
+    })
 
     const row = rows?.[0] as AiSoapNoteRow | undefined
     return NextResponse.json({

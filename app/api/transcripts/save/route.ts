@@ -5,6 +5,7 @@ import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { config } from '@/lib/config'
 import { isPhysicianRole, TRANSCRIPT_SPEAKER_ROLE_VALUES } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -139,7 +140,8 @@ export async function POST(request: NextRequest) {
       .select('id')
 
     if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      console.error('[transcripts/save] insert failed:', error)
+      return NextResponse.json({ error: 'Failed to save transcript' }, { status: 500 })
     }
 
     const ids = (inserted ?? []).map((r) => Number(r.id)).filter((n) => !isNaN(n))
@@ -150,12 +152,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    auditPhi({
+      user,
+      role: userRole,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterIdNum,
+      metadata: { section: 'transcript', lines: rows.length },
+      request,
+    })
+
     return NextResponse.json({ success: true, ids })
   } catch (e) {
     console.error('[transcripts/save]', e)
     Sentry.captureException(e, { tags: { route: 'transcripts-save' } })
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : 'Internal server error' },
+      { error: 'Internal server error' },
       { status: 500 }
     )
   }

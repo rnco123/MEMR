@@ -7,6 +7,7 @@ import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isImmigrationEncounter } from '@/lib/i693/types'
 import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
 import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/guard'
+import { auditPhi } from '@/lib/audit-phi'
 export const dynamic = 'force-dynamic'
 
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
@@ -94,6 +95,15 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (isImmigrationEncounter(data.consent_ack)) {
       await syncImmigrationCase(admin, encounterId)
     }
+
+    auditPhi({
+      user,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'rooming' },
+      request,
+    })
 
     return NextResponse.json({ success: true, data })
   } catch (e) {

@@ -10,6 +10,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { loadPrescriptionPrintContext } from '@/lib/prescriptions/load-prescription-print-context'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +50,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
     )
 
     const data = await loadPrescriptionPrintContext(admin, encounterId, { prescriptionIds })
+
+    // Print context includes patient + prescriber + full Rx detail.
+    auditPhi({
+      user,
+      role: roleInfo.role,
+      action: 'prescription_viewed',
+      resourceType: 'prescription',
+      resourceId: encounterId,
+      metadata: { scope: 'print', prescription_ids: prescriptionIds ?? 'all' },
+      request,
+    })
+
     return NextResponse.json({ data })
   } catch (e) {
     return handleApiError(e)

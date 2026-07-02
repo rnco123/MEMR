@@ -43,12 +43,14 @@ if ((isStaging || isProduction) && process.env.NEXT_PUBLIC_SENTRY_DSN) {
             }),
           ]
         : []),
-      // Conditionally add replay integration if available
+      // Conditionally add replay integration if available.
+      // PHI: this app renders patient charts — replays must never capture
+      // readable text or media.
       ...(typeof Sentry.replayIntegration === 'function'
         ? [
             Sentry.replayIntegration({
-              maskAllText: false,
-              blockAllMedia: false,
+              maskAllText: true,
+              blockAllMedia: true,
             }),
           ]
         : []),

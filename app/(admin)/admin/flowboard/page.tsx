@@ -29,6 +29,7 @@ import { useT } from '@/lib/i18n'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { formatDobShort } from '@/lib/datetime/date-input'
 
 type Appointment = FlowboardKanbanAppointment & {
   created_at?: string
@@ -39,10 +40,7 @@ type Appointment = FlowboardKanbanAppointment & {
 const PAGE_SIZE_OPTIONS = [10, 15, 25, 50]
 
 function formatDob(dateString: string | null | undefined): string | null {
-  if (!dateString) return null
-  const d = new Date(dateString + 'T00:00:00')
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  return formatDobShort(dateString)
 }
 
 function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {

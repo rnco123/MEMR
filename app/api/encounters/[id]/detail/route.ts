@@ -12,6 +12,7 @@ import { assertEncounterAccess } from '@/lib/encounters/assert-access'
 import { resolveEncounterWriteAllowed, isEncounterCompleted } from '@/lib/encounters/access-helpers'
 import { loadEncounterDetail } from '@/lib/encounters/load-encounter-detail'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, canEditClinicalEncounterContent, mapRoleToEnum } from '@/lib/roles'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -49,6 +50,16 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       includePharmacyRegistry,
       includePrescriptions,
       includePreSales,
+    })
+
+    auditPhi({
+      user,
+      role: roleInfo.role,
+      action: 'encounter_viewed',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'detail', patient_id: data.encounter.patient_id ?? null },
+      request,
     })
 
     const mappedRole = mapRoleToEnum(roleInfo.role)

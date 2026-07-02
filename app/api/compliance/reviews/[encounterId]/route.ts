@@ -12,6 +12,7 @@ import {
 import { requireComplianceAccess } from '@/lib/compliance/require-compliance-access'
 import type { PhysicianReviewStatus } from '@/lib/compliance/physician-review'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
@@ -27,13 +28,26 @@ function parseEncounterId(raw: string | undefined): number {
   return id
 }
 
-export async function GET(_request: Request, { params }: { params: { encounterId: string } }) {
+export async function GET(request: Request, { params }: { params: { encounterId: string } }) {
   try {
     const session = await requireComplianceAccess()
     const encounterId = parseEncounterId(params.encounterId)
     const admin = createAdminClient()
     const detail = await loadComplianceReviewDetail(admin, encounterId, session.locationScope)
     if (!detail) throw new ValidationError('Review record not found for this encounter')
+
+    if (session.user?.id) {
+      auditPhi({
+        user: session.user,
+        role: session.role,
+        action: 'encounter_viewed',
+        resourceType: 'encounter',
+        resourceId: encounterId,
+        metadata: { section: 'compliance_review' },
+        request,
+      })
+    }
+
     return NextResponse.json(detail)
   } catch (err) {
     return handleApiError(err)
@@ -68,6 +82,17 @@ export async function PATCH(request: Request, { params }: { params: { encounterI
     })
 
     const detail = await loadComplianceReviewDetail(admin, encounterId, session.locationScope)
+
+    auditPhi({
+      user: session.user,
+      role: session.role,
+      action: 'encounter_updated',
+      resourceType: 'encounter',
+      resourceId: encounterId,
+      metadata: { section: 'compliance_review', review_status: parsed.data.review_status },
+      request,
+    })
+
     return NextResponse.json(detail)
   } catch (err) {
     return handleApiError(err)

@@ -8,6 +8,7 @@ import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
 import { PATIENT_DOCUMENT_SELECT } from '@/lib/encounters/encounter-detail-selects'
 import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
+import { auditPhi } from '@/lib/audit-phi'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -15,7 +16,7 @@ export const dynamic = 'force-dynamic'
 
 // GET - Fetch all documents for a patient
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -46,8 +47,9 @@ export async function GET(
       .order('created_at', { ascending: false })
 
     if (error) {
+      console.error('[patients/documents] fetch failed:', error)
       return NextResponse.json(
-        { error: `Failed to fetch documents: ${error.message}` },
+        { error: 'Failed to fetch documents' },
         { status: 500 }
       )
     }
@@ -103,6 +105,16 @@ export async function GET(
     const merged = [...transformedDocuments, ...immigrationDocs].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     )
+
+    // Listing returns signed URLs for every document — that is PHI access.
+    auditPhi({
+      user,
+      action: 'patient_viewed',
+      resourceType: 'patient',
+      resourceId: patientId,
+      metadata: { section: 'documents', count: merged.length },
+      request,
+    })
 
     return NextResponse.json({ documents: merged })
   } catch (error) {
@@ -237,8 +249,9 @@ export async function POST(
     if (insertError) {
       console.error('Error inserting document:', insertError)
       await supabaseAdmin.storage.from('patient-documents').remove([filePath])
+      console.error('[patients/documents] insert failed:', insertError)
       return NextResponse.json(
-        { error: insertError.message || 'Failed to save document record' },
+        { error: 'Failed to save document record' },
         { status: 500 }
       )
     }
@@ -276,6 +289,15 @@ export async function POST(
       uploaded_by_name: uploadedByName,
       created_at: document.created_at,
     }
+
+    auditPhi({
+      user,
+      action: 'document_uploaded',
+      resourceType: 'document',
+      resourceId: document.id,
+      metadata: { patient_id: patientId, category: document.document_category ?? null },
+      request,
+    })
 
     return NextResponse.json({ document: transformedDocument }, { status: 201 })
   } catch (error) {

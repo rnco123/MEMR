@@ -95,12 +95,12 @@ export async function POST(request: NextRequest) {
         (typeof d?.error === 'string' && d.error) ||
         (text && text.length < 500 ? text : null) ||
         `Upstream returned HTTP ${res.status}`
+      // Full upstream body is logged above; don't forward raw internals to the client.
       return NextResponse.json(
         {
           error: 'SOAP API request failed',
           message: upstreamMessage,
           status: res.status,
-          details: json ?? text,
         },
         { status: 502 }
       )
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
     console.error('[SOAP complete-soap] Error:', err)
     Sentry.captureException(err, { tags: { route: 'soap-complete-soap' } })
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Failed to call SOAP API' },
+      { error: 'Failed to complete SOAP note' },
       { status: 500 }
     )
   }

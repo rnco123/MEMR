@@ -244,9 +244,23 @@ async function scanFileContentByType(
 /**
  * Generate secure file name
  */
+// Storage paths must be unguessable — prefer CSPRNG over Math.random().
+function secureRandomSuffix(): string {
+  const c = globalThis.crypto
+  if (typeof c?.randomUUID === 'function') {
+    return c.randomUUID().replace(/-/g, '').slice(0, 13)
+  }
+  if (typeof c?.getRandomValues === 'function') {
+    const bytes = c.getRandomValues(new Uint8Array(8))
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 13)
+  }
+  // Last resort for environments without WebCrypto
+  return Math.random().toString(36).substring(2, 15)
+}
+
 export function generateSecureFileName(originalName: string): string {
   const timestamp = Date.now()
-  const random = Math.random().toString(36).substring(2, 15)
+  const random = secureRandomSuffix()
   const extension = originalName.substring(originalName.lastIndexOf('.'))
   const sanitized = originalName
     .substring(0, originalName.lastIndexOf('.'))
