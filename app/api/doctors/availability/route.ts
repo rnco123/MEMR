@@ -6,7 +6,12 @@ import { createSupabaseWithAccessToken, hasServiceRoleKey } from '@/lib/supabase
 import { config } from '@/lib/config'
 import { fetchProfileFields, fetchUserRole } from '@/lib/fetch-user-role'
 import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
-import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
+import {
+  getLocationScopeForUser,
+  resolveClinicalApiRole,
+  fetchUserLocationsMap,
+  scopeAllowsAnyLocation,
+} from '@/lib/locations/scope'
 import { DOCTOR_AVAILABILITY_SELECT } from '@/lib/encounters/encounter-detail-selects'
 import { handleApiError } from '@/lib/api-error-handler'
 
@@ -81,7 +86,7 @@ export async function GET(request: Request) {
       if (clinicalRole === UserRole.NURSE) {
         const { data: targetDoctor } = await supabase
           .from('doctors')
-          .select('id, location_id')
+          .select('id')
           .eq('user_id', userIdToLookup)
           .maybeSingle()
 
@@ -91,13 +96,15 @@ export async function GET(request: Request) {
           })
         }
 
-        const loc = targetDoctor.location_id as number | null
-        if (
-          !scope.unrestricted &&
-          loc != null &&
-          !scope.locationIds.includes(loc)
-        ) {
-          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        // Match on the doctor's admin-assigned locations (user_locations), not
+        // the single home location_id — a nurse may view a provider who shares
+        // any of the nurse's locations.
+        if (!scope.unrestricted) {
+          const locationsByUser = await fetchUserLocationsMap(supabase, [userIdToLookup])
+          const doctorLocations = locationsByUser.get(userIdToLookup) ?? []
+          if (!scopeAllowsAnyLocation(scope, doctorLocations)) {
+            return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+          }
         }
       }
     }
@@ -139,10 +146,12 @@ export async function GET(request: Request) {
       return NextResponse.json({ data })
     }
 
-    // Get available doctors scoped to caller's locations (for nurse virtual waiting room)
+    // Get available doctors scoped to caller's locations (for nurse virtual waiting room).
+    // Match on each provider's admin-assigned locations (user_locations), not the
+    // single home location_id.
     const { data, error } = await supabase
       .from('doctor_availability')
-      .select('doctor_id, is_available, updated_at, doctors(location_id)')
+      .select('doctor_id, is_available, updated_at, doctors(user_id)')
       .eq('is_available', true)
 
     if (error) {
@@ -153,11 +162,23 @@ export async function GET(request: Request) {
       )
     }
 
-    const filtered = (data ?? []).filter((row) => {
-      if (scope.unrestricted) return true
+    const rows = data ?? []
+    const getDoctorUserId = (row: (typeof rows)[number]): string | null => {
       const doc = Array.isArray(row.doctors) ? row.doctors[0] : row.doctors
-      const loc = (doc as { location_id?: number | null } | null)?.location_id
-      return loc != null && scope.locationIds.includes(loc)
+      return (doc as { user_id?: string | null } | null)?.user_id ?? null
+    }
+
+    const locationsByUser = scope.unrestricted
+      ? new Map<string, number[]>()
+      : await fetchUserLocationsMap(
+          supabase,
+          rows.map(getDoctorUserId).filter((id): id is string => !!id)
+        )
+
+    const filtered = rows.filter((row) => {
+      if (scope.unrestricted) return true
+      const uid = getDoctorUserId(row)
+      return scopeAllowsAnyLocation(scope, uid ? locationsByUser.get(uid) ?? [] : [])
     })
 
     const sanitized = filtered.map(({ doctors: _d, ...rest }) => rest)

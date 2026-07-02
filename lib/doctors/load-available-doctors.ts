@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { LocationScope } from '@/lib/locations/scope'
-import { isAllowedByLocationScope } from '@/lib/locations/scope'
+import { fetchUserLocationsMap, scopeAllowsAnyLocation } from '@/lib/locations/scope'
 
 export type AvailableDoctorRow = {
   id: number
@@ -17,16 +17,22 @@ export async function loadAvailableDoctors(
 ): Promise<AvailableDoctorRow[]> {
   const { data: doctorsData, error: doctorsError } = await admin
     .from('doctors')
-    .select('id, user_id, full_name, email, specialty, location_id')
+    .select('id, user_id, full_name, email, specialty')
     .order('full_name', { ascending: true })
 
   if (doctorsError) throw doctorsError
   if (!doctorsData?.length) return []
 
-  const scopedDoctors = doctorsData.filter((d) => {
-    const loc = d.location_id != null ? Number(d.location_id) : null
-    return isAllowedByLocationScope(scope, loc)
-  })
+  // Match on the admin-assigned locations (user_locations), not the single
+  // home location_id — a provider works at every clinic the admin assigned.
+  const locationsByUser = await fetchUserLocationsMap(
+    admin,
+    doctorsData.map((d) => d.user_id as string)
+  )
+
+  const scopedDoctors = doctorsData.filter((d) =>
+    scopeAllowsAnyLocation(scope, locationsByUser.get(d.user_id as string) ?? [])
+  )
 
   if (scopedDoctors.length === 0) return []
 

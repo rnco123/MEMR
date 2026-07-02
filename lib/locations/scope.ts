@@ -123,6 +123,53 @@ export function isAllowedByLocationScope(
   return scope.locationIds.includes(effectiveLocationId)
 }
 
+/**
+ * Multi-location variant: a provider/record with several locations is in scope
+ * when ANY of its locations is allowed. Providers (doctor/fnp/pa) work across
+ * multiple clinics via the admin-assigned `user_locations`, so assignment must
+ * match on any of those — the single home `doctors.location_id` is irrelevant.
+ */
+export function scopeAllowsAnyLocation(
+  scope: LocationScope,
+  locationIds: Array<number | null | undefined>
+): boolean {
+  if (scope.unrestricted) return true
+  if (scope.locationIds.length === 0) return false
+  return locationIds.some(
+    (id) => id != null && scope.locationIds.includes(Number(id))
+  )
+}
+
+/**
+ * Load the admin-assigned location ids for a batch of users from
+ * `user_locations`. Returns a map keyed by user uid. This is the authoritative
+ * source for where a provider works — a user absent from the map has no
+ * assigned locations and is assignable nowhere (home `location_id` is ignored).
+ */
+export async function fetchUserLocationsMap(
+  admin: SupabaseClient,
+  userIds: string[]
+): Promise<Map<string, number[]>> {
+  const map = new Map<string, number[]>()
+  const unique = [...new Set(userIds.filter(Boolean))]
+  if (unique.length === 0) return map
+
+  const { data } = await admin
+    .from('user_locations')
+    .select('user_uid, location_id')
+    .in('user_uid', unique)
+
+  for (const row of data ?? []) {
+    const uid = row.user_uid as string | null
+    const loc = row.location_id
+    if (!uid || typeof loc !== 'number') continue
+    const list = map.get(uid)
+    if (list) list.push(loc)
+    else map.set(uid, [loc])
+  }
+  return map
+}
+
 export function parseLocationFilter(
   scope: LocationScope,
   locationIdParam: string | null
