@@ -32,8 +32,8 @@ describe('mergeAcceptedI693AiDraft after AI fill', () => {
       EMPTY_I693_FORM
     )
     const aiDraft = mergeI693Form({
-      applicant: { family_name: '', given_name: '', middle_name: '' },
-      medical_history: { height: '70' },
+      applicant: { ...EMPTY_I693_FORM.applicant, family_name: '', given_name: '', middle_name: '' },
+      medical_history: { ...EMPTY_I693_FORM.medical_history, height: '70' },
     })
     const merged = mergeAcceptedI693AiDraft(base, aiDraft)
     expect(merged.applicant.given_name).toBe('Carlos')

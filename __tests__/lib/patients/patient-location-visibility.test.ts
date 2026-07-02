@@ -15,9 +15,11 @@ describe('physician visibility (Maria / Rack example)', () => {
    */
   test('active encounter requires assignment for non-completed physician view', () => {
     const status = 'in_consultation'
-    const mariaDoctorId = 1
-    const rackDoctorId = 2
-    const encounterDoctorId = rackDoctorId
+    // Typed as number: the id-match comparisons below are intentional, so the
+    // values must not be narrowed to non-overlapping literal types.
+    const mariaDoctorId: number = 1
+    const rackDoctorId: number = 2
+    const encounterDoctorId: number = rackDoctorId
 
     const mariaCanSee = isEncounterCompleted(status)
       ? true
