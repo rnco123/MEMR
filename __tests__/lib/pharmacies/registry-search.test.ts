@@ -33,7 +33,7 @@ describe('loadActivePharmacyRegistry', () => {
 
     const orCalls = calls.filter((c) => c.method === 'or')
     expect(orCalls).toHaveLength(1) // just the is_active filter
-    expect(orCalls[0].arg).toBe('is_active.is.null,is_active.eq.true')
+    expect(orCalls[0]?.arg).toBe('is_active.is.null,is_active.eq.true')
     expect(calls.find((c) => c.method === 'limit')?.arg).toBe(500)
   })
 
@@ -43,8 +43,8 @@ describe('loadActivePharmacyRegistry', () => {
 
     const orCalls = calls.filter((c) => c.method === 'or')
     expect(orCalls).toHaveLength(2) // is_active AND search
-    expect(String(orCalls[1].arg)).toContain('name.ilike.%walmart%')
-    expect(String(orCalls[1].arg)).toContain('email.ilike.%walmart%')
+    expect(String(orCalls[1]?.arg)).toContain('name.ilike.%walmart%')
+    expect(String(orCalls[1]?.arg)).toContain('email.ilike.%walmart%')
     expect(calls.find((c) => c.method === 'limit')?.arg).toBe(50)
   })
 
@@ -53,7 +53,7 @@ describe('loadActivePharmacyRegistry', () => {
     await loadActivePharmacyRegistry(admin, { search: '123' })
 
     const searchOr = calls.filter((c) => c.method === 'or')[1]
-    expect(String(searchOr.arg)).toContain('id.eq.123')
+    expect(String(searchOr?.arg)).toContain('id.eq.123')
   })
 
   it('ignores blank/whitespace search (treated as no search)', async () => {

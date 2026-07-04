@@ -1426,7 +1426,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
   return (
     <div className="space-y-4 text-slate-900">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="sticky top-0 z-30 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
             {t('i693.pdf_editor_title')}
@@ -1600,6 +1600,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         }}
       />
 
+      <div className="grid gap-3 sm:grid-cols-2">
       <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
         <div className="min-w-0 flex-1">
           <h3 className="text-sm font-semibold text-slate-900">{t('i693.ai_fill')}</h3>
@@ -1656,6 +1657,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           </button>
         </div>
       ) : null}
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4">
         <div>
@@ -1830,6 +1832,38 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
           </div>
         )}
       </div>
+
+      {/* Floating save — editor mode has no inline save; previously you had to
+          switch to Preview to persist. Always reachable while filling the form. */}
+      {mode === 'editor' && (
+        <button
+          type="button"
+          onClick={() => void saveCurrent(true)}
+          disabled={saving || previewLoading}
+          title={t('common.save')}
+          className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full bg-[#2E6EF3] px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/30 transition hover:bg-[#1f5ad2] disabled:opacity-60"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4"
+            aria-hidden="true"
+          >
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          {saving ? t('common.saving') : t('common.save')}
+          {dirty && !saving ? (
+            <span className="ml-0.5 h-2 w-2 rounded-full bg-amber-300" aria-hidden="true" title={t('i693.unsaved') } />
+          ) : null}
+        </button>
+      )}
     </div>
   )
 }
