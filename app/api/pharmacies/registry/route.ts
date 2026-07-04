@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
@@ -16,7 +16,7 @@ import { loadActivePharmacyRegistry } from '@/lib/pharmacies/load-active-registr
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
     const {
@@ -30,8 +30,9 @@ export async function GET() {
       throw new AuthorizationError('Clinical staff only')
     }
 
+    const search = request.nextUrl.searchParams.get('search')
     const admin = createAdminClient()
-    const data = await loadActivePharmacyRegistry(admin)
+    const data = await loadActivePharmacyRegistry(admin, { search })
     return NextResponse.json({ data })
   } catch (e) {
     return handleApiError(e)
