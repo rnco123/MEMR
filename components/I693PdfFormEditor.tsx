@@ -24,8 +24,7 @@ import {
 } from '@/lib/i693/split-view-document'
 import {
   applyI693FormToPdfDocument,
-  extractI693FormFromPdfDocument,
-  extractI693FormFromPdfDocumentPreserving,
+  extractI693FormFromPdfDocumentRespectingUserEdits,
   hydrateAnnotationStorageFromPdfWidgets,
 } from '@/lib/i693/pdfjs-form-bridge'
 import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
@@ -283,7 +282,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const syncFormFromPdf = useCallback(async () => {
     const pdf = pdfRef.current
     if (!pdf) return
-    const next = await extractI693FormFromPdfDocumentPreserving(pdf, formRef.current)
+    const next = await extractI693FormFromPdfDocumentRespectingUserEdits(pdf, formRef.current)
     setForm(next)
     formRef.current = next
     setDirty(true)
@@ -292,7 +291,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
   const saveCurrent = useCallback(
     async (showToast: boolean): Promise<boolean> => {
       if (pdfRef.current) {
-        const next = await extractI693FormFromPdfDocumentPreserving(
+        const next = await extractI693FormFromPdfDocumentRespectingUserEdits(
           pdfRef.current,
           formRef.current
         )
@@ -926,7 +925,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
     setSupportingLoading(true)
     try {
       if (pdfRef.current) {
-        const next = await extractI693FormFromPdfDocumentPreserving(
+        const next = await extractI693FormFromPdfDocumentRespectingUserEdits(
           pdfRef.current,
           formRef.current
         )

@@ -155,14 +155,46 @@ export async function hydrateAnnotationStorageFromPdfWidgets(
 }
 
 /** Read pdf.js annotation storage back into MEMR form shape. */
+export type ExtractI693Options = {
+  /**
+   * When true, the reviewed PDF is authoritative: text a user cleared is saved
+   * as empty and a radio/checkbox group they unchecked is cleared. When false
+   * (default), empty widgets keep any pre-filled/default value already present.
+   */
+  respectUserClears?: boolean
+}
+
+/**
+ * Which mark (radio/checkbox) keys should be cleared: those that have at least
+ * one widget present but none checked. Keeping it pure keeps the radio-group
+ * logic (e.g. switching sex male→female must not blank the field) testable.
+ */
+export function markKeysToClear(
+  present: ReadonlySet<string>,
+  checked: ReadonlySet<string>
+): string[] {
+  const clears: string[] = []
+  for (const key of present) {
+    if (!checked.has(key)) clears.push(key)
+  }
+  return clears
+}
+
 export async function extractI693FormFromPdfDocument(
   pdf: PDFDocumentProxy,
-  base: I693FormData
+  base: I693FormData,
+  options: ExtractI693Options = {}
 ): Promise<I693FormData> {
+  const respectUserClears = options.respectUserClears === true
   const fieldObjects = await pdf.getFieldObjects()
   const next = structuredClone(base) as I693FormData
   const root = next as unknown as Record<string, unknown>
   if (!fieldObjects) return next
+
+  // Track mark groups so an unchecked radio/checkbox group can be cleared
+  // without a sibling widget in the same group wiping the checked value.
+  const markKeysPresent = new Set<string>()
+  const markKeysChecked = new Set<string>()
 
   for (const binding of PDF_FIELD_REGISTRY) {
     if (binding.key === 'vaccination_grid') continue
@@ -175,16 +207,30 @@ export async function extractI693FormFromPdfDocument(
     if (!entry?.id) continue
     const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
     const val = (raw?.value ?? entry.value ?? '').toString().trim()
-    if (!val) continue
 
     if (binding.kind === 'mark') {
+      markKeysPresent.add(binding.key)
       if (val === 'On' || val === 'Yes' || val === binding.when) {
+        markKeysChecked.add(binding.key)
         setNestedValue(root, binding.key, binding.when)
       }
       continue
     }
 
     if (isI693CombFieldKey(binding.key)) continue
+
+    if (!val) {
+      // Empty text widget: only honor the clear when the reviewed PDF is
+      // authoritative; otherwise leave the pre-filled/default value in place.
+      if (respectUserClears) {
+        if (binding.slot) {
+          writeSlottedValue(root, { key: binding.key, slot: binding.slot }, '')
+        } else {
+          setNestedValue(root, binding.key, '')
+        }
+      }
+      continue
+    }
 
     const parsedRaw = binding.format === 'date' ? parseDateFromPdfDisplay(val) : val
     const parsed = binding.format === 'date'
@@ -194,6 +240,12 @@ export async function extractI693FormFromPdfDocument(
       writeSlottedValue(root, { key: binding.key, slot: binding.slot }, parsed)
     } else {
       setNestedValue(root, binding.key, parsed)
+    }
+  }
+
+  if (respectUserClears) {
+    for (const key of markKeysToClear(markKeysPresent, markKeysChecked)) {
+      setNestedValue(root, key, null)
     }
   }
 
@@ -209,4 +261,17 @@ export async function extractI693FormFromPdfDocumentPreserving(
 ): Promise<I693FormData> {
   const extracted = await extractI693FormFromPdfDocument(pdf, base)
   return mergeAcceptedI693AiDraft(base, extracted)
+}
+
+/**
+ * Capture the user's reviewed edits: the PDF is authoritative, so edited values,
+ * cleared text, and toggled radios/checkboxes all persist. Fields with no widget
+ * in the form fall back to the existing form data. Use this for manual saves and
+ * edit syncs — not for merging an AI draft (see mergeAcceptedI693AiDraft).
+ */
+export async function extractI693FormFromPdfDocumentRespectingUserEdits(
+  pdf: PDFDocumentProxy,
+  base: I693FormData
+): Promise<I693FormData> {
+  return extractI693FormFromPdfDocument(pdf, base, { respectUserClears: true })
 }
