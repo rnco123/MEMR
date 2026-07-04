@@ -37,6 +37,21 @@ export const PREFILL_BLANK_WIDGETS = new Set<string>([
   'form1[0].#subform[5].Pt8Line1A1_TSDate[0]',
 ])
 
+/**
+ * Widgets whose value is managed by the pdf_widget_values passthrough rather
+ * than a registry binding. The auto-generated registry maps the civil surgeon
+ * Middle Name (unslotted) to the full surgeon_name and would dump "Family Given"
+ * into the box; skip the registry binding so the real per-widget middle name
+ * fills it and a save doesn't write the box back into surgeon_name.
+ */
+export const REGISTRY_PASSTHROUGH_WIDGETS = new Set<string>([
+  'form1[0].#subform[3].Pt7Line1_MiddleName[0]',
+])
+
+function isRegistryUnbound(pdfFieldName: string): boolean {
+  return PREFILL_BLANK_WIDGETS.has(pdfFieldName) || REGISTRY_PASSTHROUGH_WIDGETS.has(pdfFieldName)
+}
+
 function valueForBinding(data: I693FormData, b: (typeof PDF_FIELD_REGISTRY)[number]): string {
   const root = data as unknown as Record<string, unknown>
   if (b.slot) {
@@ -121,7 +136,7 @@ export async function applyI693FormToPdfDocument(
 
   for (const binding of PDF_FIELD_REGISTRY) {
     if (binding.key === 'vaccination_grid') continue
-    if (PREFILL_BLANK_WIDGETS.has(binding.pdfFieldName)) continue
+    if (isRegistryUnbound(binding.pdfFieldName)) continue
 
     if (binding.kind === 'mark') {
       const want = valueForBinding(data, binding) === binding.when
@@ -216,7 +231,7 @@ export async function extractI693FormFromPdfDocument(
 
   for (const binding of PDF_FIELD_REGISTRY) {
     if (binding.key === 'vaccination_grid') continue
-    if (PREFILL_BLANK_WIDGETS.has(binding.pdfFieldName)) continue
+    if (isRegistryUnbound(binding.pdfFieldName)) continue
 
     const entries = fieldObjects[binding.pdfFieldName] as
       | { id?: string; value?: string }[]

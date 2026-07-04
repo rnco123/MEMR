@@ -53,7 +53,10 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   Pt6Line2_DateoExam: { key: 'civil_surgeon.date_signed', format: 'date' },
   Pt7Line1_FamilyName: { key: 'civil_surgeon.surgeon_name', slot: 'name_family' },
   Pt7Line1_GivenName: { key: 'civil_surgeon.surgeon_name', slot: 'name_given' },
-  Pt7Line1_MiddleName: { key: 'civil_surgeon.surgeon_name' },
+  // Pt7Line1_MiddleName intentionally unmapped — surgeon_name is a 2-part
+  // "family given" string with no middle, so binding it here dumped the whole
+  // name into the Middle box. The real middle name comes from the per-widget
+  // pdf_widget_values passthrough instead.
   Pt7Line2_MedPracticeName: { key: 'civil_surgeon.practice_name' },
   Pt7Line1_CivilSurgeonID: { key: 'civil_surgeon.medical_license' },
   Pt7Line3_StreetNumberName: { key: 'civil_surgeon.street' },
