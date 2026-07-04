@@ -69,15 +69,16 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   Pt7Line5_DaytimePhone: { key: 'civil_surgeon.phone' },
   Pt7Line6_MobilePhone: { key: 'civil_surgeon.phone', slot: 'phone_mobile' },
   Pt7Line7_EmailAddress: { key: 'civil_surgeon.email' },
-  Pt7Line8_DateofSignature: { key: 'civil_surgeon.date_signed', format: 'date' },
-  Pt6Line3_DateofExam1: { key: 'civil_surgeon.date_signed', format: 'date' },
-  Pt6Line3_DateofExam2: { key: 'civil_surgeon.date_signed', format: 'date' },
-  Pt6Line3_DateofExam3: { key: 'civil_surgeon.date_signed', format: 'date' },
+  // Part 8 "Date of Signature" and Part 6 Line 3 "Dates of Follow-up
+  // Examinations, if required" are intentionally unmapped — they stay blank on
+  // prefill and are only entered by hand when they apply. (Part 6 Line 2 above
+  // still carries the exam date via civil_surgeon.date_signed.)
   P10_Remarks: { key: 'civil_surgeon.vaccination_remarks' },
   P10_USCIS_Remarks: { key: 'civil_surgeon.summary_remarks' },
 
-  Pt8Line1A1_TSDate: { key: 'tb_screening.quantiferon_t_spot' },
-  Pt8Line1A1_QFDate: { key: 'tb_screening.quantiferon_t_spot' },
+  // Pt8Line1A1_TSDate / _QFDate ("Date Blood Sample Drawn") intentionally
+  // unmapped — both shared tb_screening.quantiferon_t_spot and got stamped on
+  // prefill. Kept blank; the civil surgeon enters the draw date by hand.
   Pt8Line1B1c_SyphilisScreen: { key: 'syphilis_sti.syphilis_result' },
 }
 

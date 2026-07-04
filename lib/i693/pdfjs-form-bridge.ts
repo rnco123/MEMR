@@ -20,6 +20,23 @@ import {
   mergePdfWidgetValuesIntoForm,
 } from '@/lib/i693/pdf-widget-values'
 
+/**
+ * Date widgets kept blank on every prefill — bound to shared keys, they'd get
+ * stamped on fill. Only entered by hand when they actually apply:
+ *   - Part 6 Line 3: "Dates of Follow-up Examinations, if required" (x3)
+ *   - Part 8:        Civil Surgeon's "Date of Signature"
+ *   - Part 8 Line 1A: TB "Date Blood Sample Drawn" — QuantiFERON + T-Spot
+ * Skipped on both fill and extract; Part 6 Line 2 still carries the exam date.
+ */
+export const PREFILL_BLANK_WIDGETS = new Set<string>([
+  'form1[0].#subform[3].Pt6Line3_DateofExam1[0]',
+  'form1[0].#subform[3].Pt6Line3_DateofExam2[0]',
+  'form1[0].#subform[3].Pt6Line3_DateofExam3[0]',
+  'form1[0].#subform[4].Pt7Line8_DateofSignature[0]',
+  'form1[0].#subform[5].Pt8Line1A1_QFDate[0]',
+  'form1[0].#subform[5].Pt8Line1A1_TSDate[0]',
+])
+
 function valueForBinding(data: I693FormData, b: (typeof PDF_FIELD_REGISTRY)[number]): string {
   const root = data as unknown as Record<string, unknown>
   if (b.slot) {
@@ -104,6 +121,7 @@ export async function applyI693FormToPdfDocument(
 
   for (const binding of PDF_FIELD_REGISTRY) {
     if (binding.key === 'vaccination_grid') continue
+    if (PREFILL_BLANK_WIDGETS.has(binding.pdfFieldName)) continue
 
     if (binding.kind === 'mark') {
       const want = valueForBinding(data, binding) === binding.when
@@ -198,6 +216,7 @@ export async function extractI693FormFromPdfDocument(
 
   for (const binding of PDF_FIELD_REGISTRY) {
     if (binding.key === 'vaccination_grid') continue
+    if (PREFILL_BLANK_WIDGETS.has(binding.pdfFieldName)) continue
 
     const entries = fieldObjects[binding.pdfFieldName] as
       | { id?: string; value?: string }[]
