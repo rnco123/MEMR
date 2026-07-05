@@ -1425,7 +1425,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
   return (
     <div className="space-y-4 text-slate-900">
-      <div className="sticky top-0 z-30 flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-white/80">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900">
             {t('i693.pdf_editor_title')}
