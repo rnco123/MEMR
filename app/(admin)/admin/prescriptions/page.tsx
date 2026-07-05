@@ -303,7 +303,7 @@ export default function AdminPrescriptionsPage() {
 
         {!loading ? (
           <p className="text-xs text-slate-500 sm:ml-auto shrink-0 pb-0.5">
-            {t('admin.prescriptions.showing_count', { count: totalCount })}
+            {t('admin.prescriptions.showing_count', { count: groupedByEncounter.size })}
           </p>
         ) : null}
       </div>
