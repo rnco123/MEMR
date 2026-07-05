@@ -52,6 +52,39 @@ function isRegistryUnbound(pdfFieldName: string): boolean {
   return PREFILL_BLANK_WIDGETS.has(pdfFieldName) || REGISTRY_PASSTHROUGH_WIDGETS.has(pdfFieldName)
 }
 
+/**
+ * Applicant name + A-number repeat in the header band at the top of pages 2+.
+ * Those mirror widgets share Part 1 short names but live in other subforms, so
+ * the page-1-only registry never fills them — the editor showed a blank header
+ * while the preview (overlay) filled it. Map short name → Part 1 form key so we
+ * can propagate the value to every mirror widget instance.
+ */
+const HEADER_MIRROR_KEY_BY_SHORT: Record<string, string> = {
+  Pt1Line1a_FamilyName: 'applicant.family_name',
+  Pt1Line1b_GivenName: 'applicant.given_name',
+  Pt1Line1c_MiddleName: 'applicant.middle_name',
+  Pt1Line3e_AlienNumber: 'applicant.a_number',
+}
+
+/** Fill the repeated applicant header (name + A-number) on every page. */
+export function applyApplicantHeaderMirrors(
+  pdf: PDFDocumentProxy,
+  data: I693FormData,
+  fieldObjects: Record<string, unknown>
+): void {
+  const root = data as unknown as Record<string, unknown>
+  for (const [fieldName, rawEntries] of Object.entries(fieldObjects)) {
+    const key = HEADER_MIRROR_KEY_BY_SHORT[widgetShortName(fieldName)]
+    if (!key) continue
+    const raw = getNestedValue(root, key)
+    const value = raw == null || raw === '' ? '' : formatI693WidgetValue(key, String(raw))
+    if (!value) continue
+    for (const entry of (rawEntries ?? []) as { id?: string }[]) {
+      if (entry?.id) pdf.annotationStorage.setValue(entry.id, { value, formattedValue: value })
+    }
+  }
+}
+
 function valueForBinding(data: I693FormData, b: (typeof PDF_FIELD_REGISTRY)[number]): string {
   const root = data as unknown as Record<string, unknown>
   if (b.slot) {
@@ -157,6 +190,7 @@ export async function applyI693FormToPdfDocument(
     pdf.annotationStorage.setValue(id, { value: text, formattedValue: text })
   }
 
+  applyApplicantHeaderMirrors(pdf, data, fieldObjects)
   await applyVaccinationFields(pdf, data)
   await applyPdfWidgetValues(pdf, data.pdf_widget_values)
 }
