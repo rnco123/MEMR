@@ -27,7 +27,8 @@ import {
   extractI693FormFromPdfDocumentRespectingUserEdits,
   hydrateAnnotationStorageFromPdfWidgets,
 } from '@/lib/i693/pdfjs-form-bridge'
-import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
+import { formatI693WidgetValue, withUsCountryCode } from '@/lib/i693/pdf-field-formatters'
+import { widgetShortName } from '@/lib/i693/pdf-widget-map'
 import {
   discoverCombPlacementsFromLayer,
   setCombFieldOnPdfDocument,
@@ -136,6 +137,22 @@ function addPreviewInteractionShield(formWrap: HTMLDivElement): void {
   shield.setAttribute('aria-hidden', 'true')
   shield.style.pointerEvents = 'auto'
   formWrap.appendChild(shield)
+}
+
+/** Applicant phone widgets that should show the US country code on the form. */
+const APPLICANT_PHONE_WIDGET_SHORTS = new Set(['Pt2Line3_DaytimePhone', 'Pt2Line4_Mobilephone'])
+
+/**
+ * When the user commits (blurs) an applicant phone field, show the +1 country
+ * code they'd otherwise only see after save/preview. Cosmetic and idempotent —
+ * the saved form data is normalized separately on extract. No-ops for any other
+ * field, so it's safe if the widget name isn't a phone.
+ */
+function reformatApplicantPhoneOnCommit(target: EventTarget | null): void {
+  if (!(target instanceof HTMLInputElement)) return
+  if (!APPLICANT_PHONE_WIDGET_SHORTS.has(widgetShortName(target.name || ''))) return
+  const next = withUsCountryCode(target.value)
+  if (next !== target.value) target.value = next
 }
 
 function isTextFormWidget(node: EventTarget | Element | null): node is HTMLInputElement | HTMLTextAreaElement {
@@ -500,6 +517,7 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
         fitPdfFormLayerFonts(formLayerDiv)
         const handleFormLayerEdit = (event: Event) => {
           if (isTextFormWidget(event.target)) fitPdfFormWidgetFont(event.target)
+          if (event.type === 'change') reformatApplicantPhoneOnCommit(event.target)
           void syncFormFromPdf()
         }
         formLayerDiv.addEventListener('change', handleFormLayerEdit)
