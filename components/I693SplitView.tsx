@@ -176,40 +176,48 @@ export function I693SplitView({
       ) : null}
 
       {items.length > 1 ? (
-        <div className="flex flex-wrap gap-2 border-b border-violet-50 px-4 py-2">
-          {items.map((doc, index) => (
-            <div
-              key={doc.key}
-              className={`inline-flex max-w-full items-center gap-1 rounded-lg pl-2.5 pr-1 py-1 text-xs font-medium ${
-                index === activeIndex
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-slate-100 text-slate-700'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => onActiveIndexChange(index)}
-                className="max-w-[180px] truncate text-left"
-                title={doc.name}
-              >
-                {doc.name}
-              </button>
-              {removable && onRemoveDocument ? (
+        <ul className="max-h-44 space-y-0.5 overflow-y-auto border-b border-violet-50 px-2 py-2">
+          {items.map((doc, index) => {
+            const active = index === activeIndex
+            return (
+              <li key={doc.key} className="flex items-center gap-1">
                 <button
                   type="button"
-                  onClick={() => onRemoveDocument(index)}
-                  className={`inline-flex h-5 w-5 items-center justify-center rounded ${
-                    index === activeIndex ? 'hover:bg-violet-700' : 'hover:bg-slate-200'
+                  onClick={() => onActiveIndexChange(index)}
+                  className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-xs font-medium ${
+                    active ? 'bg-violet-600 text-white' : 'text-slate-700 hover:bg-slate-100'
                   }`}
-                  title={t('i693.splitview_remove_document')}
-                  aria-label={t('i693.splitview_remove_document')}
+                  title={doc.name}
+                  aria-current={active ? 'true' : undefined}
                 >
-                  ✕
+                  <svg
+                    className={`h-4 w-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`}
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5" />
+                  </svg>
+                  <span className="truncate">{doc.name}</span>
                 </button>
-              ) : null}
-            </div>
-          ))}
-        </div>
+                {removable && onRemoveDocument ? (
+                  <button
+                    type="button"
+                    onClick={() => onRemoveDocument(index)}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-800"
+                    title={t('i693.splitview_remove_document')}
+                    aria-label={t('i693.splitview_remove_document')}
+                  >
+                    ✕
+                  </button>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
       ) : null}
 
       <div className="relative min-h-[320px] flex-1 overflow-auto bg-slate-50 p-4">
