@@ -116,9 +116,12 @@ const SHARED_PDF_WIDGET_VALUES: Record<string, string> = {
   'form1[0].#subform[12].P10_Results[0]': 'A',
 }
 
+// Pt7Line3/4_Unit are checkbox widgets (Apt/Ste/Flr selector); the raw
+// passthrough only toggles a box on when the value satisfies isCheckedValue
+// ('On'/'Yes'/'true'), so the "STE" checkbox needs 'On', not the label text.
 const SAN_ANTONIO_UNIT_WIDGETS: Record<string, string> = {
-  'form1[0].#subform[3].Pt7Line3_Unit[1]': 'STE',
-  'form1[0].#subform[3].Pt7Line4_Unit[1]': 'STE',
+  'form1[0].#subform[3].Pt7Line3_Unit[1]': 'On',
+  'form1[0].#subform[3].Pt7Line4_Unit[1]': 'On',
 }
 
 export type I693LocationAutofillMeta = {
