@@ -307,6 +307,15 @@ export function I693PdfFormEditor({ encounterId, patientName }: Props) {
 
   const saveCurrent = useCallback(
     async (showToast: boolean): Promise<boolean> => {
+      // Commit the field the user is still editing: clicking Save doesn't blur
+      // the active widget, so pdf.js hasn't flushed the typed value into
+      // annotation storage yet. Blur it and wait a frame before extracting,
+      // otherwise a value typed over an AI/prefilled field is read as the old
+      // one and the edit appears not to save.
+      if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur()
+        await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
+      }
       if (pdfRef.current) {
         const next = await extractI693FormFromPdfDocumentRespectingUserEdits(
           pdfRef.current,
