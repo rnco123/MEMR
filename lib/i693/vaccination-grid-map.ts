@@ -237,16 +237,12 @@ export function vaccinationWidgetValue(
   const selector = vaccineGivenSelectorValue(data, short, widgetIndex)
   if (selector !== null) return selector
 
-  // Pt10Line1_CompleteSeries has 8 widget instances (one generic row each). Map
-  // by widget index FIRST — otherwise parseVaccinationWidget() matches the bare
-  // short name to dt and stamps every row's complete cell with dt's value, so
-  // per-row completes (e.g. MMR at index 1) never render.
-  let parsed: ParsedVaxWidget | null = null
-  if (short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
-    const code = VACCINE_LINE_TO_CODE[widgetIndex + 3]
+  let parsed = parseVaccinationWidget(short)
+  if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
+    const line = widgetIndex + 3
+    const code = VACCINE_LINE_TO_CODE[line]
     if (code) parsed = { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
   }
-  if (!parsed) parsed = parseVaccinationWidget(short)
   if (!parsed) return null
 
   const row = getVaccinationGridRow(data, parsed.vaccineCode)
@@ -305,13 +301,12 @@ export function applyVaccinationWidgetToGrid(
     return
   }
 
-  // Match the apply side: index-based mapping wins for Pt10Line1_CompleteSeries.
-  let parsed: ParsedVaxWidget | null = null
-  if (short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
-    const code = VACCINE_LINE_TO_CODE[widgetIndex + 3]
+  let parsed = parseVaccinationWidget(short)
+  if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
+    const line = widgetIndex + 3
+    const code = VACCINE_LINE_TO_CODE[line]
     if (code) parsed = { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
   }
-  if (!parsed) parsed = parseVaccinationWidget(short)
   if (!parsed) return
 
   const row = getVaccinationGridRow(data, parsed.vaccineCode)
