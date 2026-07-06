@@ -105,8 +105,13 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     let formData = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
     const storedAnnotations = resolveStoredI693Annotations(existing?.annotations, formData)
 
+    // Auto-prefill from the patient record only before the form has ever been
+    // saved. Re-running it on every load would re-fill any field the user
+    // intentionally cleared or changed, so once a submission exists the saved
+    // form_data is authoritative. (Explicit AI Fill / Location autofill still
+    // work — those are separate actions.)
     const patientId = await resolveEncounterPatientId(admin, enc)
-    if (patientId != null) {
+    if (!existing && patientId != null) {
       const bundle = await buildI693ClinicalContext(admin, encounterId, patientId)
       formData = prefillFromPatient(bundle.patient, bundle.vitals, formData)
     }
