@@ -51,7 +51,6 @@
         "posthog-js": "^1.395.0",
         "react": "18.2.0",
         "react-dom": "18.2.0",
-        "react-rnd": "^10.5.3",
         "recharts": "^3.8.1",
         "resend": "^6.12.4",
         "sonner": "^2.0.7",

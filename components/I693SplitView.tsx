@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import {
   type I693SplitViewItem,
@@ -39,80 +39,101 @@ export function I693SplitView({
 }: Props) {
   const { t } = useT()
   const hostRef = useRef<HTMLDivElement>(null)
+  const renderTokenRef = useRef(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const item = items[activeIndex] ?? null
 
-  const renderDocument = useCallback(async () => {
+  useEffect(() => {
     const host = hostRef.current
     if (!host || !item) return
+
+    const renderToken = ++renderTokenRef.current
+    const itemKey = item.key
+    const isStale = () =>
+      renderToken !== renderTokenRef.current || items[activeIndex]?.key !== itemKey
 
     setLoading(true)
     setError(null)
     host.innerHTML = ''
 
-    try {
-      if (isSplitViewImage(item)) {
-        if (item.file) {
-          const url = URL.createObjectURL(item.file)
-          const img = document.createElement('img')
-          img.src = url
-          img.alt = item.name
-          img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
-          img.onload = () => URL.revokeObjectURL(url)
-          host.appendChild(img)
-          return
+    void (async () => {
+      try {
+        if (isSplitViewImage(item)) {
+          if (item.file) {
+            const url = URL.createObjectURL(item.file)
+            const img = document.createElement('img')
+            img.src = url
+            img.alt = item.name
+            img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
+            img.onload = () => URL.revokeObjectURL(url)
+            if (isStale()) return
+            host.appendChild(img)
+            return
+          }
+          if (item.url) {
+            const img = document.createElement('img')
+            img.src = item.url
+            img.alt = item.name
+            img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
+            if (isStale()) return
+            host.appendChild(img)
+            return
+          }
         }
-        if (item.url) {
-          const img = document.createElement('img')
-          img.src = item.url
-          img.alt = item.name
-          img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
-          host.appendChild(img)
-          return
+
+        if (!isSplitViewPdf(item)) {
+          throw new Error(t('i693.splitview_unsupported'))
+        }
+
+        const bytes = clonePdfBytes(await readSplitViewBytes(item))
+        if (isStale()) return
+
+        const pdfjs = await import('pdfjs-dist')
+        pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
+        const pdf = await loadPdfJsDocument(pdfjs, bytes)
+        if (isStale()) return
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          if (isStale()) return
+
+          const page = await pdf.getPage(pageNum)
+          if (isStale()) return
+
+          const viewport = page.getViewport({ scale: SPLIT_VIEW_SCALE })
+          const canvas = document.createElement('canvas')
+          const context = canvas.getContext('2d')
+          if (!context) continue
+
+          canvas.width = viewport.width
+          canvas.height = viewport.height
+
+          const wrapper = document.createElement('div')
+          wrapper.className = 'mb-4 mx-auto w-fit rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden'
+          const label = document.createElement('p')
+          label.className = 'border-b border-slate-100 px-3 py-1.5 text-xs text-slate-500'
+          label.textContent = t('i693.splitview_page', { page: pageNum, total: pdf.numPages })
+          wrapper.appendChild(label)
+          wrapper.appendChild(canvas)
+          host.appendChild(wrapper)
+
+          await page.render({ canvasContext: context, viewport }).promise
+        }
+      } catch (e) {
+        if (!isStale()) {
+          setError(e instanceof Error ? e.message : t('i693.splitview_load_failed'))
+        }
+      } finally {
+        if (!isStale()) {
+          setLoading(false)
         }
       }
+    })()
 
-      if (!isSplitViewPdf(item)) {
-        throw new Error(t('i693.splitview_unsupported'))
-      }
-
-      const bytes = clonePdfBytes(await readSplitViewBytes(item))
-      const pdfjs = await import('pdfjs-dist')
-      pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs'
-      const pdf = await loadPdfJsDocument(pdfjs, bytes)
-
-      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-        const page = await pdf.getPage(pageNum)
-        const viewport = page.getViewport({ scale: SPLIT_VIEW_SCALE })
-        const canvas = document.createElement('canvas')
-        const context = canvas.getContext('2d')
-        if (!context) continue
-
-        canvas.width = viewport.width
-        canvas.height = viewport.height
-
-        const wrapper = document.createElement('div')
-        wrapper.className = 'mb-4 mx-auto w-fit rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden'
-        const label = document.createElement('p')
-        label.className = 'border-b border-slate-100 px-3 py-1.5 text-xs text-slate-500'
-        label.textContent = t('i693.splitview_page', { page: pageNum, total: pdf.numPages })
-        wrapper.appendChild(label)
-        wrapper.appendChild(canvas)
-        host.appendChild(wrapper)
-
-        await page.render({ canvasContext: context, viewport }).promise
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t('i693.splitview_load_failed'))
-    } finally {
-      setLoading(false)
+    return () => {
+      host.innerHTML = ''
     }
-  }, [item, t])
-
-  useEffect(() => {
-    void renderDocument()
-  }, [renderDocument])
+  }, [activeIndex, item, items, t])
 
   if (items.length === 0 || !item) return null
 

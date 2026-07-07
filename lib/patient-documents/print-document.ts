@@ -96,6 +96,26 @@ function buildImagePrintHtml(blobUrl: string, title: string): string {
 </html>`
 }
 
+/** Opens the browser print dialog for an in-memory PDF blob. */
+export function printPdfBlob(
+  blob: Blob,
+  title: string,
+  targetWindow?: Window | null
+): boolean {
+  const blobUrl = URL.createObjectURL(blob)
+  scheduleRevokeObjectUrl(blobUrl)
+  const html = buildPdfPrintHtml(blobUrl, title)
+
+  if (targetWindow && !targetWindow.closed) {
+    targetWindow.document.open()
+    targetWindow.document.write(html)
+    targetWindow.document.close()
+    return true
+  }
+
+  return openPrintWindow(html) != null
+}
+
 /** Opens the browser print dialog for a patient document (PDF or image). */
 export async function printPatientDocument(doc: PrintablePatientDocument): Promise<boolean> {
   const url = doc.file_url?.trim()

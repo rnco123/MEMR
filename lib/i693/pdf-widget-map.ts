@@ -1,6 +1,18 @@
 /** USCIS I-693 widget short names (from MuPDF) → MEMR form keys */
 
-export type WidgetSlot = 'name_family' | 'name_given' | 'phone_day' | 'phone_mobile'
+import {
+  isMarkWidgetChecked,
+  pdfExportForCheckbox,
+} from '@/lib/i693/pdf-checkbox-utils'
+
+export { isMarkWidgetChecked, pdfExportForCheckbox }
+
+export function checkboxBindingForWidget(
+  widget: string,
+  index: number
+): WidgetCheckboxBinding | undefined {
+  return WIDGET_CHECKBOX_BINDINGS.find((b) => b.widget === widget && b.index === index)
+}
 
 export type WidgetCheckboxBinding = {
   key: string
@@ -8,7 +20,11 @@ export type WidgetCheckboxBinding = {
   /** Widget short name + index, e.g. Pt1Line3_Gender + 0 */
   widget: string
   index: number
+  /** AcroForm /export value when checked (often differs from internal `when`). */
+  pdfExport?: string
 }
+
+export type WidgetSlot = 'name_family' | 'name_given' | 'phone_day' | 'phone_mobile'
 
 /** Text/combobox widgets: short name (without [n]) → form key + optional slot */
 export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot; format?: 'date' }> = {
@@ -82,21 +98,70 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   // Pt8Line1A1_TSDate / _QFDate ("Date Blood Sample Drawn") intentionally
   // unmapped — both shared tb_screening.quantiferon_t_spot and got stamped on
   // prefill. Kept blank; the civil surgeon enters the draw date by hand.
-  Pt8Line1B1c_SyphilisScreen: { key: 'syphilis_sti.syphilis_result' },
 }
 
 /** Second street line on Part 1 is "in care of" in the 01/20/25 PDF. */
 export const WIDGET_STREET_IN_CARE_OF_INDEX = 1
 
 export const WIDGET_CHECKBOX_BINDINGS: WidgetCheckboxBinding[] = [
-  { widget: 'Pt1Line3_Gender', index: 0, key: 'applicant.sex', when: 'male' },
-  { widget: 'Pt1Line3_Gender', index: 1, key: 'applicant.sex', when: 'female' },
-  { widget: 'Pt1_Line4_ImmMedExamReq', index: 0, key: 'application.immigration_benefit', when: 'vaccination_only' },
-  { widget: 'Pt6Line1_OverallFinding', index: 0, key: 'civil_surgeon.summary_overall', when: 'none' },
-  { widget: 'Pt6Line1_OverallFinding', index: 1, key: 'civil_surgeon.summary_overall', when: 'class_b' },
-  { widget: 'Pt6Line1_OverallFinding', index: 2, key: 'civil_surgeon.summary_overall', when: 'class_a' },
-  { widget: 'P10_Results', index: 0, key: 'civil_surgeon.vaccinations_complete', when: 'Yes' },
-  { widget: 'P10_Results', index: 1, key: 'civil_surgeon.vaccinations_complete', when: 'No' },
+  { widget: 'Pt1Line3_Gender', index: 0, key: 'applicant.sex', when: 'male', pdfExport: 'M' },
+  { widget: 'Pt1Line3_Gender', index: 1, key: 'applicant.sex', when: 'female', pdfExport: 'F' },
+  {
+    widget: 'Pt1_Line4_ImmMedExamReq',
+    index: 0,
+    key: 'application.immigration_benefit',
+    when: 'vaccination_only',
+    pdfExport: 'A',
+  },
+  {
+    widget: 'Pt6Line1_OverallFinding',
+    index: 0,
+    key: 'civil_surgeon.summary_overall',
+    when: 'none',
+    pdfExport: 'B',
+  },
+  {
+    widget: 'Pt6Line1_OverallFinding',
+    index: 1,
+    key: 'civil_surgeon.summary_overall',
+    when: 'class_b',
+    pdfExport: 'A',
+  },
+  {
+    widget: 'Pt6Line1_OverallFinding',
+    index: 2,
+    key: 'civil_surgeon.summary_overall',
+    when: 'class_a',
+    pdfExport: 'C',
+  },
+  {
+    widget: 'P10_Results',
+    index: 0,
+    key: 'civil_surgeon.vaccinations_complete',
+    when: 'Yes',
+    pdfExport: 'A',
+  },
+  {
+    widget: 'P10_Results',
+    index: 1,
+    key: 'civil_surgeon.vaccinations_complete',
+    when: 'No',
+    pdfExport: 'D',
+  },
+  {
+    widget: 'Pt8Line1B1c_SyphilisScreen',
+    index: 0,
+    key: 'syphilis_sti.syphilis_result',
+    when: 'b',
+    pdfExport: 'B',
+  },
+  {
+    widget: 'Pt8Line1B1c_SyphilisScreen',
+    index: 1,
+    key: 'syphilis_sti.syphilis_result',
+    when: 'a',
+    pdfExport: 'A',
+  },
   // Page 7 (6) TB Classification/Findings — single-select checkbox group.
   { widget: 'Pt8Line1A6_TBClassification', index: 0, key: 'tb_screening.classification', when: 'NOClassA' },
   { widget: 'Pt8Line1A6_TBClassification', index: 1, key: 'tb_screening.classification', when: 'CA' },

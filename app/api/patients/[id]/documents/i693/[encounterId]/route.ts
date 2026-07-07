@@ -6,7 +6,6 @@ import { mergeI693Form } from '@/lib/i693/types'
 import type { I693FormData } from '@/lib/i693/types'
 import { normalizeI693FormAddress } from '@/lib/i693/ai-fill'
 import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
-import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
@@ -41,7 +40,7 @@ export async function GET(
     const admin = await guardI693EncounterAccess(user.id, encounterId)
     const { data: sub, error } = await admin
       .from('i693_submissions')
-      .select('form_data, pdf_storage_path, patient_id, annotations')
+      .select('form_data, pdf_storage_path, patient_id')
       .eq('encounter_id', encounterId)
       .eq('patient_id', patientId)
       .maybeSingle()
@@ -61,10 +60,9 @@ export async function GET(
     })
 
     const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
-    const annotations = resolveStoredI693Annotations(sub.annotations, formData)
 
     // Note: skip cached PDF if address normalization would change it
-    if (sub.pdf_storage_path && annotations.length === 0) {
+    if (sub.pdf_storage_path) {
       const { data: fileBlob, error: dlErr } = await admin.storage
         .from('patient-documents')
         .download(sub.pdf_storage_path)
@@ -80,7 +78,7 @@ export async function GET(
       }
     }
 
-    const { bytes } = await generateI693PdfBytes(formData, annotations)
+    const { bytes } = await generateI693PdfBytes(formData)
 
     await persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, user.id).catch(() => {})
 

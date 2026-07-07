@@ -104,7 +104,6 @@ const VACCINATION_REMARKS: Record<'A' | 'B' | 'C', string> = {
 
 /** PDF widgets shared across Clinica sample templates (pages 4, 6, 9, 10, 12, 13). */
 const SHARED_PDF_WIDGET_VALUES: Record<string, string> = {
-  'form1[0].#subform[3].Pt6Line1_OverallFinding[1]': 'A',
   'form1[0].#subform[3].Pt7Line1_GivenName[0]': CIVIL_SURGEON_SHARED.surgeon_given,
   'form1[0].#subform[3].Pt7Line1_FamilyName[0]': CIVIL_SURGEON_SHARED.surgeon_family,
   'form1[0].#subform[3].Pt7Line1_MiddleName[0]': CIVIL_SURGEON_SHARED.surgeon_middle,
@@ -113,7 +112,6 @@ const SHARED_PDF_WIDGET_VALUES: Record<string, string> = {
   'form1[0].#subform[8].Pt8Line2A_Disorders[0]': '1',
   'form1[0].#subform[9].Pt8Line3A_Findings[2]': '1',
   'form1[0].#subform[9].Pt8Line4_ListOtherMedConditions[0]': 'N/A',
-  'form1[0].#subform[12].P10_Results[0]': 'A',
 }
 
 // Pt7Line3/4_Unit are checkbox widgets (Apt/Ste/Flr selector); the raw

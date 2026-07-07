@@ -1,8 +1,17 @@
 import type { PdfTextPlacement } from '@/lib/i693/pdf-overlay-uscis-012025'
 
 const PHONE_SEP = '\u0001'
+/** Preserves empty family vs empty given when only one name part is set (see joinPersonName). */
+const NAME_SEP = '\u0002'
 
 export function splitPersonName(full: string): { family: string; given: string } {
+  if (full.includes(NAME_SEP)) {
+    const idx = full.indexOf(NAME_SEP)
+    return {
+      family: full.slice(0, idx),
+      given: full.slice(idx + NAME_SEP.length),
+    }
+  }
   const t = full.trim()
   if (!t) return { family: '', given: '' }
   const i = t.indexOf(' ')
@@ -11,7 +20,13 @@ export function splitPersonName(full: string): { family: string; given: string }
 }
 
 export function joinPersonName(family: string, given: string): string {
-  return [family.trim(), given.trim()].filter(Boolean).join(' ')
+  const f = family.trim()
+  const g = given.trim()
+  if (!f && !g) return ''
+  // Space form when both parts are set (legacy + readable in digital form).
+  if (f && g) return `${f} ${g}`
+  // Explicit slots when one side is blank so print/export cannot swap them.
+  return `${f}${NAME_SEP}${g}`
 }
 
 export function splitDualPhone(full: string): { day: string; mobile: string } {

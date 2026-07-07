@@ -5,6 +5,7 @@ import type { I693FormData } from '@/lib/i693/types'
 import { PDF_FIELD_REGISTRY } from '@/lib/i693/pdf-field-registry'
 import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
 import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
+import { normalizePdfCheckboxExport } from '@/lib/i693/pdf-checkbox-utils'
 import {
   applyVaccinationWidgetToGrid,
   isVaccinationTableWidget,
@@ -13,7 +14,7 @@ import {
 } from '@/lib/i693/vaccination-grid-map'
 import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import { isI693CombFieldKey } from '@/lib/i693/pdf-comb-fields'
-import { widgetFieldIndex, widgetShortName } from '@/lib/i693/pdf-widget-map'
+import { widgetFieldIndex, widgetShortName, checkboxBindingForWidget, isMarkWidgetChecked, pdfExportForCheckbox, WIDGET_CHECKBOX_BINDINGS } from '@/lib/i693/pdf-widget-map'
 import {
   applyPdfWidgetValues,
   extractPdfWidgetValues,
@@ -64,6 +65,58 @@ const HEADER_MIRROR_KEY_BY_SHORT: Record<string, string> = {
   Pt1Line1b_GivenName: 'applicant.given_name',
   Pt1Line1c_MiddleName: 'applicant.middle_name',
   Pt1Line3e_AlienNumber: 'applicant.a_number',
+}
+
+function domWidgetControlName(el: HTMLElement): string {
+  const direct =
+    el.getAttribute('name') ??
+    el.getAttribute('data-element-id') ??
+    el.getAttribute('id') ??
+    ''
+  if (direct) return direct
+  const parent = el.closest('.annotationWidget, .textWidgetAnnotation')
+  if (parent instanceof HTMLElement) {
+    return (
+      parent.getAttribute('data-field-name') ??
+      parent.getAttribute('title') ??
+      parent.id ??
+      ''
+    )
+  }
+  return ''
+}
+
+function isEditableTextWidget(el: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (el instanceof HTMLTextAreaElement) return true
+  return !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'hidden'].includes(el.type)
+}
+
+/**
+ * pdf.js often leaves the repeated applicant header (pages 2+) blank even after
+ * annotationStorage is filled. Push Part 1 values into the rendered DOM inputs.
+ */
+export function syncApplicantHeaderMirrorDom(
+  formLayer: HTMLElement,
+  data: I693FormData,
+  options: { continuationPage?: boolean } = {}
+): void {
+  const root = data as unknown as Record<string, unknown>
+  for (const el of formLayer.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    'input, textarea'
+  )) {
+    if (!isEditableTextWidget(el)) continue
+    const key = HEADER_MIRROR_KEY_BY_SHORT[widgetShortName(domWidgetControlName(el))]
+    if (!key || isI693CombFieldKey(key)) continue
+
+    const raw = getNestedValue(root, key)
+    const value = raw == null || raw === '' ? '' : formatI693WidgetValue(key, String(raw))
+
+    if (options.continuationPage) {
+      el.readOnly = true
+      el.tabIndex = -1
+    }
+    if (el.value !== value) el.value = value
+  }
 }
 
 /** Fill the repeated applicant header (name + A-number) on every page. */
@@ -174,10 +227,18 @@ export async function applyI693FormToPdfDocument(
     if (binding.kind === 'mark') {
       const want = valueForBinding(data, binding) === binding.when
       if (!want) continue
-      const entries = fieldObjects[binding.pdfFieldName] as { id?: string }[] | undefined
-      const id = entries?.[0]?.id
+      const entries = fieldObjects[binding.pdfFieldName] as
+        | { id?: string; exportValues?: unknown }[]
+        | undefined
+      const idx = widgetFieldIndex(binding.pdfFieldName)
+      const entry = entries?.[idx] ?? entries?.[0]
+      const id = entry?.id
       if (!id) continue
-      pdf.annotationStorage.setValue(id, { value: 'On', exportValue: binding.when })
+      const cb = checkboxBindingForWidget(widgetShortName(binding.pdfFieldName), idx)
+      const exportValue = cb
+        ? pdfExportForCheckbox(cb)
+        : normalizePdfCheckboxExport(entry?.exportValues) ?? binding.when
+      pdf.annotationStorage.setValue(id, { value: 'On', exportValue })
       continue
     }
 
@@ -268,7 +329,7 @@ export async function extractI693FormFromPdfDocument(
     if (isRegistryUnbound(binding.pdfFieldName)) continue
 
     const entries = fieldObjects[binding.pdfFieldName] as
-      | { id?: string; value?: string }[]
+      | { id?: string; value?: string; exportValues?: unknown }[]
       | undefined
     const idx = widgetFieldIndex(binding.pdfFieldName)
     const entry = entries?.[idx] ?? entries?.[0]
@@ -278,7 +339,12 @@ export async function extractI693FormFromPdfDocument(
 
     if (binding.kind === 'mark') {
       markKeysPresent.add(binding.key)
-      if (val === 'On' || val === 'Yes' || val === binding.when) {
+      const cb = checkboxBindingForWidget(widgetShortName(binding.pdfFieldName), idx)
+      const markBinding = cb ?? {
+        when: binding.when,
+        pdfExport: normalizePdfCheckboxExport(entry.exportValues),
+      }
+      if (isMarkWidgetChecked(val, markBinding)) {
         markKeysChecked.add(binding.key)
         setNestedValue(root, binding.key, binding.when)
       }
@@ -318,7 +384,12 @@ export async function extractI693FormFromPdfDocument(
   }
 
   await extractVaccinationFields(pdf, next)
-  mergePdfWidgetValuesIntoForm(next, await extractPdfWidgetValues(pdf))
+  const widgetOptions = { respectUserClears }
+  mergePdfWidgetValuesIntoForm(
+    next,
+    await extractPdfWidgetValues(pdf, widgetOptions),
+    widgetOptions
+  )
   return next
 }
 
@@ -342,4 +413,36 @@ export async function extractI693FormFromPdfDocumentRespectingUserEdits(
   base: I693FormData
 ): Promise<I693FormData> {
   return extractI693FormFromPdfDocument(pdf, base, { respectUserClears: true })
+}
+
+/**
+ * USCIS single-select groups (Part 6 overall finding, sex, TB class, etc.) share
+ * one form key across several checkboxes. Uncheck every sibling when the user
+ * selects an option so save/export never keeps multiple ticks.
+ */
+export async function enforceSingleSelectMarkGroup(
+  pdf: PDFDocumentProxy,
+  widgetShort: string,
+  index: number
+): Promise<void> {
+  const selected = checkboxBindingForWidget(widgetShort, index)
+  if (!selected) return
+
+  const groupSize = WIDGET_CHECKBOX_BINDINGS.filter((b) => b.key === selected.key).length
+  if (groupSize < 2) return
+
+  const fieldObjects = await pdf.getFieldObjects()
+  if (!fieldObjects) return
+
+  for (const [fieldName, entries] of Object.entries(fieldObjects)) {
+    const short = widgetShortName(fieldName)
+    const idx = widgetFieldIndex(fieldName)
+    const binding = checkboxBindingForWidget(short, idx)
+    if (!binding || binding.key !== selected.key) continue
+    if (binding.widget === widgetShort && binding.index === index) continue
+
+    const entry = (entries as { id?: string }[] | undefined)?.[0]
+    if (!entry?.id) continue
+    pdf.annotationStorage.setValue(entry.id, { value: 'Off' })
+  }
 }

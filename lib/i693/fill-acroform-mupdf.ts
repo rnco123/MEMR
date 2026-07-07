@@ -18,6 +18,7 @@ import {
 } from '@/lib/i693/pdf-widget-map'
 import { openI693Pdf } from '@/lib/i693/mupdf-template'
 import { fillMupdfWidgetFromRaw } from '@/lib/i693/pdf-widget-values'
+import { loadPdfCheckboxExportMap } from '@/lib/i693/pdf-checkbox-export-map'
 
 type MupdfSaveBuffer = {
   asUint8Array?: () => Uint8Array
@@ -133,6 +134,7 @@ export async function fillAcroformI693PdfMupdf(
 ): Promise<{ bytes: Uint8Array; filled: string[] }> {
   const doc = await openI693Pdf(templatePath)
   const filled: string[] = []
+  const checkboxExports = await loadPdfCheckboxExportMap(templatePath)
 
   for (let pageIndex = 0; pageIndex < doc.countPages(); pageIndex++) {
     const page = doc.loadPage(pageIndex)
@@ -145,7 +147,8 @@ export async function fillAcroformI693PdfMupdf(
 
       if (fillVaccinationWidget(widget, data, short, idx, filled)) continue
 
-      if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)) continue
+      if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports))
+        continue
 
       const cb = WIDGET_CHECKBOX_BINDINGS.find((b) => b.widget === short && b.index === idx)
       if (cb && widget.isCheckbox()) {
@@ -162,13 +165,13 @@ export async function fillAcroformI693PdfMupdf(
 
       const mapping = WIDGET_TEXT_TO_KEY[short]
       if (!mapping) {
-        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)
+        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports)
         continue
       }
 
       const text = displayForWidget(data, mapping, idx, short)
       if (!text) {
-        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)
+        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports)
         continue
       }
 

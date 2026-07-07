@@ -5,7 +5,10 @@
  * the Part 1 values to every mirror widget instance.
  */
 
-import { applyApplicantHeaderMirrors } from '@/lib/i693/pdfjs-form-bridge'
+import {
+  applyApplicantHeaderMirrors,
+  syncApplicantHeaderMirrorDom,
+} from '@/lib/i693/pdfjs-form-bridge'
 import { EMPTY_I693_FORM, mergeI693Form } from '@/lib/i693/types'
 
 function mockPdf() {
@@ -63,5 +66,32 @@ describe('applyApplicantHeaderMirrors', () => {
     const { pdf, calls } = mockPdf()
     applyApplicantHeaderMirrors(pdf, mergeI693Form(EMPTY_I693_FORM), fieldObjects)
     expect(calls).toHaveLength(0)
+  })
+})
+
+describe('syncApplicantHeaderMirrorDom', () => {
+  it('copies Part 1 applicant names into continuation-page header inputs', () => {
+    const layer = document.createElement('div')
+    const family = document.createElement('input')
+    family.setAttribute('name', 'form1[0].#subform[1].Pt1Line1a_FamilyName[1]')
+    const given = document.createElement('input')
+    given.setAttribute('name', 'form1[0].#subform[1].Pt1Line1b_GivenName[1]')
+    layer.append(family, given)
+
+    const data = mergeI693Form({
+      ...EMPTY_I693_FORM,
+      applicant: {
+        ...EMPTY_I693_FORM.applicant,
+        family_name: 'nesa2',
+        given_name: 'mesa',
+      },
+    })
+
+    syncApplicantHeaderMirrorDom(layer, data, { continuationPage: true })
+
+    expect(family.value).toBe('nesa2')
+    expect(given.value).toBe('mesa')
+    expect(family.readOnly).toBe(true)
+    expect(given.readOnly).toBe(true)
   })
 })
