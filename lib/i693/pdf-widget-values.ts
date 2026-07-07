@@ -11,7 +11,7 @@ import {
   widgetShortName,
 } from '@/lib/i693/pdf-widget-map'
 import { isVaccinationTableWidget } from '@/lib/i693/vaccination-grid-map'
-import { wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
+import { normalizePdfCheckboxExport, wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
 
 type FieldEntry = {
   id?: string

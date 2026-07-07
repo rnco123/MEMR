@@ -225,6 +225,7 @@ export async function applyI693FormToPdfDocument(
     if (isRegistryUnbound(binding.pdfFieldName)) continue
 
     if (binding.kind === 'mark') {
+      if (!binding.when) continue
       const want = valueForBinding(data, binding) === binding.when
       if (!want) continue
       const entries = fieldObjects[binding.pdfFieldName] as
@@ -338,6 +339,7 @@ export async function extractI693FormFromPdfDocument(
     const val = (raw?.value ?? entry.value ?? '').toString().trim()
 
     if (binding.kind === 'mark') {
+      if (!binding.when) continue
       markKeysPresent.add(binding.key)
       const cb = checkboxBindingForWidget(widgetShortName(binding.pdfFieldName), idx)
       const markBinding = cb ?? {
