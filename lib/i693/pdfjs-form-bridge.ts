@@ -5,7 +5,7 @@ import type { I693FormData } from '@/lib/i693/types'
 import { PDF_FIELD_REGISTRY } from '@/lib/i693/pdf-field-registry'
 import { getNestedValue, setNestedValue } from '@/lib/i693/field-sections'
 import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
-import { normalizePdfCheckboxExport } from '@/lib/i693/pdf-checkbox-utils'
+import { normalizePdfCheckboxExport, wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
 import {
   applyVaccinationWidgetToGrid,
   isVaccinationTableWidget,
@@ -163,17 +163,19 @@ async function applyVaccinationFields(
     const short = widgetShortName(pdfFieldName)
     if (!isVaccinationTableWidget(short) && short !== 'Pt10Line1_CompleteSeries') continue
 
-    const entries = (rawEntries ?? []) as { id?: string }[]
+    const entries = (rawEntries ?? []) as { id?: string; exportValues?: unknown }[]
     const nameIdx = widgetFieldIndex(pdfFieldName)
     for (let i = 0; i < entries.length; i++) {
       const idx = entries.length > 1 ? i : nameIdx
-      const id = entries[i]?.id
+      const entry = entries[i]
+      const id = entry?.id
       if (!id) continue
 
       const val = vaccinationWidgetValue(data, short, idx)
       if (typeof val === 'boolean') {
         if (!val) continue
-        pdf.annotationStorage.setValue(id, { value: 'On', exportValue: 'Yes' })
+        const pdfExport = normalizePdfCheckboxExport(entry?.exportValues) ?? 'Yes'
+        pdf.annotationStorage.setValue(id, { value: 'On', exportValue: pdfExport })
         continue
       }
 
@@ -198,13 +200,17 @@ async function extractVaccinationFields(
     if (!parsed && !isCompleteMulti) continue
 
     const idx = widgetFieldIndex(pdfFieldName)
-    const entryList = entries as { id?: string; value?: string; checkBox?: boolean }[] | undefined
+    const entryList = entries as
+      | { id?: string; value?: string; checkBox?: boolean; exportValues?: unknown }[]
+      | undefined
     const entry = entryList?.[idx] ?? entryList?.[0]
     if (!entry?.id) continue
 
     const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
     const val = (raw?.value ?? entry.value ?? '').toString().trim()
-    const checked = val === 'On' || val === 'Yes' || entry.checkBox === true
+    const pdfExport = normalizePdfCheckboxExport(entry.exportValues)
+    const checked =
+      entry.checkBox === true || wantPdfCheckboxChecked(val, pdfExport)
 
     // pdf.js reports unchecked boxes as "Off" — do not clear pre-filled waiver flags.
     if (val === 'Off' || (!checked && !val)) continue
@@ -269,13 +275,19 @@ export async function hydrateAnnotationStorageFromPdfWidgets(
       id?: string
       value?: string
       checkBox?: boolean
+      exportValues?: unknown
     }[]
     for (const entry of list) {
       if (!entry?.id) continue
       const val = (entry.value ?? '').toString().trim()
-      const checked = entry.checkBox === true || val === 'On' || val === 'Yes'
+      const pdfExport = normalizePdfCheckboxExport(entry.exportValues)
+      const checked =
+        entry.checkBox === true || wantPdfCheckboxChecked(val, pdfExport)
       if (checked) {
-        pdf.annotationStorage.setValue(entry.id, { value: 'On', exportValue: 'Yes' })
+        pdf.annotationStorage.setValue(entry.id, {
+          value: 'On',
+          exportValue: pdfExport ?? 'Yes',
+        })
       } else if (val && val !== 'Off') {
         pdf.annotationStorage.setValue(entry.id, { value: val, formattedValue: val })
       }

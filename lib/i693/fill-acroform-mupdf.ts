@@ -73,9 +73,11 @@ function fillVaccinationWidget(
     getMaxLen: () => number
   },
   data: I693FormData,
+  fullName: string,
   short: string,
   idx: number,
-  filled: string[]
+  filled: string[],
+  checkboxExports: ReadonlyMap<string, string>
 ): boolean {
   if (!isVaccinationTableWidget(short)) return false
 
@@ -83,7 +85,7 @@ function fillVaccinationWidget(
   if (val === null) return true
   if (typeof val === 'boolean') {
     if (!widget.isCheckbox()) return true
-    const on = widget.getValue() === 'Yes' || widget.getValue() === 'On'
+    const on = wantPdfCheckboxChecked(widget.getValue(), checkboxExports.get(fullName))
     if (val && !on) {
       widget.toggle()
       filled.push(`vaccination_grid:${short}`)
@@ -147,7 +149,8 @@ export async function fillAcroformI693PdfMupdf(
       const short = widgetShortName(fullName)
       const idx = widgetFieldIndex(fullName)
 
-      if (fillVaccinationWidget(widget, data, short, idx, filled)) continue
+      if (fillVaccinationWidget(widget, data, fullName, short, idx, filled, checkboxExports))
+        continue
 
       if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports))
         continue

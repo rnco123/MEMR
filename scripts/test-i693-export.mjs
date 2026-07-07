@@ -1,6 +1,10 @@
 import { generateI693PdfBytes, resolveI693TemplatePath } from '../lib/i693/generate-pdf.ts'
 import { mergeI693Form } from '../lib/i693/types.ts'
 import { validateI693PdfExport } from '../lib/i693/export-validation.ts'
+import { buildClinicaI693VaccinationGrid } from '../lib/i693/location-autofill.ts'
+import { loadMupdf } from '../lib/i693/mupdf-template.ts'
+import { widgetShortName } from '../lib/i693/pdf-widget-map.ts'
+import { isVaccinationTableWidget } from '../lib/i693/vaccination-grid-map.ts'
 
 const templatePath = await resolveI693TemplatePath()
 if (!templatePath) {
@@ -48,6 +52,7 @@ const sample = mergeI693Form({
     date_signed: '2026-06-02',
     summary_overall: 'class_b',
   },
+  vaccination_grid: buildClinicaI693VaccinationGrid(),
 })
 
 const { bytes, mode, filledFields = [] } = await generateI693PdfBytes(sample)
@@ -66,6 +71,23 @@ const validation = await validateI693PdfExport(bytes, {
   expectedFilledFields: filledFields.length,
 })
 
+const mupdf = await loadMupdf()
+const doc = mupdf.Document.openDocument(bytes, 'application/pdf')
+let vaxChecked = 0
+for (let p = 0; p < doc.countPages(); p++) {
+  for (const w of doc.loadPage(p).getWidgets()) {
+    const short = widgetShortName(w.getName())
+    if (!isVaccinationTableWidget(short) && short !== 'Pt10Line1_CompleteSeries') continue
+    if (!w.isCheckbox()) continue
+    const val = w.getValue()
+    if (val && val !== 'Off') vaxChecked++
+  }
+}
+
+if (vaxChecked < 10) {
+  throw new Error(`Expected vaccination waiver ticks in export, found ${vaxChecked}`)
+}
+
 console.log(
   JSON.stringify(
     {
@@ -74,6 +96,7 @@ console.log(
       byteLength: bytes.byteLength,
       header,
       validation,
+      vaxChecked,
     },
     null,
     2
