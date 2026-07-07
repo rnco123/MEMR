@@ -17,8 +17,10 @@ import {
   widgetShortName,
 } from '@/lib/i693/pdf-widget-map'
 import { openI693Pdf } from '@/lib/i693/mupdf-template'
+import { wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
 import { fillMupdfWidgetFromRaw } from '@/lib/i693/pdf-widget-values'
 import { loadPdfCheckboxExportMap } from '@/lib/i693/pdf-checkbox-export-map'
+import { pdfExportForCheckbox } from '@/lib/i693/pdf-widget-map'
 
 type MupdfSaveBuffer = {
   asUint8Array?: () => Uint8Array
@@ -153,7 +155,8 @@ export async function fillAcroformI693PdfMupdf(
       const cb = WIDGET_CHECKBOX_BINDINGS.find((b) => b.widget === short && b.index === idx)
       if (cb && widget.isCheckbox()) {
         const want = valueForKey(data, cb.key) === cb.when
-        const on = widget.getValue() === 'Yes' || widget.getValue() === 'On'
+        const pdfExport = pdfExportForCheckbox(cb)
+        const on = wantPdfCheckboxChecked(widget.getValue(), pdfExport)
         if (want && !on) {
           widget.toggle()
           filled.push(`${cb.key}:${cb.when}`)
