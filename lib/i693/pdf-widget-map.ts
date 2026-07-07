@@ -163,13 +163,19 @@ export const WIDGET_CHECKBOX_BINDINGS: WidgetCheckboxBinding[] = [
     pdfExport: 'A',
   },
   // Page 7 (6) TB Classification/Findings — single-select checkbox group.
-  { widget: 'Pt8Line1A6_TBClassification', index: 0, key: 'tb_screening.classification', when: 'NOClassA' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 1, key: 'tb_screening.classification', when: 'CA' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 2, key: 'tb_screening.classification', when: 'B1Pul' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 3, key: 'tb_screening.classification', when: 'B0' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 4, key: 'tb_screening.classification', when: 'B1Extrapul' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 5, key: 'tb_screening.classification', when: 'B2 TB Latent' },
-  { widget: 'Pt8Line1A6_TBClassification', index: 6, key: 'tb_screening.classification', when: 'Class B Other Chest ' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 0, key: 'tb_screening.classification', when: 'NOClassA', pdfExport: 'NOClassA' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 1, key: 'tb_screening.classification', when: 'CA', pdfExport: 'CA' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 2, key: 'tb_screening.classification', when: 'B1Pul', pdfExport: 'B1Pul' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 3, key: 'tb_screening.classification', when: 'B0', pdfExport: 'B0' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 4, key: 'tb_screening.classification', when: 'B1Extrapul', pdfExport: 'B1Extrapul' },
+  { widget: 'Pt8Line1A6_TBClassification', index: 5, key: 'tb_screening.classification', when: 'B2 TB Latent', pdfExport: 'B2 TB Latent' },
+  {
+    widget: 'Pt8Line1A6_TBClassification',
+    index: 6,
+    key: 'tb_screening.classification',
+    when: 'Class B Other Chest',
+    pdfExport: 'Class B Other Chest',
+  },
 ]
 
 export function widgetShortName(fullName: string): string {

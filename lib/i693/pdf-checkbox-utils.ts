@@ -25,13 +25,14 @@ export function isMarkWidgetChecked(
   const val = rawValue.trim()
   if (!val || val === 'Off') return false
   if (val === 'On' || val === 'Yes' || val === 'true') return true
-  const pdfExport = binding.pdfExport?.trim() ?? binding.when
-  return val === binding.when || val === pdfExport || val.toLowerCase() === pdfExport.toLowerCase()
+  const when = binding.when.trim()
+  const pdfExport = binding.pdfExport?.trim() ?? when
+  return val === when || val === pdfExport || val.toLowerCase() === pdfExport.toLowerCase()
 }
 
 export function pdfExportForCheckbox(binding: {
   when: string
   pdfExport?: string
 }): string {
-  return binding.pdfExport?.trim() || binding.when
+  return binding.pdfExport?.trim() || binding.when.trim()
 }

@@ -485,7 +485,7 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[6]",
     "page": 6,
     "kind": "mark",
-    "when": "Class B Other Chest "
+    "when": "Class B Other Chest"
   },
   {
     "key": "vaccination_grid",

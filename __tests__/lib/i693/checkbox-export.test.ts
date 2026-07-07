@@ -47,4 +47,13 @@ describe('checkbox PDF export values', () => {
     expect(isMarkWidgetChecked('A', nonReactive)).toBe(true)
     expect(isMarkWidgetChecked('a', nonReactive)).toBe(true)
   })
+
+  it('detects TB Class B Other Chest Condition from PDF export value', () => {
+    const binding = checkboxBindingForWidget('Pt8Line1A6_TBClassification', 6)!
+    expect(binding.when).toBe('Class B Other Chest')
+    expect(pdfExportForCheckbox(binding)).toBe('Class B Other Chest')
+    expect(isMarkWidgetChecked('Class B Other Chest', binding)).toBe(true)
+    expect(isMarkWidgetChecked('On', binding)).toBe(true)
+    expect(isMarkWidgetChecked('Off', binding)).toBe(false)
+  })
 })
