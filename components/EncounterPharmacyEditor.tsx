@@ -38,6 +38,17 @@ function pharmacyLabel(p: PharmacyRecord, numbered: (id: number) => string) {
   return p.name || numbered(p.id)
 }
 
+/** Type this many characters before the picker searches the full table server-side. */
+const MIN_SEARCH_CHARS = 3
+
+function clientFilter(pharmacies: PharmacyRecord[], q: string): PharmacyRecord[] {
+  const needle = q.toLowerCase()
+  return pharmacies.filter((p) => {
+    const label = [p.name, p.address, p.phone, p.email, String(p.id)].filter(Boolean).join(' ').toLowerCase()
+    return label.includes(needle)
+  })
+}
+
 function PharmacyPicker({
   pharmacies,
   value,
@@ -46,31 +57,73 @@ function PharmacyPicker({
   placeholder,
   searchPlaceholder,
   noMatchesLabel,
+  searchingLabel,
   formatPharmacyNumber,
 }: {
   pharmacies: PharmacyRecord[]
   value: string
-  onChange: (id: string) => void
+  onChange: (id: string, record?: PharmacyRecord) => void
   disabled?: boolean
   placeholder: string
   searchPlaceholder: string
   noMatchesLabel: string
+  searchingLabel: string
   formatPharmacyNumber: (id: number) => string
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  // Server results for queries of >= MIN_SEARCH_CHARS; null when not searching.
+  const [remote, setRemote] = useState<PharmacyRecord[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  // Remember the last picked record so the trigger label resolves even when the
+  // pharmacy came from server search and isn't in the initial `pharmacies` list.
+  const [pickedLocal, setPickedLocal] = useState<PharmacyRecord | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
 
-  const selected = pharmacies.find((p) => String(p.id) === value)
+  const selected =
+    pharmacies.find((p) => String(p.id) === value) ??
+    (pickedLocal && String(pickedLocal.id) === value ? pickedLocal : undefined)
+
+  const trimmed = query.trim()
+  const useServer = trimmed.length >= MIN_SEARCH_CHARS
+
+  // Debounced server-side search — only fires past the character threshold, so
+  // short input stays fully client-side and puts no load on the server.
+  useEffect(() => {
+    if (!useServer) {
+      setRemote(null)
+      setSearching(false)
+      return
+    }
+    setSearching(true)
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/pharmacies/registry?search=${encodeURIComponent(trimmed)}`, {
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        const json = await res.json().catch(() => ({}))
+        setRemote(res.ok ? ((json.data ?? []) as PharmacyRecord[]) : [])
+      } catch (err) {
+        if (!(err instanceof DOMException && err.name === 'AbortError')) setRemote([])
+      } finally {
+        setSearching(false)
+      }
+    }, 250)
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [trimmed, useServer])
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    if (!q) return pharmacies
-    return pharmacies.filter((p) => {
-      const label = [p.name, p.address, p.phone, p.email, String(p.id)].filter(Boolean).join(' ').toLowerCase()
-      return label.includes(q)
-    })
-  }, [pharmacies, query])
+    if (!trimmed) return pharmacies
+    // Below the threshold: light client-side filter of the already-loaded list.
+    if (!useServer) return clientFilter(pharmacies, trimmed)
+    // At/above threshold: prefer server results; while they load, show local hits.
+    return remote ?? clientFilter(pharmacies, trimmed)
+  }, [pharmacies, trimmed, useServer, remote])
 
   useEffect(() => {
     if (!open) return
@@ -81,10 +134,12 @@ function PharmacyPicker({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
-  const pick = (id: string) => {
-    onChange(id)
+  const pick = (id: string, record?: PharmacyRecord) => {
+    onChange(id, record)
+    if (record) setPickedLocal(record)
     setOpen(false)
     setQuery('')
+    setRemote(null)
   }
 
   const triggerLabel = selected
@@ -128,7 +183,9 @@ function PharmacyPicker({
                 {placeholder}
               </button>
             </li>
-            {filtered.length === 0 ? (
+            {searching && !remote ? (
+              <li className="px-3 py-3 text-sm text-slate-500">{searchingLabel}</li>
+            ) : filtered.length === 0 ? (
               <li className="px-3 py-3 text-sm text-slate-500">{noMatchesLabel}</li>
             ) : (
               filtered.map((p) => (
@@ -137,7 +194,7 @@ function PharmacyPicker({
                     type="button"
                     role="option"
                     aria-selected={value === String(p.id)}
-                    onClick={() => pick(String(p.id))}
+                    onClick={() => pick(String(p.id), p)}
                     className={`w-full px-3 py-2 text-left text-sm hover:bg-violet-50 ${
                       value === String(p.id) ? 'bg-violet-50 text-violet-800 font-medium' : 'text-slate-800'
                     }`}
@@ -206,10 +263,13 @@ export function EncounterPharmacyEditor({
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [createForm, setCreateForm] = useState<PharmacyForm>(blankPharmacyForm)
   const [selectedId, setSelectedId] = useState(pharmacyId ? String(pharmacyId) : '')
+  // Record chosen from server search — may not be in the initial `pharmacies` list.
+  const [pickedRecord, setPickedRecord] = useState<PharmacyRecord | null>(null)
   const editorRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     setSelectedId(pharmacyId ? String(pharmacyId) : '')
+    setPickedRecord(null)
   }, [pharmacyId])
 
   useEffect(() => {
@@ -220,10 +280,11 @@ export function EncounterPharmacyEditor({
 
   const assigned =
     assignedPharmacyProp ?? findPharmacyById(pharmacies, pharmacyId)
-  const selected = useMemo(
-    () => (selectedId ? findPharmacyById(pharmacies, selectedId) : null),
-    [pharmacies, selectedId]
-  )
+  const selected = useMemo(() => {
+    if (!selectedId) return null
+    if (pickedRecord && String(pickedRecord.id) === selectedId) return pickedRecord
+    return findPharmacyById(pharmacies, selectedId)
+  }, [pharmacies, selectedId, pickedRecord])
 
   const formatPharmacyNumber = (id: number) =>
     t('encounter_modal.pharmacy_numbered', { id })
@@ -427,11 +488,15 @@ export function EncounterPharmacyEditor({
             <PharmacyPicker
               pharmacies={pharmacies}
               value={selectedId}
-              onChange={setSelectedId}
+              onChange={(id, record) => {
+                setSelectedId(id)
+                setPickedRecord(record ?? null)
+              }}
               disabled={saving}
               placeholder={t('encounter_modal.rooming_pharmacy_select')}
               searchPlaceholder={t('encounter_modal.rx_pharmacy_search')}
               noMatchesLabel={t('encounter_modal.rx_pharmacy_picker_no_matches')}
+              searchingLabel={t('common.searching')}
               formatPharmacyNumber={formatPharmacyNumber}
             />
             {selected && (

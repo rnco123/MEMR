@@ -11,17 +11,10 @@ import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { loadEncounterImmigrationContext } from '@/lib/i693/immigration-eligibility'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
-import { resolveStoredI693Annotations } from '@/lib/i693/annotations'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-function missingAnnotationsColumn(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return false
-  const e = error as { code?: string; message?: string }
-  return e.code === '42703' || Boolean(e.message?.toLowerCase().includes('annotations'))
-}
 
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -41,35 +34,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     await guardI693EncounterAccess(user.id, encounterId)
 
-
     const admin = createAdminClient()
-    const selected = await admin
+    const { data: sub, error } = await admin
       .from('i693_submissions')
-      .select('form_data, patient_id, annotations')
+      .select('form_data, patient_id')
       .eq('encounter_id', encounterId)
       .maybeSingle()
-    let sub = selected.data
-    let error = selected.error
-    if (error && missingAnnotationsColumn(error)) {
-      const retry = await admin
-        .from('i693_submissions')
-        .select('form_data, patient_id')
-        .eq('encounter_id', encounterId)
-        .maybeSingle()
-      sub = retry.data as typeof sub
-      error = retry.error
-    }
     if (error) throw error
     if (!sub) throw new ValidationError('Save the I-693 form before exporting PDF')
 
     const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
-    const annotations = resolveStoredI693Annotations(sub.annotations, formData)
     const isPreviewOnly = new URL(request.url).searchParams.get('preview') === '1'
-    const { bytes, mode, filledFields, missingFields } = await generateI693PdfBytes(
-      formData,
-      annotations,
-      { bakeAnnotations: !isPreviewOnly }
-    )
+    const { bytes, mode, filledFields, missingFields } = await generateI693PdfBytes(formData)
 
     const patientId = sub.patient_id as number
     if (!isPreviewOnly && Number.isFinite(patientId)) {

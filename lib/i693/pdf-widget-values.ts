@@ -11,11 +11,14 @@ import {
   widgetShortName,
 } from '@/lib/i693/pdf-widget-map'
 import { isVaccinationTableWidget } from '@/lib/i693/vaccination-grid-map'
+import { normalizePdfCheckboxExport, wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
 
 type FieldEntry = {
   id?: string
   value?: string
   checkBox?: boolean
+  exportValues?: unknown
+  type?: string
 }
 
 /** Stable key for multi-instance fields (pdf.js may omit [n] on the object key). */
@@ -26,7 +29,7 @@ export function pdfWidgetStorageKey(fieldName: string, index: number, instanceCo
 }
 
 function isCheckedValue(val: string): boolean {
-  return val === 'On' || val === 'Yes' || val === 'true'
+  return wantPdfCheckboxChecked(val)
 }
 
 function isRawPassthroughEligible(fieldName: string, index: number): boolean {
@@ -37,10 +40,20 @@ function isRawPassthroughEligible(fieldName: string, index: number): boolean {
   return true
 }
 
-/** Read all non-empty widget values from pdf.js annotation storage. */
+export type ExtractPdfWidgetValuesOptions = {
+  /**
+   * When true, cleared passthrough widgets are returned as empty strings so
+   * merge can drop stale pdf_widget_values (e.g. a partial date the user erased).
+   */
+  respectUserClears?: boolean
+}
+
+/** Read passthrough widget values from pdf.js annotation storage. */
 export async function extractPdfWidgetValues(
-  pdf: PDFDocumentProxy
+  pdf: PDFDocumentProxy,
+  options: ExtractPdfWidgetValuesOptions = {}
 ): Promise<Record<string, string>> {
+  const respectUserClears = options.respectUserClears === true
   const fieldObjects = await pdf.getFieldObjects()
   const out: Record<string, string> = {}
   if (!fieldObjects) return out
@@ -53,8 +66,11 @@ export async function extractPdfWidgetValues(
       if (!entry?.id) continue
       const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
       const val = (raw?.value ?? entry.value ?? '').toString().trim()
-      if (!val || val === 'Off') continue
       const key = pdfWidgetStorageKey(fieldName, index, list.length)
+      if (!val || val === 'Off') {
+        if (respectUserClears) out[key] = ''
+        continue
+      }
       out[key] = val
     }
   }
@@ -83,8 +99,20 @@ export async function applyPdfWidgetValues(
       const entry = list[index]
       if (!entry?.id) continue
 
+      const pdfExport = normalizePdfCheckboxExport(entry.exportValues)
+      const isCheckbox = entry.checkBox === true || entry.type === 'checkbox'
+
+      if (isCheckbox) {
+        if (!wantPdfCheckboxChecked(val, pdfExport)) continue
+        pdf.annotationStorage.setValue(entry.id, {
+          value: 'On',
+          exportValue: pdfExport ?? 'Yes',
+        })
+        continue
+      }
+
       if (isCheckedValue(val)) {
-        pdf.annotationStorage.setValue(entry.id, { value: 'On', exportValue: 'Yes' })
+        pdf.annotationStorage.setValue(entry.id, { value: 'On', exportValue: pdfExport ?? 'Yes' })
       } else {
         pdf.annotationStorage.setValue(entry.id, { value: val, formattedValue: val })
       }
@@ -94,10 +122,20 @@ export async function applyPdfWidgetValues(
 
 export function mergePdfWidgetValuesIntoForm(
   data: I693FormData,
-  extracted: Record<string, string>
+  extracted: Record<string, string>,
+  options: ExtractPdfWidgetValuesOptions = {}
 ): void {
   if (Object.keys(extracted).length === 0) return
-  data.pdf_widget_values = { ...(data.pdf_widget_values ?? {}), ...extracted }
+  const respectUserClears = options.respectUserClears === true
+  const next = { ...(data.pdf_widget_values ?? {}) }
+  for (const [key, val] of Object.entries(extracted)) {
+    if (!val || val === 'Off') {
+      if (respectUserClears) delete next[key]
+      continue
+    }
+    next[key] = val
+  }
+  data.pdf_widget_values = Object.keys(next).length > 0 ? next : undefined
 }
 
 type MupdfWidget = {
@@ -118,7 +156,8 @@ export function fillMupdfWidgetFromRaw(
   widget: MupdfWidget,
   fullName: string,
   values: Record<string, string> | undefined,
-  filled: string[]
+  filled: string[],
+  checkboxExports?: ReadonlyMap<string, string>
 ): boolean {
   if (!isRawPassthroughEligible(fullName, widgetFieldIndex(fullName))) return false
   const val = rawValueForWidget(values, fullName)
@@ -126,7 +165,7 @@ export function fillMupdfWidgetFromRaw(
 
   if (widget.isCheckbox()) {
     const on = widget.getValue() === 'Yes' || widget.getValue() === 'On'
-    const want = isCheckedValue(val)
+    const want = wantPdfCheckboxChecked(val, checkboxExports?.get(fullName))
     if (want && !on) widget.toggle()
     else if (!want && on) widget.toggle()
     filled.push(`pdf_widget_values:${fullName}`)

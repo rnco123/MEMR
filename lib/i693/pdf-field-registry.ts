@@ -428,13 +428,15 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "key": "syphilis_sti.syphilis_result",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1B1c_SyphilisScreen[0]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "b"
   },
   {
     "key": "syphilis_sti.syphilis_result",
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1B1c_SyphilisScreen[1]",
     "page": 6,
-    "kind": "mark"
+    "kind": "mark",
+    "when": "a"
   },
   {
     "key": "tb_screening.classification",
@@ -483,7 +485,7 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "pdfFieldName": "form1[0].#subform[6].Pt8Line1A6_TBClassification[6]",
     "page": 6,
     "kind": "mark",
-    "when": "Class B Other Chest "
+    "when": "Class B Other Chest"
   },
   {
     "key": "vaccination_grid",

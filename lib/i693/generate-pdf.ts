@@ -7,29 +7,7 @@ import { fillAcroformI693PdfMupdf } from '@/lib/i693/fill-acroform-mupdf'
 import { fillFlatI693Pdf, isFlatI693Template } from '@/lib/i693/fill-flat-pdf'
 import { templateUsesNativeWidgets } from '@/lib/i693/extract-pdf-widgets'
 import { validateI693PdfExport } from '@/lib/i693/export-validation'
-import type { I693Annotation } from '@/lib/i693/annotations'
-import { bakeI693AnnotationsOnPdf } from '@/lib/i693/annotations-mupdf'
 import { ensureViewablePdfBytes } from '@/lib/i693/pdf-bytes'
-
-export type GenerateI693PdfOptions = {
-  /**
-   * When false (preview), keep the MuPDF-filled form intact and show overlays in the client.
-   * Baking overlays with pdf-lib can corrupt the USCIS template in pdf.js.
-   */
-  bakeAnnotations?: boolean
-}
-
-async function finalizeI693PdfBytes(
-  bytes: Uint8Array,
-  annotations: I693Annotation[],
-  bakeAnnotations: boolean
-): Promise<Uint8Array> {
-  if (!bakeAnnotations || !annotations.length) {
-    return ensureViewablePdfBytes(bytes)
-  }
-  const baked = await bakeI693AnnotationsOnPdf(bytes, annotations)
-  return ensureViewablePdfBytes(baked)
-}
 
 const TEMPLATE_CANDIDATES = [
   'public/forms/i-693-template.pdf',
@@ -72,19 +50,13 @@ function fieldsForSection(data: I693FormData, section: (typeof I693_UI_SECTIONS)
 }
 
 /** Fill USCIS AcroForm template when present; otherwise build a summary PDF with jsPDF */
-export async function generateI693PdfBytes(
-  data: I693FormData,
-  annotations: I693Annotation[] = [],
-  options: GenerateI693PdfOptions = {}
-): Promise<{
+export async function generateI693PdfBytes(data: I693FormData): Promise<{
   bytes: Uint8Array
   mode: 'acroform' | 'overlay' | 'generated'
   filledFields?: string[]
   missingFields?: string[]
 }> {
-  const bakeAnnotations = options.bakeAnnotations !== false
-  const finish = (raw: Uint8Array) =>
-    finalizeI693PdfBytes(raw, annotations, bakeAnnotations)
+  const finish = (raw: Uint8Array) => ensureViewablePdfBytes(raw)
 
   const templatePath = await resolveI693TemplatePath()
   if (templatePath) {

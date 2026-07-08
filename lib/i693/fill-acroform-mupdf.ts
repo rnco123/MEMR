@@ -17,7 +17,10 @@ import {
   widgetShortName,
 } from '@/lib/i693/pdf-widget-map'
 import { openI693Pdf } from '@/lib/i693/mupdf-template'
+import { wantPdfCheckboxChecked } from '@/lib/i693/pdf-checkbox-utils'
 import { fillMupdfWidgetFromRaw } from '@/lib/i693/pdf-widget-values'
+import { loadPdfCheckboxExportMap } from '@/lib/i693/pdf-checkbox-export-map'
+import { pdfExportForCheckbox } from '@/lib/i693/pdf-widget-map'
 
 type MupdfSaveBuffer = {
   asUint8Array?: () => Uint8Array
@@ -70,9 +73,11 @@ function fillVaccinationWidget(
     getMaxLen: () => number
   },
   data: I693FormData,
+  fullName: string,
   short: string,
   idx: number,
-  filled: string[]
+  filled: string[],
+  checkboxExports: ReadonlyMap<string, string>
 ): boolean {
   if (!isVaccinationTableWidget(short)) return false
 
@@ -80,7 +85,7 @@ function fillVaccinationWidget(
   if (val === null) return true
   if (typeof val === 'boolean') {
     if (!widget.isCheckbox()) return true
-    const on = widget.getValue() === 'Yes' || widget.getValue() === 'On'
+    const on = wantPdfCheckboxChecked(widget.getValue(), checkboxExports.get(fullName))
     if (val && !on) {
       widget.toggle()
       filled.push(`vaccination_grid:${short}`)
@@ -133,6 +138,7 @@ export async function fillAcroformI693PdfMupdf(
 ): Promise<{ bytes: Uint8Array; filled: string[] }> {
   const doc = await openI693Pdf(templatePath)
   const filled: string[] = []
+  const checkboxExports = await loadPdfCheckboxExportMap(templatePath)
 
   for (let pageIndex = 0; pageIndex < doc.countPages(); pageIndex++) {
     const page = doc.loadPage(pageIndex)
@@ -143,14 +149,17 @@ export async function fillAcroformI693PdfMupdf(
       const short = widgetShortName(fullName)
       const idx = widgetFieldIndex(fullName)
 
-      if (fillVaccinationWidget(widget, data, short, idx, filled)) continue
+      if (fillVaccinationWidget(widget, data, fullName, short, idx, filled, checkboxExports))
+        continue
 
-      if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)) continue
+      if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports))
+        continue
 
       const cb = WIDGET_CHECKBOX_BINDINGS.find((b) => b.widget === short && b.index === idx)
       if (cb && widget.isCheckbox()) {
         const want = valueForKey(data, cb.key) === cb.when
-        const on = widget.getValue() === 'Yes' || widget.getValue() === 'On'
+        const pdfExport = pdfExportForCheckbox(cb)
+        const on = wantPdfCheckboxChecked(widget.getValue(), pdfExport)
         if (want && !on) {
           widget.toggle()
           filled.push(`${cb.key}:${cb.when}`)
@@ -162,13 +171,13 @@ export async function fillAcroformI693PdfMupdf(
 
       const mapping = WIDGET_TEXT_TO_KEY[short]
       if (!mapping) {
-        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)
+        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports)
         continue
       }
 
       const text = displayForWidget(data, mapping, idx, short)
       if (!text) {
-        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled)
+        fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports)
         continue
       }
 

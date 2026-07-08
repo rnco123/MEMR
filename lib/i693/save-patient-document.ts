@@ -1,5 +1,4 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { I693Annotation } from '@/lib/i693/annotations'
 import type { I693FormData } from '@/lib/i693/types'
 import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
 import { loadEncounterImmigrationContext } from '@/lib/i693/immigration-eligibility'
@@ -73,13 +72,12 @@ export async function syncI693PdfToPatientFileAfterSave(
   encounterId: number,
   patientId: number,
   formData: I693FormData,
-  annotations: I693Annotation[],
   uploadedByUid?: string | null
 ): Promise<string | null> {
   const ctx = await loadEncounterImmigrationContext(admin, encounterId)
   if (!ctx?.isImmigration) return null
 
-  const { bytes } = await generateI693PdfBytes(formData, annotations, { bakeAnnotations: true })
+  const { bytes } = await generateI693PdfBytes(formData)
   return persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, uploadedByUid, {
     preserveSubmissionStatus: true,
   })

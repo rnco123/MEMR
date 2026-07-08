@@ -27,6 +27,7 @@
         "test:i693-acroform": "tsx scripts/test-i693-acroform-fill.mjs",
         "audit:i693-registry": "tsx scripts/audit-i693-registry.mjs",
         "generate:i693-pdf-registry": "tsx scripts/generate-i693-pdf-field-registry.mjs",
+        "generate:i693-checkbox-export-map": "tsx scripts/generate-checkbox-export-map.mjs",
         "test:i693-pdf-fields": "tsx scripts/test-i693-pdf-fields.mjs"
     },
     "dependencies": {
@@ -51,7 +52,6 @@
         "posthog-js": "^1.395.0",
         "react": "18.2.0",
         "react-dom": "18.2.0",
-        "react-rnd": "^10.5.3",
         "recharts": "^3.8.1",
         "resend": "^6.12.4",
         "sonner": "^2.0.7",

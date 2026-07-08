@@ -98,43 +98,20 @@ function I693PageInner() {
   return (
     <div className="p-6 lg:p-8 min-h-[calc(100vh-5rem)]">
       <div className="max-w-[1800px] mx-auto">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">{t('i693.page_title')}</h1>
+        {tab !== 'pdf' ? (
+          <div className="mb-6">
+            <h1 className="text-2xl font-bold text-slate-900">{t('i693.page_title')}</h1>
             <p className="text-slate-500 text-sm mt-1">{t('i693.page_subtitle_workflow')}</p>
             {selectedPatientName && (
-              <p className="text-sm text-[#2E6EF3] font-medium mt-2">
-                {t('i693.selected_patient')}: {selectedPatientName}
+              <p className="text-sm text-[#2E6EF3] font-medium mt-1">
+                {selectedPatientName}
                 {selectedId != null && (
-                  <span className="text-slate-500 font-normal ml-2">
-                    ({t('i693.encounter_label')} #{selectedId})
-                  </span>
+                  <span className="text-slate-500 font-normal ml-2">#{selectedId}</span>
                 )}
               </p>
             )}
           </div>
-          <div className="flex rounded-xl border border-slate-200 bg-white p-1">
-            <button
-              type="button"
-              onClick={() => setTabAndUrl('workflow')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                tab === 'workflow' ? 'bg-[#2E6EF3] text-white' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {t('i693.tab_workflow')}
-            </button>
-            <button
-              type="button"
-              onClick={() => selectedId && setTabAndUrl('pdf')}
-              disabled={!selectedId}
-              className={`px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40 ${
-                tab === 'pdf' ? 'bg-[#2E6EF3] text-white' : 'text-slate-600 hover:bg-slate-50'
-              }`}
-            >
-              {t('i693.tab_pdf_editor')}
-            </button>
-          </div>
-        </div>
+        ) : null}
 
         {tab === 'workflow' ? (
           <I693WorkflowBoard
@@ -148,6 +125,7 @@ function I693PageInner() {
             key={`pdf-${selectedId}`}
             encounterId={selectedId}
             patientName={selectedPatientName ?? undefined}
+            onBack={() => setTabAndUrl('workflow')}
           />
         ) : (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
