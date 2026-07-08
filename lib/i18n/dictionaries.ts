@@ -791,6 +791,10 @@ const en: Dictionary = {
   'i693.splitview_patient_chart_loading': 'Loading patient documents…',
   'i693.splitview_patient_chart_empty': 'No previewable documents in the patient chart yet.',
   'i693.splitview_patient_chart_load_failed': 'Could not load patient chart documents',
+  'i693.splitview_pick_title': 'Select a document',
+  'i693.splitview_pick_hint': 'Choose a patient chart document to open next to the form.',
+  'i693.splitview_pick_open': 'Open',
+  'i693.splitview_change_document': 'Change document',
   'i693.pdf_overlay_filled': 'Official I-693 PDF filled from your digital form',
   'i693.pdf_generated_hint':
     'Summary PDF generated. Add public/forms/i-693-template.pdf for official USCIS field mapping.',
@@ -2471,6 +2475,10 @@ const es: Dictionary = {
   'i693.splitview_patient_chart_loading': 'Cargando documentos del paciente…',
   'i693.splitview_patient_chart_empty': 'Aún no hay documentos previsualizables en el expediente.',
   'i693.splitview_patient_chart_load_failed': 'No se pudieron cargar los documentos del expediente',
+  'i693.splitview_pick_title': 'Seleccione un documento',
+  'i693.splitview_pick_hint': 'Elija un documento del expediente para abrirlo junto al formulario.',
+  'i693.splitview_pick_open': 'Abrir',
+  'i693.splitview_change_document': 'Cambiar documento',
   'i693.pdf_overlay_filled': 'PDF I-693 oficial completado desde el formulario digital',
   'i693.pdf_generated_hint': 'PDF resumen generado. Agregue plantilla USCIS en public/forms/i-693-template.pdf',
   'i693.pdf_template_hint':

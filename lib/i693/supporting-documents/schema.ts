@@ -60,6 +60,8 @@ const applicantContactSchema = z.object({
   applicant_signature_date: stringField,
   can_read_english: triState,
   remarks: stringField,
+  id_document_type: stringField,
+  id_document_number: stringField,
 }).partial()
 
 const interpreterSchema = z.object({

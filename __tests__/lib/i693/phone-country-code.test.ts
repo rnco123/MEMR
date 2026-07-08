@@ -1,43 +1,14 @@
 /**
- * Applicant phone fields auto-carry the US country code (+1) on the I-693 form.
+ * Applicant phone fields are stored and exported exactly as entered (no forced +1).
  */
 
-import { formatI693WidgetValue, withUsCountryCode } from '@/lib/i693/pdf-field-formatters'
-
-describe('withUsCountryCode', () => {
-  it('prepends +1 to a bare 10-digit number', () => {
-    expect(withUsCountryCode('8174954278')).toBe('+1 8174954278')
-  })
-
-  it('strips a leading 1 and normalizes an 11-digit number', () => {
-    expect(withUsCountryCode('18174954278')).toBe('+1 8174954278')
-  })
-
-  it('normalizes formatted input to +1 + digits', () => {
-    expect(withUsCountryCode('(817) 495-4278')).toBe('+1 8174954278')
-  })
-
-  it('is idempotent — already has +1', () => {
-    expect(withUsCountryCode('+1 8174954278')).toBe('+1 8174954278')
-  })
-
-  it('leaves other country codes untouched', () => {
-    expect(withUsCountryCode('+44 20 7946 0958')).toBe('+44 20 7946 0958')
-  })
-
-  it('leaves a partial entry as typed (no premature +1)', () => {
-    expect(withUsCountryCode('817495')).toBe('817495')
-  })
-
-  it('returns empty for blank', () => {
-    expect(withUsCountryCode('   ')).toBe('')
-  })
-})
+import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 
 describe('formatI693WidgetValue — applicant phones', () => {
-  it('applies +1 to daytime and mobile phone keys', () => {
-    expect(formatI693WidgetValue('applicant_contact.day_phone', '8174954278')).toBe('+1 8174954278')
-    expect(formatI693WidgetValue('applicant_contact.mobile_phone', '8174954278')).toBe('+1 8174954278')
+  it('keeps daytime and mobile phone values as entered', () => {
+    expect(formatI693WidgetValue('applicant_contact.day_phone', '7135550284')).toBe('7135550284')
+    expect(formatI693WidgetValue('applicant_contact.day_phone', '+1 7135550284')).toBe('+1 7135550284')
+    expect(formatI693WidgetValue('applicant_contact.mobile_phone', '(713) 555-0284')).toBe('(713) 555-0284')
   })
 
   it('does not touch non-phone fields', () => {

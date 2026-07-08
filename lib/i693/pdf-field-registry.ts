@@ -152,6 +152,18 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "kind": "text"
   },
   {
+    "key": "applicant_contact.id_document_type",
+    "pdfFieldName": "form1[0].#subform[2].Pt5Line1_ApplicantFormOfID[0]",
+    "page": 2,
+    "kind": "text"
+  },
+  {
+    "key": "applicant_contact.id_document_number",
+    "pdfFieldName": "form1[0].#subform[2].Pt5Line2_IDNumber[0]",
+    "page": 2,
+    "kind": "text"
+  },
+  {
     "key": "interpreter.interpreter_email",
     "pdfFieldName": "form1[0].#subform[1].Pt3Line6_EmailAddress[0]",
     "page": 1,

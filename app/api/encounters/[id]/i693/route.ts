@@ -146,7 +146,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       throw new ValidationError('Invalid JSON body')
     }
 
-    const formData = mergeI693Form(body.form_data ?? {})
+    const formData = normalizeI693FormAddress(mergeI693Form(body.form_data ?? {}))
     const status = body.status ?? 'draft'
 
     const admin = createAdminClient()

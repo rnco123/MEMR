@@ -34,6 +34,7 @@ Civil surgeon and applicant rules:
 - Fill civil surgeon details only from explicit provider/clinic/license/contact text.
 - Do not fill civil_surgeon.date_signed unless a signature/exam/signing date is explicit.
 - Do not fill physical exam, mental disorder, drug abuse, or other conditions fields unless the supporting document explicitly contains those facts.
+- When a passport (or other ID) is explicitly present, fill applicant_contact.id_document_type (e.g. "Passport") and applicant_contact.id_document_number with the document number. Also set applicant.passport_number when the ID is a passport.
 
 Evidence field paths:
 - Use exact I693FormData paths such as applicant.family_name, tb_screening.quantiferon_t_spot, syphilis_sti.syphilis_result, civil_surgeon.vaccination_remarks.

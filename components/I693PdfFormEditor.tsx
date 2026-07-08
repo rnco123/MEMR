@@ -22,7 +22,7 @@ import {
   extractI693FormFromPdfDocumentRespectingUserEdits,
   syncApplicantHeaderMirrorDom,
 } from '@/lib/i693/pdfjs-form-bridge'
-import { formatI693WidgetValue, withUsCountryCode } from '@/lib/i693/pdf-field-formatters'
+import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 import { widgetFieldIndex, widgetShortName } from '@/lib/i693/pdf-widget-map'
 import {
   discoverCombPlacementsFromLayer,
@@ -86,22 +86,6 @@ class PdfLinkService {
   addLinkAttributes() {}
 }
 
-/** Applicant phone widgets that should show the US country code on the form. */
-const APPLICANT_PHONE_WIDGET_SHORTS = new Set(['Pt2Line3_DaytimePhone', 'Pt2Line4_Mobilephone'])
-
-/**
- * When the user commits (blurs) an applicant phone field, show the +1 country
- * code they'd otherwise only see after save/print. Cosmetic and idempotent —
- * the saved form data is normalized separately on extract. No-ops for any other
- * field, so it's safe if the widget name isn't a phone.
- */
-function reformatApplicantPhoneOnCommit(target: EventTarget | null): void {
-  if (!(target instanceof HTMLInputElement)) return
-  if (!APPLICANT_PHONE_WIDGET_SHORTS.has(widgetShortName(target.name || ''))) return
-  const next = withUsCountryCode(target.value)
-  if (next !== target.value) target.value = next
-}
-
 function isTextFormWidget(node: EventTarget | Element | null): node is HTMLInputElement | HTMLTextAreaElement {
   if (!(node instanceof HTMLInputElement || node instanceof HTMLTextAreaElement)) return false
   if (node instanceof HTMLTextAreaElement) return true
@@ -146,7 +130,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const [pageHosts, setPageHosts] = useState<PagePortalHost[]>([])
   const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [splitViewOpen, setSplitViewOpen] = useState(false)
-  const [splitDocIndex, setSplitDocIndex] = useState(0)
+  const [splitDocIndex, setSplitDocIndex] = useState<number | null>(null)
   const [patientId, setPatientId] = useState<number | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
@@ -433,7 +417,6 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         }
         const handleFormLayerEdit = (event: Event) => {
           if (isTextFormWidget(event.target)) fitPdfFormWidgetFont(event.target)
-          if (event.type === 'change') reformatApplicantPhoneOnCommit(event.target)
           if (
             event.type === 'change' &&
             event.target instanceof HTMLInputElement &&
@@ -577,6 +560,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   const hideSplitView = useCallback(() => {
     setSplitViewOpen(false)
+    setSplitDocIndex(null)
   }, [])
 
   const loadPatientChartDocuments = useCallback(async (): Promise<PatientChartDocumentRef[]> => {
@@ -608,7 +592,9 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       toast.message(t('i693.splitview_patient_chart_empty'))
       return
     }
-    setSplitDocIndex(0)
+    // Always start on the picker — including when there is only 1 document —
+    // so the user explicitly chooses which chart file to open.
+    setSplitDocIndex(null)
     setSplitViewOpen(true)
   }, [loadPatientChartDocuments, patientChartDocs, t])
 
