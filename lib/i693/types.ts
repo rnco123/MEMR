@@ -83,6 +83,10 @@ export type I693FormData = {
     applicant_signature_date: string
     can_read_english: boolean | null
     remarks: string
+    /** USCIS Part 5 — Form of ID presented (e.g. passport). */
+    id_document_type: string
+    /** USCIS Part 5 — Document identification number. */
+    id_document_number: string
   }
   /** Part 5 — Interpreter (if any) */
   interpreter: {
@@ -215,7 +219,7 @@ function emptyApplicant(): I693FormData['applicant'] {
     zip: '',
     province: '',
     postal_code: '',
-    country: '',
+    country: 'USA',
     date_of_birth: '',
     city_of_birth: '',
     state_of_birth: '',
@@ -253,6 +257,8 @@ export const EMPTY_I693_FORM: I693FormData = {
     applicant_signature_date: '',
     can_read_english: null,
     remarks: '',
+    id_document_type: '',
+    id_document_number: '',
   },
   interpreter: {
     used_interpreter: null,

@@ -86,6 +86,16 @@ export const I693_UI_SECTIONS: { title: string; fields: I693FieldDef[] }[] = [
       { key: 'applicant_contact.can_read_english', label: 'Applicant can read English', type: 'boolean', options: yesNoUnknown },
       { key: 'applicant_contact.applicant_signature_date', label: 'Applicant signature date', type: 'date' },
       { key: 'applicant_contact.remarks', label: 'Remarks', type: 'textarea', rows: 2 },
+      {
+        key: 'applicant_contact.id_document_type',
+        label: 'Form of identification presented',
+        type: 'text',
+      },
+      {
+        key: 'applicant_contact.id_document_number',
+        label: 'Document identification number',
+        type: 'text',
+      },
     ],
   },
   {

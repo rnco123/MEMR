@@ -197,9 +197,6 @@ function buildLocationAutofillPatch(
       // Page 7 (6) TB Classification/Findings → "No Class A or Class B TB".
       classification: 'NOClassA',
     },
-    syphilis_sti: {
-      syphilis_result: 'a',
-    },
     other_conditions: {
       conditions: 'N/A',
     },

@@ -6,7 +6,7 @@ const FORM_SCHEMA = `{
   "applicant": { "family_name","given_name","middle_name","in_care_of","street","apt","city","state","zip","province","postal_code","country","date_of_birth","city_of_birth","state_of_birth","country_of_birth","country_of_citizenship","a_number","uscis_online_account","passport_number","sex":"male"|"female"|"","eligibility_category" },
   "application": { "immigration_benefit","city_where_filed","state_where_filed","class_of_admission","receipt_number","consulate_location","remarks" },
   "uscis_records": { "request_records":true|false|null,"form_type","receipt_number","remarks" },
-  "applicant_contact": { "day_phone","mobile_phone","email","applicant_signature_date","can_read_english":true|false|null,"remarks" },
+  "applicant_contact": { "day_phone","mobile_phone","email","applicant_signature_date","can_read_english":true|false|null,"remarks","id_document_type","id_document_number" },
   "interpreter": { "used_interpreter":true|false|null,"interpreter_name","interpreter_organization","interpreter_phone","interpreter_email","interpreter_signature_date" },
   "preparer": { "prepared_by_other":true|false|null,"preparer_name","preparer_organization","preparer_phone","preparer_email","preparer_signature_date" },
   "medical_history": { "height","weight","bmi","blood_pressure","pulse","temperature","general_appearance","eyes_ears_nose_throat","cardiovascular","pulmonary","abdomen","musculoskeletal","neurologic","psychiatric","skin","lymphatic","remarks" },
@@ -39,6 +39,7 @@ Rules:
     - applicant.country     → country only if non-US (e.g. "Mexico"); for US addresses leave "" or "United States"
   If the state and ZIP are already provided separately in the patient record, trust those values.
   Never put a full address string into applicant.street — always split it.
+- Part 5 identification (civil surgeon): when a passport is documented, set applicant_contact.id_document_type to "Passport" and applicant_contact.id_document_number to the passport number (also copy into applicant.passport_number when empty). For driver's license or other ID, use the document type/number as stated. Leave both fields "" if no ID document is documented.
 - Part 7 (medical_history): pull height, weight, BP, pulse, temperature from vitals when present; exam findings from SOAP/MA notes into organ-system fields.
 - Part 8–11: TB, syphilis, gonorrhea, mental disorders, drug abuse — use chart documentation; if not documented use "Not documented in chart" or "".
 - Part 13 vaccinations: only vaccines explicitly mentioned in intake or notes; else [].
@@ -103,7 +104,7 @@ export async function fillI693WithOpenAI(
     throw new Error('OpenAI returned invalid JSON for I-693')
   }
 
-  return { form: mergeAcceptedI693AiDraft(existingForm, mergeI693Form(parsed)), model }
+  return { form: applyPassportToPart5Identification(mergeAcceptedI693AiDraft(existingForm, mergeI693Form(parsed))), model }
 }
 
 // ── Address parser ────────────────────────────────────────────────────────────
@@ -131,6 +132,34 @@ const US_STATE_ABBREVS: ReadonlySet<string> = new Set([
 ])
 
 const US_STATE_NAMES: ReadonlySet<string> = new Set(Object.keys(STATE_FULL_TO_ABBREV))
+
+/** Default Part 1 physical-address country (always USA on I-693). */
+export const DEFAULT_US_APPLICANT_COUNTRY = 'USA'
+
+export function withDefaultUsApplicantCountry<T extends { country?: string }>(
+  applicant: T
+): T {
+  if (applicant.country === DEFAULT_US_APPLICANT_COUNTRY) return applicant
+  return { ...applicant, country: DEFAULT_US_APPLICANT_COUNTRY }
+}
+
+/**
+ * Mirror a detected passport into USCIS Part 5 ID fields when those boxes are empty.
+ * Does not overwrite an already chosen form of ID / number.
+ */
+export function applyPassportToPart5Identification(form: I693FormData): I693FormData {
+  const passport = form.applicant.passport_number.trim()
+  if (!passport) return form
+
+  const contact = form.applicant_contact
+  if (!contact.id_document_number.trim()) {
+    contact.id_document_number = passport
+  }
+  if (!contact.id_document_type.trim() && contact.id_document_number.trim() === passport) {
+    contact.id_document_type = 'Passport'
+  }
+  return form
+}
 
 /** Convert a full US state name to its 2-letter abbreviation; pass through if already abbreviated. */
 export function normalizeStateAbbrev(raw: string): string {
@@ -275,6 +304,10 @@ export function prefillFromPatient(
     if (patient.zip_code && !form.applicant.zip) form.applicant.zip = String(patient.zip_code)
   }
 
+  form.applicant = withDefaultUsApplicantCountry(form.applicant)
+
+  applyPassportToPart5Identification(form)
+
   if (patient.phone && !form.applicant_contact.day_phone) {
     form.applicant_contact.day_phone = String(patient.phone)
   }
@@ -320,9 +353,10 @@ export function normalizeI693FormAddress(form: I693FormData): I693FormData {
 
   // Street looks like a full combined address (contains commas and no separate city)
   const streetLooksLikeFull = a.street.includes(',') && !a.city
+  let next = form
   if (streetLooksLikeFull) {
     const parsed = parseAddressComponents(a.street, stateNorm, a.zip)
-    return {
+    next = {
       ...form,
       applicant: {
         ...a,
@@ -334,12 +368,11 @@ export function normalizeI693FormAddress(form: I693FormData): I693FormData {
         country: a.country || parsed.country,
       },
     }
+  } else if (stateNorm !== a.state) {
+    next = { ...form, applicant: { ...a, state: stateNorm } }
   }
 
-  // Just normalise state abbreviation
-  if (stateNorm !== a.state) {
-    return { ...form, applicant: { ...a, state: stateNorm } }
-  }
-
-  return form
+  const applicant = withDefaultUsApplicantCountry(next.applicant)
+  if (applicant === next.applicant) return next
+  return { ...next, applicant }
 }

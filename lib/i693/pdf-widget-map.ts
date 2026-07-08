@@ -50,6 +50,10 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   Pt2Line5_EmailAddress: { key: 'applicant_contact.email' },
   Pt2Line6_DateofSignature: { key: 'applicant_contact.applicant_signature_date', format: 'date' },
 
+  // USCIS Part 5 — Applicant's Identification Information (civil surgeon).
+  Pt5Line1_ApplicantFormOfID: { key: 'applicant_contact.id_document_type' },
+  Pt5Line2_IDNumber: { key: 'applicant_contact.id_document_number' },
+
   Pt3Line1_InterpreterFamilyName: { key: 'interpreter.interpreter_name', slot: 'name_family' },
   Pt3Line1_InterpreterGivenName: { key: 'interpreter.interpreter_name', slot: 'name_given' },
   Pt3Line2_NameofBusinessorOrgName: { key: 'interpreter.interpreter_organization' },

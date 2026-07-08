@@ -86,5 +86,20 @@ export function mergeAcceptedI693AiDraft(
     delete next.pdf_widget_values
   }
 
+  // Passport number often lands in applicant.passport_number; mirror into Part 5
+  // when those ID fields are still empty.
+  const passport = next.applicant.passport_number.trim()
+  if (passport) {
+    if (!next.applicant_contact.id_document_number.trim()) {
+      next.applicant_contact.id_document_number = passport
+    }
+    if (
+      !next.applicant_contact.id_document_type.trim() &&
+      next.applicant_contact.id_document_number.trim() === passport
+    ) {
+      next.applicant_contact.id_document_type = 'Passport'
+    }
+  }
+
   return mergeI693Form(next)
 }
