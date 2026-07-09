@@ -21,6 +21,11 @@ import { buildSubjectiveFromIntake, buildObjectiveFromChart } from '@/lib/soap/s
  *
  * Degrades gracefully: with no OpenAI key (or an AI failure) the chart-derived
  * sections still save, so SOAP keeps working with zero external dependencies.
+ *
+ * Exception — medicalStyle: the "Reset from AI" button is the clinician's
+ * explicit opt-in to have ALL four sections rendered in standard medical
+ * documentation language. Facts still may not change; only the wording is
+ * converted, and the clinician reviews the result before saving.
  */
 
 /** Clinical reasoning needs a step up from the gpt-4o-mini used for light tasks. */
@@ -43,7 +48,7 @@ const AI_SYSTEM = `You are a clinical documentation assistant drafting SOAP note
 STRICT RULES:
 - Base every statement ONLY on the chart data provided. Never invent symptoms, findings, results, or history.
 - This is a draft for clinician review, not medical advice or a final diagnosis.
-- Concise professional clinical wording; no markdown, no section labels inside the text.
+- Concise professional clinical wording in standard medical documentation style; no markdown, no section labels inside the text.
 
 Respond with a JSON object only:
 {
@@ -57,19 +62,26 @@ async function completeSoapWithOpenAI(args: {
   context: string
   needSubjective: boolean
   needObjective: boolean
+  medicalStyle: boolean
 }): Promise<{ assessment: string; plan: string; subjective: string; objective: string; model: string }> {
   const key = (process.env.OPENAI_API_KEY || config.openai.apiKey || '').trim()
   if (!key) throw new Error('OPENAI_API_KEY is not configured')
   const model = (process.env.OPENAI_SOAP_MODEL || DEFAULT_SOAP_MODEL).trim()
 
+  const restyle =
+    'Rewrite it in standard medical documentation language (accepted clinical terminology and abbreviations). Preserve every fact exactly — do not add, remove, or reinterpret anything.'
   const wants = [
     'Write the ASSESSMENT and PLAN.',
     args.needSubjective
       ? 'The chart has no intake data: also draft the SUBJECTIVE from whatever patient-reported information appears in the context.'
-      : 'Subjective is already documented from the chart — return "" for subjective.',
+      : args.medicalStyle
+        ? `The SUBJECTIVE in the context is the patient's own words. ${restyle}`
+        : 'Subjective is already documented from the chart — return "" for subjective.',
     args.needObjective
       ? 'The chart has no vitals/exam data: also draft the OBJECTIVE from whatever measured information appears in the context.'
-      : 'Objective is already documented from the chart — return "" for objective.',
+      : args.medicalStyle
+        ? 'Rewrite the OBJECTIVE in the context in standard medical documentation format. Preserve every measurement and finding exactly — do not add, remove, or reinterpret anything.'
+        : 'Objective is already documented from the chart — return "" for objective.',
   ].join('\n')
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -119,8 +131,10 @@ async function completeSoapWithOpenAI(args: {
  */
 export async function generateSoapNoteForEncounter(
   admin: SupabaseClient,
-  encounterId: number
+  encounterId: number,
+  opts?: { medicalStyle?: boolean }
 ): Promise<GeneratedSoapNote> {
+  const medicalStyle = Boolean(opts?.medicalStyle)
   const { data: enc, error: encErr } = await admin
     .from('encounters')
     .select('id, patient_id, intake_id, appointment_id')
@@ -178,10 +192,13 @@ export async function generateSoapNoteForEncounter(
       context,
       needSubjective: !subjective,
       needObjective: !objective,
+      medicalStyle,
     })
+    // medicalStyle (explicit clinician request) prefers the AI restyle;
+    // otherwise chart-derived text always wins. Empty AI output falls back.
     note = {
-      subjective: subjective || ai.subjective,
-      objective: objective || ai.objective,
+      subjective: medicalStyle ? ai.subjective || subjective : subjective || ai.subjective,
+      objective: medicalStyle ? ai.objective || objective : objective || ai.objective,
       assessment: ai.assessment,
       plan: ai.plan,
       mode: 'full',

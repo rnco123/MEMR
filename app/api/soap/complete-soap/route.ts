@@ -41,12 +41,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: clinical role required' }, { status: 403 })
     }
 
-    let body: { encounter_id?: string | number } = {}
+    let body: { encounter_id?: string | number; style?: string } = {}
     try {
       body = await request.json().catch(() => ({}))
     } catch {
       // ignore
     }
+    // 'medical' = clinician pressed "Reset from AI": restyle all sections
+    // into standard medical documentation language (facts unchanged).
+    const medicalStyle = body.style === 'medical'
 
     const encounterId = body.encounter_id
     if (encounterId == null || encounterId === '') {
@@ -63,7 +66,7 @@ export async function POST(request: NextRequest) {
     await assertEncounterAccess(admin, user.id, encounterIdNum, ENCOUNTER_WRITE_ACCESS)
 
     try {
-      const note = await generateSoapNoteForEncounter(admin, encounterIdNum)
+      const note = await generateSoapNoteForEncounter(admin, encounterIdNum, { medicalStyle })
 
       auditPhi({
         user,
@@ -71,7 +74,7 @@ export async function POST(request: NextRequest) {
         action: 'encounter_updated',
         resourceType: 'encounter',
         resourceId: encounterIdNum,
-        metadata: { section: 'ai_soap', engine: 'in_app', mode: note.mode },
+        metadata: { section: 'ai_soap', engine: 'in_app', mode: note.mode, style: medicalStyle ? 'medical' : 'default' },
         request,
       })
 
@@ -82,6 +85,12 @@ export async function POST(request: NextRequest) {
             ? 'SOAP data stored successfully'
             : 'SOAP saved from chart data. AI assessment/plan unavailable — complete them manually.',
         mode: note.mode,
+        note: {
+          subjective_text: note.subjective,
+          objective_text: note.objective,
+          assessment_text: note.assessment,
+          plan_text: note.plan,
+        },
       })
     } catch (genErr) {
       // Client-level errors (no data, bad encounter) go straight back to the user.

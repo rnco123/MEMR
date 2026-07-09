@@ -95,6 +95,7 @@ export function EncounterSoapPanel({
   const [form, setForm] = useState<SoapFields>(blankForm)
   const [seededFromAi, setSeededFromAi] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const loadDoctorSoap = useCallback(async () => {
     setLoading(true)
@@ -146,11 +147,34 @@ export function EncounterSoapPanel({
     setSeededFromAi(false)
   }
 
-  const resetFromAi = () => {
-    if (!aiSoap) return
-    setForm(soapFromAi(aiSoap))
-    if (!hasDoctorSoap) setSeededFromAi(true)
+  // "Reset from AI" regenerates the whole note in standard medical
+  // documentation language from the chart (intake, vitals, physical exam).
+  // Falls back to the stored AI draft if generation fails.
+  const resetFromAi = async () => {
     setResetConfirmOpen(false)
+    setResetting(true)
+    try {
+      const res = await fetch('/api/soap/complete-soap', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encounter_id: encounterId, style: 'medical' }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json?.note) {
+        throw new Error(json?.message || json?.error || t('encounter_modal.soap_reset_failed'))
+      }
+      setForm(soapFromAi(json.note as AiSoap))
+      if (!hasDoctorSoap) setSeededFromAi(true)
+    } catch (e) {
+      if (aiSoap) {
+        setForm(soapFromAi(aiSoap))
+        if (!hasDoctorSoap) setSeededFromAi(true)
+      }
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.soap_reset_failed'))
+    } finally {
+      setResetting(false)
+    }
   }
 
   const saveSoap = async () => {
@@ -346,16 +370,16 @@ export function EncounterSoapPanel({
             >
               {t('common.cancel')}
             </button>
-            {aiSoap ? (
-              <button
-                type="button"
-                onClick={() => setResetConfirmOpen(true)}
-                disabled={saving}
-                className="px-4 py-2 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-sm font-medium hover:bg-sky-100 disabled:opacity-50"
-              >
-                {t('encounter_modal.soap_reset_from_ai')}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setResetConfirmOpen(true)}
+              disabled={saving || resetting}
+              className="px-4 py-2 rounded-lg border border-sky-200 bg-sky-50 text-sky-800 text-sm font-medium hover:bg-sky-100 disabled:opacity-50"
+            >
+              {resetting
+                ? t('encounter_modal.soap_reset_generating')
+                : t('encounter_modal.soap_reset_from_ai')}
+            </button>
           </div>
         </div>
       ) : (
@@ -369,7 +393,7 @@ export function EncounterSoapPanel({
       <ConfirmDialog
         open={resetConfirmOpen}
         onClose={() => setResetConfirmOpen(false)}
-        onConfirm={resetFromAi}
+        onConfirm={() => void resetFromAi()}
         title={t('encounter_modal.soap_reset_from_ai_title')}
         message={t('encounter_modal.soap_reset_from_ai_confirm')}
         confirmLabel={t('encounter_modal.soap_reset_from_ai')}
