@@ -11,17 +11,59 @@ const s = (v: unknown) => (v == null ? '' : String(v).trim())
 const arr = (v: unknown) =>
   Array.isArray(v) ? v.map((x) => s(x)).filter(Boolean).join(', ') : s(v)
 
+/**
+ * Light, deterministic cleanup of patient-typed free text: whitespace,
+ * casing, and trailing punctuation only. Never rephrases — the facts and
+ * wording stay the patient's own (medical-legal requirement).
+ */
+export function tidyFreeText(v: unknown): string {
+  let text = s(v).replace(/\s+/g, ' ')
+  if (!text) return ''
+  // SHOUTED text reads badly in a note; leave acronyms (short tokens) alone.
+  if (text.length > 3 && text === text.toUpperCase() && /[A-Z]{4,}/.test(text)) {
+    text = text.toLowerCase()
+  }
+  // Drop trailing sentence punctuation — the builder adds its own period.
+  text = text.replace(/[.,;:\s]+$/, '')
+  return text
+}
+
+/** tidyFreeText + capitalized first letter, for text that starts a sentence. */
+const sentence = (v: unknown) => {
+  const text = tidyFreeText(v)
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : ''
+}
+
+/**
+ * tidyFreeText for mid-sentence continuations ("Patient reports …"):
+ * lowercases a leading capital, but only when the next char is lowercase so
+ * acronyms (SOB, COVID…) and "I …" statements survive.
+ */
+const midSentence = (v: unknown) => {
+  const text = tidyFreeText(v)
+  if (/^[A-Z][a-z]/.test(text) && !/^(I|I['’]m|I['’]ve)\b/.test(text)) {
+    return text.charAt(0).toLowerCase() + text.slice(1)
+  }
+  return text
+}
+
 /** Patient-reported story from the intake form → Subjective. */
 export function buildSubjectiveFromIntake(intake: Record<string, unknown> | null): string {
   if (!intake) return ''
   const lines: string[] = []
 
-  if (s(intake.chief_complaint)) lines.push(`Chief complaint: ${s(intake.chief_complaint)}.`)
-  if (s(intake.symptoms_description)) lines.push(`Patient reports ${s(intake.symptoms_description)}.`)
-  if (s(intake.location)) lines.push(`Location: ${s(intake.location)}.`)
-  if (s(intake.onset)) lines.push(`Onset: ${s(intake.onset)}.`)
+  const cc = sentence(intake.chief_complaint)
+  const symptoms = midSentence(intake.symptoms_description)
+  const location = tidyFreeText(intake.location)
+  const onset = tidyFreeText(intake.onset)
+  const relieving = tidyFreeText(intake.relieving_factors)
+
+  if (cc) lines.push(`Chief complaint: ${cc}.`)
+  if (symptoms) lines.push(`Patient reports ${symptoms}.`)
+  if (location) lines.push(`Location: ${location}.`)
+  if (onset) lines.push(`Onset: ${onset}.`)
   if (intake.severity != null && s(intake.severity)) lines.push(`Severity: ${s(intake.severity)}/10.`)
-  if (s(intake.relieving_factors)) lines.push(`Relieving factors: ${s(intake.relieving_factors)}.`)
+  if (relieving) lines.push(`Relieving factors: ${relieving}.`)
 
   if (arr(intake.medical_conditions)) lines.push(`Past medical history: ${arr(intake.medical_conditions)}.`)
   if (s(intake.cancer_type)) lines.push(`Cancer history: ${s(intake.cancer_type)}.`)

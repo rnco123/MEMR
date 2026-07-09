@@ -28,6 +28,33 @@ describe('buildSubjectiveFromIntake', () => {
   it('returns empty string when intake is missing or empty', () => {
     expect(buildSubjectiveFromIntake(null)).toBe('')
   })
+
+  it('tidies patient-typed language without rephrasing the facts', () => {
+    const text = buildSubjectiveFromIntake({
+      chief_complaint: '  head   pain real bad. ',
+      symptoms_description: 'Throbbing pain behind the eyes,  gets worse at night.. ',
+      relieving_factors: 'REST AND DARK ROOMS',
+    })
+
+    // whitespace collapsed, first letter capitalized, our own period — words untouched
+    expect(text).toContain('Chief complaint: Head pain real bad.')
+    // leading capital lowered mid-sentence, duplicate trailing punctuation dropped
+    expect(text).toContain('Patient reports throbbing pain behind the eyes, gets worse at night.')
+    // SHOUTED text lowercased
+    expect(text).toContain('Relieving factors: rest and dark rooms.')
+  })
+
+  it('keeps acronyms and "I" statements intact when tidying', () => {
+    const text = buildSubjectiveFromIntake({
+      symptoms_description: 'SOB when climbing stairs',
+      chief_complaint: 'COVID exposure follow-up',
+    })
+    expect(text).toContain('Patient reports SOB when climbing stairs.')
+    expect(text).toContain('Chief complaint: COVID exposure follow-up.')
+
+    const iStatement = buildSubjectiveFromIntake({ symptoms_description: "I can't sleep at night" })
+    expect(iStatement).toContain("Patient reports I can't sleep at night.")
+  })
 })
 
 describe('buildObjectiveFromChart', () => {
