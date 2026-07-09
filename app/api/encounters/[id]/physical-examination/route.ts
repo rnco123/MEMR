@@ -18,6 +18,7 @@ import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/
 import { resolveEncounterWriteAllowed } from '@/lib/encounters/access-helpers'
 import { CLINICAL_STAFF_WITH_ADMIN_ROLE_SET, mapRoleToEnum } from '@/lib/roles'
 import { auditPhi } from '@/lib/audit-phi'
+import { syncLatestPhysicalExaminationToPatientChart } from '@/lib/encounter/sync-physical-examination-document'
 
 export const dynamic = 'force-dynamic'
 
@@ -115,6 +116,32 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       payload: normalizePhysicalExamination(parsed.data.physical_examination),
       rosExam: parsed.data.ros_exam ? normalizeRosExamData(parsed.data.ros_exam) : undefined,
     })
+
+    const { data: encounterRow } = await admin
+      .from('encounters')
+      .select('patient_id')
+      .eq('id', encounterId)
+      .maybeSingle()
+
+    if (encounterRow?.patient_id) {
+      try {
+        await syncLatestPhysicalExaminationToPatientChart(
+          admin,
+          Number(encounterRow.patient_id),
+          user.id,
+          {
+            savedSnapshot: {
+              encounterId,
+              rosExam: result.ros_exam,
+              lastAudit: result.last_audit,
+              legacyExam: result.physical_examination,
+            },
+          }
+        )
+      } catch (syncErr) {
+        console.error('[physical-examination] patient chart sync failed:', syncErr)
+      }
+    }
 
     auditPhi({
       user,

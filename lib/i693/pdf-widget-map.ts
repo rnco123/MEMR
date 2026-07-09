@@ -99,6 +99,16 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   P10_Remarks: { key: 'civil_surgeon.vaccination_remarks' },
   P10_USCIS_Remarks: { key: 'civil_surgeon.summary_remarks' },
 
+  // Part 8 — Syphilis serologic test (page 7). Section (c) text boxes are
+  // read-only in the USCIS PDF but must be editable in our editor.
+  Pt8Line1B1a_name: { key: 'syphilis_sti.syphilis_test_type' },
+  Pt8Line1B1b_DateNontrepoemaltest: { key: 'syphilis_sti.syphilis_date', format: 'date' },
+  Pt8Line1B1c_DateNontreponemalTest: {
+    key: 'syphilis_sti.nonreactive_date_reported',
+    format: 'date',
+  },
+  Pt7Line1B1c_TiterOne: { key: 'syphilis_sti.screening_titer' },
+
   // Pt8Line1A1_TSDate / _QFDate ("Date Blood Sample Drawn") intentionally
   // unmapped — both shared tb_screening.quantiferon_t_spot and got stamped on
   // prefill. Kept blank; the civil surgeon enters the draw date by hand.

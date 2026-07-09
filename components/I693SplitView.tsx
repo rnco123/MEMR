@@ -1,6 +1,14 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent,
+  type WheelEvent,
+} from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import {
   type I693SplitViewItem,
@@ -13,6 +21,35 @@ import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
 import { useT } from '@/lib/i18n'
 
 const SPLIT_VIEW_SCALE = 1.05
+const VIEWPORT_PADDING = 16
+const ZOOM_150_SCALE = 1.5
+
+type ViewMode = 'contain' | 'fit' | 'zoom150'
+
+const VIEW_MODES: ViewMode[] = ['contain', 'fit', 'zoom150']
+
+type Size = { w: number; h: number }
+
+function clampPanOffset(
+  offset: Size,
+  content: Size,
+  scale: number,
+  viewport: Size,
+  padding: number
+): Size {
+  const scaledW = content.w * scale
+  const scaledH = content.h * scale
+  const availW = viewport.w - padding * 2
+  const availH = viewport.h - padding * 2
+
+  const minX = Math.min(0, availW - scaledW)
+  const minY = Math.min(0, availH - scaledH)
+
+  return {
+    w: Math.min(0, Math.max(minX, offset.w)),
+    h: Math.min(0, Math.max(minY, offset.h)),
+  }
+}
 
 type Props = {
   items: I693SplitViewItem[]
@@ -39,11 +76,169 @@ export function I693SplitView({
 }: Props) {
   const { t } = useT()
   const hostRef = useRef<HTMLDivElement>(null)
+  const viewportRef = useRef<HTMLDivElement>(null)
   const renderTokenRef = useRef(0)
+  const panStartRef = useRef<{ x: number; y: number; panW: number; panH: number } | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>('contain')
+  const [userPan, setUserPan] = useState<Size>({ w: 0, h: 0 })
+  const [contentSize, setContentSize] = useState<Size>({ w: 0, h: 0 })
+  const [viewportSize, setViewportSize] = useState<Size>({ w: 0, h: 0 })
+  const [isPanning, setIsPanning] = useState(false)
   const hasSelection = activeIndex != null && activeIndex >= 0 && activeIndex < items.length
   const item = hasSelection ? items[activeIndex] ?? null : null
+
+  const measureSizes = useCallback(() => {
+    const host = hostRef.current
+    const viewport = viewportRef.current
+    if (host) {
+      setContentSize({ w: host.scrollWidth, h: host.scrollHeight })
+    }
+    if (viewport) {
+      setViewportSize({ w: viewport.clientWidth, h: viewport.clientHeight })
+    }
+  }, [])
+
+  useEffect(() => {
+    setViewMode('contain')
+    setUserPan({ w: 0, h: 0 })
+    panStartRef.current = null
+    setIsPanning(false)
+  }, [activeIndex, item?.key])
+
+  useEffect(() => {
+    setUserPan({ w: 0, h: 0 })
+  }, [viewMode])
+
+  const availSize = useMemo(
+    () => ({
+      w: Math.max(0, viewportSize.w - VIEWPORT_PADDING * 2),
+      h: Math.max(0, viewportSize.h - VIEWPORT_PADDING * 2),
+    }),
+    [viewportSize.h, viewportSize.w]
+  )
+
+  const containScale = useMemo(() => {
+    if (!contentSize.w || !contentSize.h || !availSize.w || !availSize.h) return 1
+    return Math.min(availSize.w / contentSize.w, availSize.h / contentSize.h)
+  }, [availSize.h, availSize.w, contentSize.h, contentSize.w])
+
+  const fitScale = useMemo(() => {
+    if (!contentSize.w || !availSize.w) return containScale
+    return availSize.w / contentSize.w
+  }, [availSize.w, containScale, contentSize.w])
+
+  const displayScale = useMemo(() => {
+    if (viewMode === 'contain') return containScale
+    if (viewMode === 'fit') return fitScale
+    return ZOOM_150_SCALE
+  }, [containScale, fitScale, viewMode])
+
+  const scaledContent = useMemo(
+    () => ({
+      w: contentSize.w * displayScale,
+      h: contentSize.h * displayScale,
+    }),
+    [contentSize.h, contentSize.w, displayScale]
+  )
+
+  const canPan = useMemo(() => {
+    if (viewMode === 'contain' || !contentSize.w) return false
+    return scaledContent.h > availSize.h + 1 || scaledContent.w > availSize.w + 1
+  }, [availSize.h, availSize.w, contentSize.w, scaledContent.h, scaledContent.w, viewMode])
+
+  const basePan = useMemo(() => {
+    if (!contentSize.w || !viewportSize.w) {
+      return { w: VIEWPORT_PADDING, h: VIEWPORT_PADDING }
+    }
+
+    const x =
+      VIEWPORT_PADDING + Math.max(0, (availSize.w - scaledContent.w) / 2)
+    const y =
+      viewMode === 'contain'
+        ? VIEWPORT_PADDING + Math.max(0, (availSize.h - scaledContent.h) / 2)
+        : VIEWPORT_PADDING
+
+    return { w: x, h: y }
+  }, [
+    availSize.h,
+    availSize.w,
+    contentSize.w,
+    scaledContent.h,
+    scaledContent.w,
+    viewMode,
+    viewportSize.w,
+  ])
+
+  const clampedUserPan = useMemo(
+    () =>
+      canPan
+        ? clampPanOffset(userPan, contentSize, displayScale, viewportSize, VIEWPORT_PADDING)
+        : { w: 0, h: 0 },
+    [canPan, contentSize, displayScale, userPan, viewportSize]
+  )
+
+  const displayPan = useMemo(
+    () => ({
+      w: basePan.w + clampedUserPan.w,
+      h: basePan.h + clampedUserPan.h,
+    }),
+    [basePan.h, basePan.w, clampedUserPan.h, clampedUserPan.w]
+  )
+
+  useEffect(() => {
+    const host = hostRef.current
+    const viewport = viewportRef.current
+    if (!host && !viewport) return
+
+    const observer = new ResizeObserver(() => {
+      measureSizes()
+    })
+
+    if (host) observer.observe(host)
+    if (viewport) observer.observe(viewport)
+    measureSizes()
+
+    return () => observer.disconnect()
+  }, [loading, hasSelection, measureSizes])
+
+  const handleViewportPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (!canPan || event.button !== 0) return
+    panStartRef.current = {
+      x: event.clientX,
+      y: event.clientY,
+      panW: clampedUserPan.w,
+      panH: clampedUserPan.h,
+    }
+    setIsPanning(true)
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+
+  const handleViewportPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const start = panStartRef.current
+    if (!start) return
+    const next = {
+      w: start.panW + (event.clientX - start.x),
+      h: start.panH + (event.clientY - start.y),
+    }
+    setUserPan(clampPanOffset(next, contentSize, displayScale, viewportSize, VIEWPORT_PADDING))
+  }
+
+  const endPan = (event: PointerEvent<HTMLDivElement>) => {
+    if (panStartRef.current) {
+      panStartRef.current = null
+      setIsPanning(false)
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId)
+      }
+    }
+  }
+
+  const handleViewportWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!canPan) return
+    event.preventDefault()
+  }
 
   useEffect(() => {
     const host = hostRef.current
@@ -66,19 +261,27 @@ export function I693SplitView({
             const img = document.createElement('img')
             img.src = url
             img.alt = item.name
-            img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
-            img.onload = () => URL.revokeObjectURL(url)
+            img.className =
+              'mx-auto block h-auto max-w-full select-none bg-white shadow-sm border border-slate-200 pointer-events-none'
+            img.onload = () => {
+              URL.revokeObjectURL(url)
+              measureSizes()
+            }
             if (isStale()) return
             host.appendChild(img)
+            measureSizes()
             return
           }
           if (item.url) {
             const img = document.createElement('img')
             img.src = item.url
             img.alt = item.name
-            img.className = 'max-w-full h-auto mx-auto block bg-white shadow-sm border border-slate-200'
+            img.className =
+              'mx-auto block h-auto max-w-full select-none bg-white shadow-sm border border-slate-200 pointer-events-none'
+            img.onload = () => measureSizes()
             if (isStale()) return
             host.appendChild(img)
+            measureSizes()
             return
           }
         }
@@ -110,7 +313,8 @@ export function I693SplitView({
           canvas.height = viewport.height
 
           const wrapper = document.createElement('div')
-          wrapper.className = 'mb-4 mx-auto w-fit rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden'
+          wrapper.className =
+            'mb-4 mx-auto w-fit rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden pointer-events-none select-none'
           const label = document.createElement('p')
           label.className = 'border-b border-slate-100 px-3 py-1.5 text-xs text-slate-500'
           label.textContent = t('i693.splitview_page', { page: pageNum, total: pdf.numPages })
@@ -120,6 +324,8 @@ export function I693SplitView({
 
           await page.render({ canvasContext: context, viewport }).promise
         }
+
+        measureSizes()
       } catch (e) {
         if (!isStale()) {
           setError(e instanceof Error ? e.message : t('i693.splitview_load_failed'))
@@ -127,6 +333,7 @@ export function I693SplitView({
       } finally {
         if (!isStale()) {
           setLoading(false)
+          measureSizes()
         }
       }
     })()
@@ -134,16 +341,33 @@ export function I693SplitView({
     return () => {
       host.innerHTML = ''
     }
-  }, [activeIndex, hasSelection, item, items, t])
+  }, [activeIndex, hasSelection, item, items, measureSizes, t])
+
+  const zoomOut = () => {
+    const index = VIEW_MODES.indexOf(viewMode)
+    if (index > 0) setViewMode(VIEW_MODES[index - 1]!)
+  }
+
+  const zoomIn = () => {
+    const index = VIEW_MODES.indexOf(viewMode)
+    if (index < VIEW_MODES.length - 1) setViewMode(VIEW_MODES[index + 1]!)
+  }
+
+  const zoomLabel =
+    viewMode === 'contain'
+      ? t('i693.splitview_zoom_contain')
+      : viewMode === 'fit'
+        ? t('i693.splitview_zoom_fit')
+        : t('i693.splitview_zoom_150')
 
   if (items.length === 0) return null
 
   const documentList = (
-    <ul className="max-h-64 space-y-0.5 overflow-y-auto px-2 py-2">
+    <ul className="max-h-40 space-y-0.5 overflow-y-auto px-2 py-2">
       {items.map((doc, index) => {
         const active = hasSelection && index === activeIndex
         return (
-          <li key={doc.key} className="flex items-center gap-1">
+          <li key={doc.key} className="flex w-full items-center gap-1">
             <button
               type="button"
               onClick={() => onActiveIndexChange(index)}
@@ -184,13 +408,14 @@ export function I693SplitView({
   )
 
   return (
-    <aside className="flex min-h-0 min-w-0 flex-col rounded-2xl border border-violet-200 bg-white shadow-sm lg:sticky lg:top-4 lg:max-h-[calc(100vh-10rem)] lg:self-start">
+    <aside className="flex h-full min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden rounded-2xl border border-violet-200 bg-white shadow-sm lg:max-h-[calc(100vh-10rem)]">
       <div className="flex items-start justify-between gap-3 border-b border-violet-100 px-4 py-3">
         <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-violet-900">
-            {hasSelection ? t('i693.splitview_title') : t('i693.splitview_pick_title')}
-          </h3>
-          <p className="mt-0.5 truncate text-xs text-slate-500" title={item?.name}>
+          <h3 className="text-sm font-semibold text-violet-900">{t('i693.splitview_title')}</h3>
+          <p
+            className="mt-0.5 truncate text-xs text-slate-500"
+            title={hasSelection ? item?.name : undefined}
+          >
             {hasSelection ? item?.name : t('i693.splitview_pick_hint')}
           </p>
         </div>
@@ -254,31 +479,77 @@ export function I693SplitView({
         </div>
       ) : null}
 
-      {!hasSelection ? (
-        <div className="min-h-[320px] flex-1 overflow-auto bg-slate-50">
-          <p className="border-b border-violet-50 px-4 py-2 text-xs text-slate-500">
-            {t('i693.splitview_pick_hint')}
-          </p>
-          {documentList}
-        </div>
-      ) : (
-        <>
-          {items.length > 1 ? (
-            <div className="border-b border-violet-50">{documentList}</div>
-          ) : null}
+      <div className="shrink-0 border-b border-violet-50 bg-slate-50">{documentList}</div>
 
-          <div className="relative min-h-[320px] flex-1 overflow-auto bg-slate-50 p-4">
+      {hasSelection ? (
+        <>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-violet-50 bg-white px-3 py-2">
+            <p className="text-[11px] text-slate-500">
+              {canPan ? t('i693.splitview_pan_hint') : t('i693.splitview_contain_hint')}
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={zoomOut}
+                disabled={viewMode === 'contain'}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                title={t('i693.splitview_zoom_out')}
+                aria-label={t('i693.splitview_zoom_out')}
+              >
+                −
+              </button>
+              <span className="min-w-[4.5rem] rounded-lg border border-slate-200 px-2 py-1 text-center text-xs font-medium text-slate-700">
+                {zoomLabel}
+              </span>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={viewMode === 'zoom150'}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                title={t('i693.splitview_zoom_in')}
+                aria-label={t('i693.splitview_zoom_in')}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          <div
+            ref={viewportRef}
+            className={`relative min-h-0 flex-1 touch-none overflow-hidden bg-slate-50 ${
+              canPan ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+            }`}
+            onPointerDown={handleViewportPointerDown}
+            onPointerMove={handleViewportPointerMove}
+            onPointerUp={endPan}
+            onPointerCancel={endPan}
+            onWheel={handleViewportWheel}
+          >
             {loading ? (
-              <div className="absolute inset-0 flex items-center justify-center bg-slate-50/90">
+              <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-50/90">
                 <LoadingSpinner message={t('i693.splitview_loading')} variant="light" />
               </div>
             ) : null}
             {error ? (
-              <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>
+              <p className="absolute left-4 right-4 top-4 z-10 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {error}
+              </p>
             ) : null}
-            <div ref={hostRef} className="space-y-4" />
+            <div
+              className="inline-block w-max max-w-none"
+              style={{
+                transform: `translate(${displayPan.w}px, ${displayPan.h}px) scale(${displayScale})`,
+                transformOrigin: '0 0',
+              }}
+            >
+              <div ref={hostRef} className="space-y-4" />
+            </div>
           </div>
         </>
+      ) : (
+        <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50 px-4 py-8 text-center text-xs text-slate-500">
+          {t('i693.splitview_pick_hint')}
+        </div>
       )}
     </aside>
   )

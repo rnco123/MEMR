@@ -21,6 +21,8 @@ import {
   validatePatientDocumentUpload,
 } from '@/lib/security/file-upload'
 
+import { resolvePatientI693ForEncounter } from '@/lib/i693/patient-form'
+
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -127,11 +129,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const patientId = Number(enc.patient_id)
     if (!Number.isFinite(patientId)) throw new ValidationError('Encounter patient not found')
 
-    const { data: existing } = await admin
-      .from('i693_submissions')
-      .select('form_data')
-      .eq('encounter_id', encounterId)
-      .maybeSingle()
+    const { submission: existing } = await resolvePatientI693ForEncounter(admin, patientId)
 
     const currentForm =
       parseCurrentForm(formData) ??

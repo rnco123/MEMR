@@ -5,6 +5,7 @@ import {
   ENCOUNTER_I693_ELIGIBILITY_SELECT,
   resolveEncounterPatientId,
 } from '@/lib/i693/immigration-eligibility'
+import { findPatientI693Submission } from '@/lib/i693/patient-form'
 import {
   IMMIGRATION_PROGRAM,
   type ImmigrationCaseRow,
@@ -80,7 +81,7 @@ export async function deriveCaseFlags(
 ): Promise<CaseFlags> {
   const { data: enc } = await admin
     .from('encounters')
-    .select('id, intake_id, appointment_id')
+    .select('id, patient_id, intake_id, appointment_id')
     .eq('id', encounterId)
     .maybeSingle()
 
@@ -106,11 +107,11 @@ export async function deriveCaseFlags(
 
   const labOrderDone = (labOrders ?? []).some((o) => String(o.status) === 'completed')
 
-  const { data: i693 } = await admin
-    .from('i693_submissions')
-    .select('form_data, status')
-    .eq('encounter_id', encounterId)
-    .maybeSingle()
+  const patientId = enc?.patient_id != null ? Number(enc.patient_id) : null
+  const i693 =
+    patientId != null && Number.isFinite(patientId)
+      ? await findPatientI693Submission(admin, patientId)
+      : null
 
   const form = mergeI693Form((i693?.form_data as Partial<I693FormData>) ?? undefined)
   const tbFilled =
@@ -495,20 +496,28 @@ async function listImmigrationCasesInner(
   const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
   const encounterIds = immigration.map((e) => Number((e as { id: number }).id)).filter((id) => id > 0)
 
+  const patientIds = [
+    ...new Set(
+      immigration
+        .map((e) => resolveEncounterPatientId(e as Parameters<typeof resolveEncounterPatientId>[0]))
+        .filter((id): id is number => id != null && id > 0)
+    ),
+  ]
+
   const [{ data: caseRows }, { data: submissions }] = await Promise.all([
     encounterIds.length > 0
       ? admin.from('immigration_cases').select('*').in('encounter_id', encounterIds)
       : Promise.resolve({ data: [] as ImmigrationCaseRow[] }),
-    encounterIds.length > 0
-      ? admin.from('i693_submissions').select('encounter_id, status').in('encounter_id', encounterIds)
-      : Promise.resolve({ data: [] as { encounter_id: number; status: string }[] }),
+    patientIds.length > 0
+      ? admin.from('i693_submissions').select('patient_id, status').in('patient_id', patientIds)
+      : Promise.resolve({ data: [] as { patient_id: number; status: string }[] }),
   ])
 
   const caseByEncounter = new Map(
     (caseRows ?? []).map((row) => [Number(row.encounter_id), row as ImmigrationCaseRow])
   )
-  const i693StatusByEncounter = new Map(
-    (submissions ?? []).map((row) => [Number(row.encounter_id), String(row.status)])
+  const i693StatusByPatient = new Map(
+    (submissions ?? []).map((row) => [Number(row.patient_id), String(row.status)])
   )
 
   const locationIds = new Set<number>()
@@ -618,7 +627,7 @@ async function listImmigrationCasesInner(
       location_id: effectiveLocationId,
       location_title: effectiveLocationId != null ? locationTitleById.get(effectiveLocationId) ?? null : null,
       case: caseRow,
-      i693_status: i693StatusByEncounter.get(encounterId) ?? null,
+      i693_status: i693StatusByPatient.get(patientId) ?? null,
     })
   }
 

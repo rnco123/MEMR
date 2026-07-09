@@ -139,6 +139,28 @@ html.maintenance-ticker-on {
   animation-delay: 4s;
 }
 
+@keyframes nav-badge-blink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+.nav-badge-blink {
+  animation: nav-badge-blink 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-badge-blink {
+    animation: none;
+  }
+}
+
 /* Native select lists match the light EMR UI (dashboard/admin). Use [color-scheme:dark] on specific controls in dark panels. */
 select {
   color-scheme: light;

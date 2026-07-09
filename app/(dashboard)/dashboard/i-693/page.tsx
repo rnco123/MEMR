@@ -97,7 +97,7 @@ function I693PageInner() {
 
   return (
     <div className="p-6 lg:p-8 min-h-[calc(100vh-5rem)]">
-      <div className="max-w-[1800px] mx-auto">
+      <div className="mx-auto w-full max-w-[1800px]">
         {tab !== 'pdf' ? (
           <div className="mb-6">
             <h1 className="text-2xl font-bold text-slate-900">{t('i693.page_title')}</h1>

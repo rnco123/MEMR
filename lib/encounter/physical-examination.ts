@@ -55,8 +55,44 @@ export type RosExamData = {
 }
 
 export function normalizeRosExamData(raw: unknown): RosExamData {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {}
-  return raw as RosExamData
+  if (raw == null) return {}
+  let value: unknown = raw
+  if (typeof raw === 'string') {
+    try {
+      value = JSON.parse(raw) as unknown
+    } catch {
+      return {}
+    }
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const record = value as Record<string, unknown>
+  if (record.ros_exam && typeof record.ros_exam === 'object' && !Array.isArray(record.ros_exam)) {
+    return normalizeRosExamData(record.ros_exam)
+  }
+  return {
+    ros:
+      record.ros && typeof record.ros === 'object' && !Array.isArray(record.ros)
+        ? (record.ros as RosData)
+        : undefined,
+    exam:
+      record.exam && typeof record.exam === 'object' && !Array.isArray(record.exam)
+        ? (record.exam as ExamData)
+        : undefined,
+    remarks: typeof record.remarks === 'string' ? record.remarks : record.remarks == null ? null : String(record.remarks),
+  }
+}
+
+export function coerceSystemStatus(value: unknown): SystemStatus | undefined {
+  if (value === 'N' || value === 'A' || value === 'NA') return value
+  return undefined
+}
+
+export function getRosSystemStatus(data: RosExamData | null | undefined, key: keyof RosData): SystemStatus | undefined {
+  return coerceSystemStatus(data?.ros?.[key])
+}
+
+export function getExamSystemStatus(data: RosExamData | null | undefined, key: keyof ExamData): SystemStatus | undefined {
+  return coerceSystemStatus(data?.exam?.[key])
 }
 
 export function formatRosExamForContext(data: RosExamData | null | undefined): string | null {

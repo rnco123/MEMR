@@ -16,6 +16,7 @@ import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
 import { syncI693PdfToPatientFileAfterSave } from '@/lib/i693/save-patient-document'
 import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
+import { resolvePatientI693ForEncounter } from '@/lib/i693/patient-form'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
@@ -84,21 +85,20 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     if (encErr) throw encErr
     if (!enc) throw new ValidationError('Encounter not found')
 
-    const { data: existing } = await admin
-      .from('i693_submissions')
-      .select('*')
-      .eq('encounter_id', encounterId)
-      .maybeSingle()
+    const patientId = await resolveEncounterPatientId(admin, enc)
+    if (patientId == null) {
+      throw new ValidationError('Patient is not linked to this encounter')
+    }
+
+    const { submission: existing, formOwnerEncounterId } = await resolvePatientI693ForEncounter(
+      admin,
+      patientId
+    )
 
     let formData = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
 
-    // Auto-prefill from the patient record only before the form has ever been
-    // saved. Re-running it on every load would re-fill any field the user
-    // intentionally cleared or changed, so once a submission exists the saved
-    // form_data is authoritative. (Explicit AI Fill / Location autofill still
-    // work — those are separate actions.)
-    const patientId = await resolveEncounterPatientId(admin, enc)
-    if (!existing && patientId != null) {
+    // Auto-prefill only before the patient has ever saved a form (one form per patient).
+    if (!existing) {
       const bundle = await buildI693ClinicalContext(admin, encounterId, patientId)
       formData = prefillFromPatient(bundle.patient, bundle.vitals, formData)
     }
@@ -115,6 +115,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     return NextResponse.json({
       encounter_id: encounterId,
       patient_id: enc.patient_id,
+      form_owner_encounter_id: formOwnerEncounterId,
       is_immigration: isImmigrationEncounterForI693(enc),
       submission: existing ?? null,
       form_data: formData,
@@ -157,18 +158,18 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       .maybeSingle()
     if (!enc) throw new ValidationError('Encounter not found')
 
-    const { data: existing } = await admin
-      .from('i693_submissions')
-      .select('id')
-      .eq('encounter_id', encounterId)
-      .maybeSingle()
+    const patientId = Number(enc.patient_id)
+    if (!Number.isFinite(patientId)) {
+      throw new ValidationError('Patient is not linked to this encounter')
+    }
 
+    const { submission: existing } = await resolvePatientI693ForEncounter(admin, patientId)
+
+    const now = new Date().toISOString()
     const row = {
-      encounter_id: encounterId,
-      patient_id: enc.patient_id,
       form_data: formData,
       status,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     }
 
     if (existing?.id) {
@@ -186,14 +187,23 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         role,
         source: role === 'admin' ? 'admin' : 'clinical',
       })
-      queueI693PatientFileSync(admin, encounterId, Number(enc.patient_id), formData, user.id)
+      const ownerEncounterId = existing.encounter_id
+      queueI693PatientFileSync(admin, ownerEncounterId, patientId, formData, user.id)
       return NextResponse.json({
         success: true,
         data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
       })
     }
 
-    const { data, error } = await admin.from('i693_submissions').insert(row).select().single()
+    const { data, error } = await admin
+      .from('i693_submissions')
+      .insert({
+        ...row,
+        encounter_id: encounterId,
+        patient_id: patientId,
+      })
+      .select()
+      .single()
     if (error) throw error
     await maybeSyncImmigrationCase(admin, encounterId)
     await logI693Audit('saved', encounterId, {
@@ -202,7 +212,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       role,
       source: role === 'admin' ? 'admin' : 'clinical',
     })
-    queueI693PatientFileSync(admin, encounterId, Number(enc.patient_id), formData, user.id)
+    queueI693PatientFileSync(admin, encounterId, patientId, formData, user.id)
     return NextResponse.json({
       success: true,
       data,

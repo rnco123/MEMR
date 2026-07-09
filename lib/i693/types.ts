@@ -140,6 +140,8 @@ export type I693FormData = {
     syphilis_test_type: string
     syphilis_result: string
     syphilis_date: string
+    nonreactive_date_reported: string
+    screening_titer: string
     gonorrhea_result: string
     gonorrhea_date: string
     other_sti: string
@@ -307,6 +309,8 @@ export const EMPTY_I693_FORM: I693FormData = {
     syphilis_test_type: '',
     syphilis_result: '',
     syphilis_date: '',
+    nonreactive_date_reported: '',
+    screening_titer: '',
     gonorrhea_result: '',
     gonorrhea_date: '',
     other_sti: '',

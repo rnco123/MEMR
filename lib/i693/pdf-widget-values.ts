@@ -1,7 +1,3 @@
-/**
- * Passthrough storage for every AcroForm widget value (full PDF field name → string).
- * Keeps PDF-editor input for fields without a semantic mapping (e.g. TB sputum tables).
- */
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import type { I693FormData } from '@/lib/i693/types'
 import {

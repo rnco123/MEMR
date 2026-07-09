@@ -132,6 +132,16 @@ const adminNavItems = [
       </svg>
     ),
   },
+  {
+    nameKey: 'admin.nav.release_logs',
+    href: '/admin/release-logs',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3a1 1 0 112 0v1.06a8.007 8.007 0 016.94 6.94H21a1 1 0 110 2h-1.06a8.007 8.007 0 01-6.94 6.94V21a1 1 0 11-2 0v-1.06a8.007 8.007 0 01-6.94-6.94H3a1 1 0 110-2h1.06A8.007 8.007 0 0111 4.06V3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 2" />
+      </svg>
+    ),
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -144,6 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [hasPendingPrescriptions, setHasPendingPrescriptions] = useState(false)
+  const [hasNewReleaseLogs, setHasNewReleaseLogs] = useState(false)
 
   const displayName =
     profile?.display_name ??
@@ -160,25 +171,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       adminNavItems.map((item) => ({
         ...item,
         name: t(item.nameKey),
-        badgeDot: item.href === '/admin/prescriptions' && hasPendingPrescriptions,
+        badgeDot:
+          (item.href === '/admin/prescriptions' && hasPendingPrescriptions) ||
+          (item.href === '/admin/release-logs' && hasNewReleaseLogs),
         isActive: (pathname: string) =>
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t, hasPendingPrescriptions]
+    [t, hasPendingPrescriptions, hasNewReleaseLogs]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
-    const profileNavItem: SidebarNavItem = {
-      name: t('nav.profile'),
-      href: '/admin/profile',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-      isActive: (p) => p === '/admin/profile',
-    }
     return [
       {
         title: t('admin.nav.section.clinical'),
@@ -188,15 +191,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       },
       {
         title: t('admin.nav.section.administration'),
-        items: [
-          ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
-          ),
-          profileNavItem,
-        ],
+        items: adminNav.filter((item) =>
+          ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
+        ),
       },
     ]
   }, [adminNav, t])
+
+  const sidebarBottomItems: SidebarNavItem[] = useMemo(() => {
+    const releaseLogs = adminNav.find((item) => item.href === '/admin/release-logs')
+    return releaseLogs ? [releaseLogs] : []
+  }, [adminNav])
 
   useEffect(() => {
     if (loading) return
@@ -232,6 +237,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     void checkPending()
     const interval = setInterval(() => void checkPending(), 60000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [loading, user, role, pathname])
+
+  useEffect(() => {
+    if (loading || !user || role !== 'admin') return
+    // The release-logs page itself marks activity as seen on mount; clear the dot
+    // immediately here too so it doesn't flash on the next poll tick.
+    if (pathname === '/admin/release-logs') {
+      setHasNewReleaseLogs(false)
+      return
+    }
+    let cancelled = false
+    const checkNewReleaseLogs = async () => {
+      try {
+        const res = await fetch('/api/admin/release-logs/seen', { credentials: 'include' })
+        if (!res.ok) return
+        const json = await res.json()
+        if (!cancelled) setHasNewReleaseLogs(json.hasUnseen === true)
+      } catch {
+        /* ignore */
+      }
+    }
+    void checkNewReleaseLogs()
+    const interval = setInterval(() => void checkNewReleaseLogs(), 60000)
     return () => {
       cancelled = true
       clearInterval(interval)
@@ -340,6 +372,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-3">
         <AppSidebar
           sections={adminSidebarSections}
+          bottomItems={sidebarBottomItems}
           pathname={pathname}
           theme="purple"
           storageKey="memr-sidebar-admin"

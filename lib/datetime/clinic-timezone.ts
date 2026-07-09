@@ -106,6 +106,19 @@ export function getClinicTodayDateString(now: Date = new Date()): string {
   }).format(now)
 }
 
+/** YYYY-MM-DD for an arbitrary UTC timestamp, in clinic (Central) calendar time. Useful for day-grouping lists. */
+export function getClinicDateKey(value: string | Date | null | undefined): string {
+  if (value == null || value === '') return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 /** Offset in minutes from UTC for clinic local time at a given instant (positive = ahead of UTC). */
 function getClinicOffsetMinutesAt(instant: Date): number {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -169,6 +182,33 @@ export function getClinicPrescriptionDateRangeUtc(
   const start = clinicMidnightUtc(monthStartStr)
   const endExclusive = clinicMidnightUtc(nextMonthStartStr)
   return { startIso: start.toISOString(), endExclusiveIso: endExclusive.toISOString() }
+}
+
+/** Day of week in clinic time: 0 = Sunday … 6 = Saturday. */
+function getClinicWeekdayIndex(now: Date): number {
+  const label = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIME_ZONE,
+    weekday: 'short',
+  }).format(now)
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return map[label] ?? 0
+}
+
+/** Inclusive start (Sunday 00:00 CT) and exclusive end for the current clinic calendar week. */
+export function getClinicWeekRangeUtc(now: Date = new Date()): {
+  startIso: string
+  endExclusiveIso: string
+  weekStartDate: string
+} {
+  const todayStr = getClinicTodayDateString(now)
+  const weekStartDate = addDaysToClinicDateString(todayStr, -getClinicWeekdayIndex(now))
+  const start = clinicMidnightUtc(weekStartDate)
+  const endExclusive = clinicMidnightUtc(addDaysToClinicDateString(weekStartDate, 7))
+  return {
+    startIso: start.toISOString(),
+    endExclusiveIso: endExclusive.toISOString(),
+    weekStartDate,
+  }
 }
 
 function centralTimeOnly(date: Date, locale: string): string {
