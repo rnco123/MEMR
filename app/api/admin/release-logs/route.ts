@@ -21,13 +21,15 @@ export async function GET(request: Request) {
     const admin = createAdminClient()
     const status = parseStatus(new URL(request.url).searchParams.get('status'))
 
-    let query = admin
-      .from('release_logs')
-      .select(RELEASE_LOG_SELECT)
-      .order('sort_order', { ascending: true })
-      .order('created_at', { ascending: false })
+    let query = admin.from('release_logs').select(RELEASE_LOG_SELECT)
 
     if (status) query = query.eq('status', status)
+
+    if (status === 'released') {
+      query = query.order('released_at', { ascending: false, nullsFirst: false })
+    } else {
+      query = query.order('sort_order', { ascending: true }).order('created_at', { ascending: false })
+    }
 
     const { data, error } = await query
     if (error) throw error

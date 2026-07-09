@@ -81,6 +81,11 @@ type NavRowProps = {
   onNavigate?: () => void
 }
 
+const NAV_BADGE_DOT_CLASS =
+  'h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400 nav-badge-blink'
+const NAV_BADGE_DOT_COLLAPSED_CLASS =
+  'absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white nav-badge-blink'
+
 function NavRow({ item, isActive, collapsed, theme, onNavigate }: NavRowProps) {
   const [hovered, setHovered] = useState(false)
   const styles = themeStyles[theme]
@@ -96,10 +101,7 @@ function NavRow({ item, isActive, collapsed, theme, onNavigate }: NavRowProps) {
     >
       {item.icon}
       {collapsed && item.badgeDot && (
-        <span
-          className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-amber-400 ring-2 ring-white"
-          aria-hidden
-        />
+        <span className={NAV_BADGE_DOT_COLLAPSED_CLASS} aria-hidden />
       )}
       {collapsed && isActive && !item.badgeDot && (
         <span
@@ -113,9 +115,7 @@ function NavRow({ item, isActive, collapsed, theme, onNavigate }: NavRowProps) {
   const label = !collapsed ? (
     <span className="flex min-w-0 flex-1 items-center gap-2">
       <span className="truncate">{item.name}</span>
-      {item.badgeDot && (
-        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400" aria-hidden />
-      )}
+      {item.badgeDot && <span className={NAV_BADGE_DOT_CLASS} aria-hidden />}
     </span>
   ) : null
 

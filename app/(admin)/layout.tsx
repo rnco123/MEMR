@@ -182,16 +182,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
-    const profileNavItem: SidebarNavItem = {
-      name: t('nav.profile'),
-      href: '/admin/profile',
-      icon: (
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-      isActive: (p) => p === '/admin/profile',
-    }
     return [
       {
         title: t('admin.nav.section.clinical'),
@@ -201,15 +191,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       },
       {
         title: t('admin.nav.section.administration'),
-        items: [
-          ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support', '/admin/release-logs'].includes(item.href)
-          ),
-          profileNavItem,
-        ],
+        items: adminNav.filter((item) =>
+          ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
+        ),
       },
     ]
   }, [adminNav, t])
+
+  const sidebarBottomItems: SidebarNavItem[] = useMemo(() => {
+    const releaseLogs = adminNav.find((item) => item.href === '/admin/release-logs')
+    return releaseLogs ? [releaseLogs] : []
+  }, [adminNav])
 
   useEffect(() => {
     if (loading) return
@@ -380,6 +372,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-3">
         <AppSidebar
           sections={adminSidebarSections}
+          bottomItems={sidebarBottomItems}
           pathname={pathname}
           theme="purple"
           storageKey="memr-sidebar-admin"

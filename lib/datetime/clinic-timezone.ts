@@ -184,6 +184,33 @@ export function getClinicPrescriptionDateRangeUtc(
   return { startIso: start.toISOString(), endExclusiveIso: endExclusive.toISOString() }
 }
 
+/** Day of week in clinic time: 0 = Sunday … 6 = Saturday. */
+function getClinicWeekdayIndex(now: Date): number {
+  const label = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIME_ZONE,
+    weekday: 'short',
+  }).format(now)
+  const map: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+  return map[label] ?? 0
+}
+
+/** Inclusive start (Sunday 00:00 CT) and exclusive end for the current clinic calendar week. */
+export function getClinicWeekRangeUtc(now: Date = new Date()): {
+  startIso: string
+  endExclusiveIso: string
+  weekStartDate: string
+} {
+  const todayStr = getClinicTodayDateString(now)
+  const weekStartDate = addDaysToClinicDateString(todayStr, -getClinicWeekdayIndex(now))
+  const start = clinicMidnightUtc(weekStartDate)
+  const endExclusive = clinicMidnightUtc(addDaysToClinicDateString(weekStartDate, 7))
+  return {
+    startIso: start.toISOString(),
+    endExclusiveIso: endExclusive.toISOString(),
+    weekStartDate,
+  }
+}
+
 function centralTimeOnly(date: Date, locale: string): string {
   return new Intl.DateTimeFormat(locale, {
     timeZone: CLINIC_TIME_ZONE,

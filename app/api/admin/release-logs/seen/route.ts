@@ -7,10 +7,12 @@ import { fetchProfileFields } from '@/lib/fetch-user-role'
 
 export const dynamic = 'force-dynamic'
 
-/** Whether any release log entry has changed since the given timestamp (or ever, if null). */
+/** Whether unseen activity exists since the given timestamp (or ever, if null). */
 async function hasActivitySince(admin: ReturnType<typeof createAdminClient>, sinceIso: string | null) {
   let query = admin.from('release_logs').select('id', { count: 'exact', head: true })
+
   if (sinceIso) query = query.gt('updated_at', sinceIso)
+
   const { count, error } = await query
   if (error) throw error
   return (count ?? 0) > 0
