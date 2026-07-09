@@ -4,9 +4,14 @@ export type PharmacyRecord = {
   address: string | null
   phone: string | null
   email: string | null
+  /** Approximate straight-line miles from the patient's ZIP; null when not computable. */
+  distanceMiles?: number | null
 }
 
-export function normalizePharmacyRow(row: Record<string, unknown>): PharmacyRecord {
+export function normalizePharmacyRow(
+  row: Record<string, unknown>,
+  distanceMiles: number | null = null
+): PharmacyRecord {
   const phone = (row.phone ?? row.phone_number ?? null) as string | null
   const fallbackAddress = [row.city, row.state, row.zip_code].filter(Boolean).join(', ')
   const address = formatPharmacyDisplayAddress(row) ?? (fallbackAddress || null)
@@ -16,6 +21,7 @@ export function normalizePharmacyRow(row: Record<string, unknown>): PharmacyReco
     address,
     phone,
     email: (row.email as string | null) ?? null,
+    distanceMiles,
   }
 }
 

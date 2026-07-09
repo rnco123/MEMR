@@ -59,6 +59,8 @@ function PharmacyPicker({
   noMatchesLabel,
   searchingLabel,
   formatPharmacyNumber,
+  formatDistance,
+  encounterId,
 }: {
   pharmacies: PharmacyRecord[]
   value: string
@@ -69,6 +71,8 @@ function PharmacyPicker({
   noMatchesLabel: string
   searchingLabel: string
   formatPharmacyNumber: (id: number) => string
+  formatDistance: (miles: number) => string
+  encounterId: number
 }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -99,10 +103,13 @@ function PharmacyPicker({
     const controller = new AbortController()
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/pharmacies/registry?search=${encodeURIComponent(trimmed)}`, {
-          credentials: 'include',
-          signal: controller.signal,
-        })
+        const res = await fetch(
+          `/api/pharmacies/registry?search=${encodeURIComponent(trimmed)}&encounter_id=${encounterId}`,
+          {
+            credentials: 'include',
+            signal: controller.signal,
+          }
+        )
         const json = await res.json().catch(() => ({}))
         setRemote(res.ok ? ((json.data ?? []) as PharmacyRecord[]) : [])
       } catch (err) {
@@ -115,7 +122,7 @@ function PharmacyPicker({
       clearTimeout(timer)
       controller.abort()
     }
-  }, [trimmed, useServer])
+  }, [trimmed, useServer, encounterId])
 
   const filtered = useMemo(() => {
     if (!trimmed) return pharmacies
@@ -199,8 +206,15 @@ function PharmacyPicker({
                       value === String(p.id) ? 'bg-violet-50 text-violet-800 font-medium' : 'text-slate-800'
                     }`}
                   >
-                    <span className="block font-medium truncate">
-                      {pharmacyLabel(p, formatPharmacyNumber)}
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {pharmacyLabel(p, formatPharmacyNumber)}
+                      </span>
+                      {p.distanceMiles != null && (
+                        <span className="shrink-0 rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700">
+                          {formatDistance(p.distanceMiles)}
+                        </span>
+                      )}
                     </span>
                     {p.address && <span className="block text-xs text-slate-500 truncate">{p.address}</span>}
                   </button>
@@ -288,6 +302,9 @@ export function EncounterPharmacyEditor({
 
   const formatPharmacyNumber = (id: number) =>
     t('encounter_modal.pharmacy_numbered', { id })
+
+  const formatDistance = (miles: number) =>
+    t('encounter_modal.rx_pharmacy_distance', { miles: Math.max(1, Math.round(miles)) })
 
   const assignedLabel = assigned
     ? pharmacyLabel(assigned, (id) => t('encounter_modal.pharmacy_numbered', { id }))
@@ -498,6 +515,8 @@ export function EncounterPharmacyEditor({
               noMatchesLabel={t('encounter_modal.rx_pharmacy_picker_no_matches')}
               searchingLabel={t('common.searching')}
               formatPharmacyNumber={formatPharmacyNumber}
+              formatDistance={formatDistance}
+              encounterId={encounterId}
             />
             {selected && (
               <PharmacyDetailsPreview
