@@ -132,6 +132,16 @@ const adminNavItems = [
       </svg>
     ),
   },
+  {
+    nameKey: 'admin.nav.release_logs',
+    href: '/admin/release-logs',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3a1 1 0 112 0v1.06a8.007 8.007 0 016.94 6.94H21a1 1 0 110 2h-1.06a8.007 8.007 0 01-6.94 6.94V21a1 1 0 11-2 0v-1.06a8.007 8.007 0 01-6.94-6.94H3a1 1 0 110-2h1.06A8.007 8.007 0 0111 4.06V3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 2" />
+      </svg>
+    ),
+  },
 ]
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -144,6 +154,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isChatOpen, setIsChatOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [hasPendingPrescriptions, setHasPendingPrescriptions] = useState(false)
+  const [hasNewReleaseLogs, setHasNewReleaseLogs] = useState(false)
 
   const displayName =
     profile?.display_name ??
@@ -160,12 +171,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       adminNavItems.map((item) => ({
         ...item,
         name: t(item.nameKey),
-        badgeDot: item.href === '/admin/prescriptions' && hasPendingPrescriptions,
+        badgeDot:
+          (item.href === '/admin/prescriptions' && hasPendingPrescriptions) ||
+          (item.href === '/admin/release-logs' && hasNewReleaseLogs),
         isActive: (pathname: string) =>
           pathname === item.href ||
           (item.href === '/admin/patients-history' && pathname.startsWith('/admin/patient-file/')),
       })),
-    [t, hasPendingPrescriptions]
+    [t, hasPendingPrescriptions, hasNewReleaseLogs]
   )
 
   const adminSidebarSections: SidebarNavSection[] = useMemo(() => {
@@ -190,7 +203,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         title: t('admin.nav.section.administration'),
         items: [
           ...adminNav.filter((item) =>
-            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support'].includes(item.href)
+            ['/admin/users', '/admin/audit', '/admin/locations', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support', '/admin/release-logs'].includes(item.href)
           ),
           profileNavItem,
         ],
@@ -232,6 +245,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
     void checkPending()
     const interval = setInterval(() => void checkPending(), 60000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [loading, user, role, pathname])
+
+  useEffect(() => {
+    if (loading || !user || role !== 'admin') return
+    // The release-logs page itself marks activity as seen on mount; clear the dot
+    // immediately here too so it doesn't flash on the next poll tick.
+    if (pathname === '/admin/release-logs') {
+      setHasNewReleaseLogs(false)
+      return
+    }
+    let cancelled = false
+    const checkNewReleaseLogs = async () => {
+      try {
+        const res = await fetch('/api/admin/release-logs/seen', { credentials: 'include' })
+        if (!res.ok) return
+        const json = await res.json()
+        if (!cancelled) setHasNewReleaseLogs(json.hasUnseen === true)
+      } catch {
+        /* ignore */
+      }
+    }
+    void checkNewReleaseLogs()
+    const interval = setInterval(() => void checkNewReleaseLogs(), 60000)
     return () => {
       cancelled = true
       clearInterval(interval)

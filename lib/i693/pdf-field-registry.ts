@@ -152,18 +152,6 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "kind": "text"
   },
   {
-    "key": "applicant_contact.id_document_type",
-    "pdfFieldName": "form1[0].#subform[2].Pt5Line1_ApplicantFormOfID[0]",
-    "page": 2,
-    "kind": "text"
-  },
-  {
-    "key": "applicant_contact.id_document_number",
-    "pdfFieldName": "form1[0].#subform[2].Pt5Line2_IDNumber[0]",
-    "page": 2,
-    "kind": "text"
-  },
-  {
     "key": "interpreter.interpreter_email",
     "pdfFieldName": "form1[0].#subform[1].Pt3Line6_EmailAddress[0]",
     "page": 1,
@@ -202,6 +190,18 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "page": 1,
     "kind": "text",
     "slot": "phone_day"
+  },
+  {
+    "key": "applicant_contact.id_document_number",
+    "pdfFieldName": "form1[0].#subform[2].Pt5Line2_IDNumber[0]",
+    "page": 2,
+    "kind": "text"
+  },
+  {
+    "key": "applicant_contact.id_document_type",
+    "pdfFieldName": "form1[0].#subform[2].Pt5Line1_ApplicantFormOfID[0]",
+    "page": 2,
+    "kind": "text"
   },
   {
     "key": "interpreter.interpreter_signature_date",
@@ -280,27 +280,6 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "pdfFieldName": "form1[0].#subform[3].Pt7Line4_CityOrTown[0]",
     "page": 3,
     "kind": "text"
-  },
-  {
-    "key": "civil_surgeon.date_signed",
-    "pdfFieldName": "form1[0].#subform[3].Pt6Line3_DateofExam1[0]",
-    "page": 3,
-    "kind": "text",
-    "format": "date"
-  },
-  {
-    "key": "civil_surgeon.date_signed",
-    "pdfFieldName": "form1[0].#subform[3].Pt6Line3_DateofExam3[0]",
-    "page": 3,
-    "kind": "text",
-    "format": "date"
-  },
-  {
-    "key": "civil_surgeon.date_signed",
-    "pdfFieldName": "form1[0].#subform[3].Pt6Line3_DateofExam2[0]",
-    "page": 3,
-    "kind": "text",
-    "format": "date"
   },
   {
     "key": "civil_surgeon.date_signed",
@@ -400,12 +379,6 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "slot": "name_family"
   },
   {
-    "key": "civil_surgeon.surgeon_name",
-    "pdfFieldName": "form1[0].#subform[3].Pt7Line1_MiddleName[0]",
-    "page": 3,
-    "kind": "text"
-  },
-  {
     "key": "civil_surgeon.zip",
     "pdfFieldName": "form1[0].#subform[3].Pt7Line3_ZipCode[0]",
     "page": 3,
@@ -418,23 +391,24 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "kind": "text"
   },
   {
-    "key": "civil_surgeon.date_signed",
-    "pdfFieldName": "form1[0].#subform[4].Pt7Line8_DateofSignature[0]",
-    "page": 4,
+    "key": "syphilis_sti.nonreactive_date_reported",
+    "pdfFieldName": "form1[0].#subform[6].Pt8Line1B1c_DateNontreponemalTest[0]",
+    "page": 6,
     "kind": "text",
     "format": "date"
   },
   {
-    "key": "tb_screening.quantiferon_t_spot",
-    "pdfFieldName": "form1[0].#subform[5].Pt8Line1A1_TSDate[0]",
-    "page": 5,
+    "key": "syphilis_sti.screening_titer",
+    "pdfFieldName": "form1[0].#subform[6].Pt7Line1B1c_TiterOne[0]",
+    "page": 6,
     "kind": "text"
   },
   {
-    "key": "tb_screening.quantiferon_t_spot",
-    "pdfFieldName": "form1[0].#subform[5].Pt8Line1A1_QFDate[0]",
-    "page": 5,
-    "kind": "text"
+    "key": "syphilis_sti.syphilis_date",
+    "pdfFieldName": "form1[0].#subform[6].Pt8Line1B1b_DateNontrepoemaltest[0]",
+    "page": 6,
+    "kind": "text",
+    "format": "date"
   },
   {
     "key": "syphilis_sti.syphilis_result",
@@ -449,6 +423,12 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "page": 6,
     "kind": "mark",
     "when": "a"
+  },
+  {
+    "key": "syphilis_sti.syphilis_test_type",
+    "pdfFieldName": "form1[0].#subform[6].Pt8Line1B1a_name[0]",
+    "page": 6,
+    "kind": "text"
   },
   {
     "key": "tb_screening.classification",

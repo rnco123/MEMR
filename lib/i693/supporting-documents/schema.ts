@@ -115,6 +115,8 @@ const syphilisStiSchema = z.object({
   syphilis_test_type: stringField,
   syphilis_result: stringField,
   syphilis_date: stringField,
+  nonreactive_date_reported: stringField,
+  screening_titer: stringField,
   gonorrhea_result: stringField,
   gonorrhea_date: stringField,
   other_sti: stringField,

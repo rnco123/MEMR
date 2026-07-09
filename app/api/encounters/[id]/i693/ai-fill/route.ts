@@ -12,6 +12,7 @@ import { syncImmigrationCase } from '@/lib/immigration/case-sync'
 import { isImmigrationEncounter } from '@/lib/i693/types'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
+import { resolvePatientI693ForEncounter } from '@/lib/i693/patient-form'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
@@ -58,11 +59,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       )
     }
 
-    const { data: existing } = await admin
-      .from('i693_submissions')
-      .select('id, form_data')
-      .eq('encounter_id', encounterId)
-      .maybeSingle()
+    const { submission: existing } = await resolvePatientI693ForEncounter(admin, patientId)
 
     let base = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
     base = prefillFromPatient(bundle.patient, bundle.vitals, base)
@@ -71,8 +68,6 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const now = new Date().toISOString()
 
     const row = {
-      encounter_id: encounterId,
-      patient_id: patientId,
       form_data: form,
       status: 'ai_filled',
       ai_filled_at: now,
@@ -108,7 +103,15 @@ export async function POST(_request: Request, { params }: { params: { id: string
       })
     }
 
-    const { data, error } = await admin.from('i693_submissions').insert(row).select().single()
+    const { data, error } = await admin
+      .from('i693_submissions')
+      .insert({
+        ...row,
+        encounter_id: encounterId,
+        patient_id: patientId,
+      })
+      .select()
+      .single()
     if (error) throw error
     const form_data = mergeI693Form(data.form_data as Partial<I693FormData>)
     const { data: encRow } = await admin.from('encounters').select('consent_ack').eq('id', encounterId).maybeSingle()

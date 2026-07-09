@@ -106,6 +106,19 @@ export function getClinicTodayDateString(now: Date = new Date()): string {
   }).format(now)
 }
 
+/** YYYY-MM-DD for an arbitrary UTC timestamp, in clinic (Central) calendar time. Useful for day-grouping lists. */
+export function getClinicDateKey(value: string | Date | null | undefined): string {
+  if (value == null || value === '') return ''
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: CLINIC_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 /** Offset in minutes from UTC for clinic local time at a given instant (positive = ahead of UTC). */
 function getClinicOffsetMinutesAt(instant: Date): number {
   const parts = new Intl.DateTimeFormat('en-US', {

@@ -21,6 +21,8 @@ import {
   enforceSingleSelectMarkGroup,
   extractI693FormFromPdfDocumentRespectingUserEdits,
   syncApplicantHeaderMirrorDom,
+  unlockForceEditablePdfWidgets,
+  patchForceEditableAnnotations,
 } from '@/lib/i693/pdfjs-form-bridge'
 import { formatI693WidgetValue } from '@/lib/i693/pdf-field-formatters'
 import { widgetFieldIndex, widgetShortName } from '@/lib/i693/pdf-widget-map'
@@ -35,6 +37,8 @@ import { printPdfBlob } from '@/lib/patient-documents/print-document'
 import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import type { I693LocationAutofillMeta } from '@/lib/i693/location-autofill'
 import { useT } from '@/lib/i18n'
+import { ImmigrationWorkflowStatusBadge } from '@/components/ImmigrationWorkflowStatusBadge'
+import { useImmigrationWorkflowCase } from '@/lib/hooks/use-immigration-workflow-case'
 
 const PDF_URL = '/forms/i-693-template.pdf'
 const DEFAULT_SCALE = 1.2
@@ -119,6 +123,7 @@ function fitPdfFormLayerFonts(root: HTMLElement): void {
 
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const { t } = useT()
+  const { caseRow: workflowCase, loading: workflowCaseLoading } = useImmigrationWorkflowCase(encounterId)
   const [loading, setLoading] = useState(true)
   const [pdfReady, setPdfReady] = useState(false)
   const [printing, setPrinting] = useState(false)
@@ -392,6 +397,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         }).promise
 
         const annotationsList = await page.getAnnotations()
+        patchForceEditableAnnotations(annotationsList)
         const layer = new pdfjs.AnnotationLayer({
           div: formLayerDiv,
           page,
@@ -411,6 +417,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
           annotationStorage: pdf.annotationStorage,
         })
         fitPdfFormLayerFonts(formLayerDiv)
+        unlockForceEditablePdfWidgets(formLayerDiv)
         if (pageNum > 1) {
           syncApplicantHeaderMirrorDom(formLayerDiv, data, { continuationPage: true })
           fitPdfFormLayerFonts(formLayerDiv)
@@ -666,34 +673,37 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   }
 
   return (
-    <div className="space-y-3 text-slate-900">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">{t('i693.immigration_heading')}</h1>
-        <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-          {displayPatientName || patientId != null ? (
+    <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden text-slate-900">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl font-bold text-slate-900">{t('i693.immigration_heading')}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {displayPatientName || patientId != null ? (
+              <span>
+                <span className="text-slate-500">{t('i693.selected_patient')}:</span>{' '}
+                {displayPatientName ? (
+                  <span className="font-medium text-slate-900">{displayPatientName}</span>
+                ) : null}
+                {patientId != null ? (
+                  <span className="ml-1.5 text-xs text-slate-400">
+                    {t('i693.patient_id')} #{patientId}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
             <span>
-              <span className="text-slate-500">{t('i693.selected_patient')}:</span>{' '}
-              {displayPatientName ? (
-                <span className="font-medium text-slate-900">{displayPatientName}</span>
-              ) : null}
-              {patientId != null ? (
-                <span className="ml-1.5 text-xs text-slate-400">
-                  {t('i693.patient_id')} #{patientId}
-                </span>
-              ) : null}
+              <span className="text-slate-500">{t('i693.encounter_label')}:</span>{' '}
+              <span className="font-medium text-slate-900">#{encounterId}</span>
             </span>
-          ) : null}
-          <span>
-            <span className="text-slate-500">{t('i693.encounter_label')}:</span>{' '}
-            <span className="font-medium text-slate-900">#{encounterId}</span>
-          </span>
-          {clinicLocationLabel ? (
-            <span>
-              <span className="text-slate-500">{t('i693.clinic_location')}:</span>{' '}
-              <span className="font-medium text-slate-900">{clinicLocationLabel}</span>
-            </span>
-          ) : null}
+            {clinicLocationLabel ? (
+              <span>
+                <span className="text-slate-500">{t('i693.clinic_location')}:</span>{' '}
+                <span className="font-medium text-slate-900">{clinicLocationLabel}</span>
+              </span>
+            ) : null}
+          </div>
         </div>
+        <ImmigrationWorkflowStatusBadge caseRow={workflowCase} loading={workflowCaseLoading} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
@@ -806,8 +816,10 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       </div>
 
       <div
-        className={`grid gap-4 ${
-          splitViewOpen ? 'lg:grid-cols-[minmax(0,1fr)_minmax(320px,44%)]' : ''
+        className={`w-full min-w-0 max-w-full overflow-hidden ${
+          splitViewOpen
+            ? 'grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,36%)]'
+            : ''
         }`}
       >
         <div className="min-w-0 space-y-3">
@@ -824,14 +836,14 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
             ) : null}
             <div
               ref={editorHostRef}
-              className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-10rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90"
+              className="i693-pdfjs-editor min-h-[480px] p-4 md:p-6 overflow-auto max-h-[calc(100vh-10rem)] [&_.annotationLayer]:pointer-events-auto [&_.annotationLayer_input]:text-slate-900 [&_.annotationLayer_input]:bg-white/90 [&_.annotationLayer_input[data-i693-force-editable=true]]:cursor-text"
             />
             {charCellPortals}
           </div>
         </div>
 
         {splitViewOpen && splitViewItems.length > 0 ? (
-          <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-col overflow-hidden">
             <I693SplitView
               items={splitViewItems}
               activeIndex={splitDocIndex}

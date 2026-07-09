@@ -13,64 +13,7 @@ import {
   type RosExamData,
   type SystemStatus,
 } from '@/lib/encounter/physical-examination'
-
-// ── Row definitions ───────────────────────────────────────────────────────────
-
-type RosRowDef = {
-  key: keyof Pick<RosData, 'cons'|'skin'|'eyes'|'ears'|'nose'|'throat'|'cv_resp'|'gi'|'gu'|'gyn'|'male'|'ms'|'neu'|'psych'|'hemat_lymph'>
-  label: string
-  notes: string
-  extras?: Array<{ key: keyof RosData; placeholder: string }>
-}
-
-type ExamRowDef = {
-  key: keyof Pick<ExamData, 'general'|'skin'|'head'|'eyes'|'ears'|'nose'|'throat'|'neck'|'cv'|'respir'|'abdomen'|'gu'|'rectal'|'ms'|'neuro'>
-  label: string
-  notes: string
-  extras?: Array<{ key: keyof ExamData; placeholder: string }>
-}
-
-const ROS_ROWS: RosRowDef[] = [
-  { key: 'cons',       label: 'Cons:',       notes: 'Chili, Muscle Aches, Poor Appetite/sleep, Weight Change, Weight Loss' },
-  { key: 'skin',       label: 'Skin:',       notes: 'Rash, Lesions, Pallor, Hair loss, Jaundice, Itching' },
-  { key: 'eyes',       label: 'Eyes:',       notes: 'Redness, Itchiness, Discharge, Visual changes' },
-  { key: 'ears',       label: 'Ears:',       notes: 'Pain, Discharge, Pressure, Difficulty hearing' },
-  { key: 'nose',       label: 'Nose:',       notes: 'Nose bleeds, Congestion, Sinus-Pressure, Postnasal Drip' },
-  { key: 'throat',     label: 'Throat:',     notes: 'Soreness, Redness, Difficulty speaking/swallowing' },
-  { key: 'cv_resp',    label: 'CV/Resp:',    notes: 'Cough, Wheezing, SOB, Orthopnea, Hemoptysis, CP, DOE, Palpitations, Edema LE\'s, Sputum' },
-  { key: 'gi',         label: 'GI:',         notes: 'Pain: RUQ-LUQ-RLQ-LLQ, Nausea, Vomiting, Diarrhea, Constipation, Hemorrhoids' },
-  { key: 'gu',         label: 'GU:',         notes: 'Frequency, Urgency, Hesitancy, Nocturia, Hematuria, Dysuria' },
-  { key: 'gyn',        label: 'GYN:',        notes: 'Dyspareunia, discharge, dysuria, bleeding, Irregular menses, missed menses, pregnant',
-    extras: [{ key: 'gyn_lmp', placeholder: 'LMP date' }] },
-  { key: 'male',       label: 'Male:',       notes: 'Penile Discharge, Erectile Dysfunction' },
-  { key: 'ms',         label: 'MS:',         notes: 'Joint pain, swelling, Stiffness, Muscle Pain' },
-  { key: 'neu',        label: 'Neu:',        notes: 'Headache, Dizziness, Weakness, Difficulty Walking',
-    extras: [
-      { key: 'neu_numbness', placeholder: 'Numbness' },
-      { key: 'neu_tingling', placeholder: 'Tingling' },
-    ] },
-  { key: 'psych',      label: 'Psych:',      notes: 'Depressed Mood, Anxious Mood' },
-  { key: 'hemat_lymph', label: 'Hemat/Lymph:', notes: 'Bruising, Fatigue, Anemia, Heat/Cold intolerance' },
-]
-
-const EXAM_ROWS: ExamRowDef[] = [
-  { key: 'general',  label: 'General:',        notes: 'Lethargic, Cachectic, Obese, Uncomfortable, Pallor, Acute Distress, Appears Stated Age' },
-  { key: 'skin',     label: 'Skin:',           notes: 'Warm, Dry, skin tone, Rash, Bruises, Lesions, Nails' },
-  { key: 'head',     label: 'Head:',           notes: 'Normocephalic, Atraumatic' },
-  { key: 'eyes',     label: 'Eyes:',           notes: 'PERRLA, EOMI, Conjunctiva, Sclera, Fundi, Redness, Discharge' },
-  { key: 'ears',     label: 'Ears:',           notes: 'TM / Light reflex, Ext Auditory canals, Cerumen, TM red-bulging' },
-  { key: 'nose',     label: 'Nose:',           notes: 'Mucosa w/o edema, septum at midline, sinus, Tenderness, Runny, Congestive, Bleeding' },
-  { key: 'throat',   label: 'Throat:',         notes: 'Tonsil swelling/Erythema/Exudates, Oral lesion, Dentition/Gums, Pharynx swelling/Redness' },
-  { key: 'neck',     label: 'Neck:',           notes: 'Supple, pain, Thyromegaly, Carotid Bruit' },
-  { key: 'cv',       label: 'CV:',             notes: 'Regular Rate and Rhythm, S1, S2, Murmurs, Rubs, Gallops, Clicks, JVD, Peripheral Pulses' },
-  { key: 'respir',   label: 'Respir:',         notes: 'Rales, Rhonchi, Wheezing, Chest wall tenderness' },
-  { key: 'abdomen',  label: 'Abdomen:',        notes: 'Soft, Tenderness, Normoactive Bowel Sound, HSM, Rebound, Guarding, Masses' },
-  { key: 'gu',       label: 'GU: fem/Male:',   notes: 'External genitalia Lesions, cervical lesions, Phallus, Urethral discharge, Masses' },
-  { key: 'rectal',   label: 'Rectal:',         notes: 'Tone, Masses, Hemorrhoids, prostate Size' },
-  { key: 'ms',       label: 'MS:',             notes: 'ROM, Tenderness, Swelling, distal pulses, Homans, SLR test',
-    extras: [{ key: 'ms_sites', placeholder: 'Exam sites' }] },
-  { key: 'neuro',    label: 'Neuro:',          notes: 'Affect, Alert/Orientedx3, Cranial Nerves 2-12, int Motor, Tone, Sensory, Reflex, Gait' },
-]
+import { EXAM_ROWS, ROS_ROWS, type ExamRowDef, type RosRowDef } from '@/lib/encounter/physical-examination-rows'
 
 // ── Status toggle button ──────────────────────────────────────────────────────
 
@@ -123,6 +66,7 @@ export function EncounterPhysicalExamPanel({
   const { t, language } = useT()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [syncingChart, setSyncingChart] = useState(false)
   const [editable, setEditable] = useState(canEdit)
   const [rosExam, setRosExam] = useState<RosExamData>({})
   const [savedRosExam, setSavedRosExam] = useState<RosExamData>({})
@@ -237,6 +181,40 @@ export function EncounterPhysicalExamPanel({
     }
   }
 
+  const syncPatientChart = async () => {
+    setSyncingChart(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/physical-examination/sync-chart`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        const message =
+          res.status === 400
+            ? t('encounter_modal.pe_sync_chart_no_data')
+            : json.error || t('encounter_modal.pe_sync_chart_failed')
+        throw new Error(message)
+      }
+
+      const action = json.action as string | undefined
+      if (action === 'created') {
+        toast.success(t('encounter_modal.pe_sync_chart_created'))
+      } else if (action === 'updated') {
+        toast.success(t('encounter_modal.pe_sync_chart_updated'))
+      } else if (action === 'removed') {
+        toast.message(t('encounter_modal.pe_sync_chart_removed'))
+      } else {
+        toast.success(t('encounter_modal.pe_sync_chart_updated'))
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.pe_sync_chart_failed'))
+    } finally {
+      setSyncingChart(false)
+    }
+  }
+
   const renderBulkActions = (onAll: (value: SystemStatus) => void) => (
     <div className="flex items-center gap-1.5">
       <button
@@ -332,6 +310,25 @@ export function EncounterPhysicalExamPanel({
           <p className="text-sm text-slate-500 mt-1">{t('encounter_modal.pe_subtitle')}</p>
           <p className="text-xs text-slate-400 mt-1">{t('encounter_modal.pe_all_optional')}</p>
         </div>
+        {!loading ? (
+          <button
+            type="button"
+            disabled={saving || syncingChart}
+            onClick={() => void syncPatientChart()}
+            title={t('encounter_modal.pe_sync_chart_hint')}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-slate-50 hover:border-[#2E6EF3]/40 hover:text-[#2E6EF3] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          >
+            <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+            {syncingChart ? t('encounter_modal.pe_sync_chart_running') : t('encounter_modal.pe_sync_chart')}
+          </button>
+        ) : null}
       </div>
 
       {loading ? (

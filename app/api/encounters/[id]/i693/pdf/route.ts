@@ -11,6 +11,7 @@ import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { loadEncounterImmigrationContext } from '@/lib/i693/immigration-eligibility'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { logI693Audit } from '@/lib/i693/audit-log'
+import { findPatientI693Submission } from '@/lib/i693/patient-form'
 
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 export const dynamic = 'force-dynamic'
@@ -35,24 +36,28 @@ export async function GET(request: Request, { params }: { params: { id: string }
     await guardI693EncounterAccess(user.id, encounterId)
 
     const admin = createAdminClient()
-    const { data: sub, error } = await admin
-      .from('i693_submissions')
-      .select('form_data, patient_id')
-      .eq('encounter_id', encounterId)
+    const { data: enc, error: encErr } = await admin
+      .from('encounters')
+      .select('patient_id')
+      .eq('id', encounterId)
       .maybeSingle()
-    if (error) throw error
+    if (encErr) throw encErr
+    if (!enc?.patient_id) throw new ValidationError('Encounter not found')
+
+    const sub = await findPatientI693Submission(admin, Number(enc.patient_id))
     if (!sub) throw new ValidationError('Save the I-693 form before exporting PDF')
 
     const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
     const isPreviewOnly = new URL(request.url).searchParams.get('preview') === '1'
     const { bytes, mode, filledFields, missingFields } = await generateI693PdfBytes(formData)
 
-    const patientId = sub.patient_id as number
+    const patientId = sub.patient_id
+    const ownerEncounterId = sub.encounter_id
     if (!isPreviewOnly && Number.isFinite(patientId)) {
       void (async () => {
         const ctx = await loadEncounterImmigrationContext(admin, encounterId)
         if (!ctx?.isImmigration) return
-        await persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, user.id)
+        await persistI693PdfToPatientFile(admin, patientId, ownerEncounterId, bytes, user.id)
       })().catch((err) => console.error('[i693/pdf] persist to patient file:', err))
     }
 

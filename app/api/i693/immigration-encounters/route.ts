@@ -47,15 +47,15 @@ export async function GET() {
 
     const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
 
-    const encounterIds = immigration.map((e) => (e as { id: number }).id)
-    const i693Map = new Map<number, { status: string; ai_filled_at: string | null }>()
-    if (encounterIds.length > 0) {
+    const patientIds = [...new Set(immigration.map((e) => Number((e as { patient_id: number }).patient_id)))]
+    const i693ByPatient = new Map<number, { status: string; ai_filled_at: string | null }>()
+    if (patientIds.length > 0) {
       const { data: subs } = await admin
         .from('i693_submissions')
-        .select('encounter_id, status, ai_filled_at')
-        .in('encounter_id', encounterIds)
+        .select('patient_id, status, ai_filled_at')
+        .in('patient_id', patientIds)
       for (const s of subs ?? []) {
-        i693Map.set(Number(s.encounter_id), {
+        i693ByPatient.set(Number(s.patient_id), {
           status: String(s.status),
           ai_filled_at: s.ai_filled_at as string | null,
         })
@@ -80,7 +80,7 @@ export async function GET() {
           : Array.isArray(apptRaw) && apptRaw[0]
             ? (apptRaw[0] as { appointment_date?: string | null; appointment_time?: string | null })
             : null
-      const sub = i693Map.get(id)
+      const sub = i693ByPatient.get(patientId)
       return {
         encounter_id: id,
         patient_id: patientId,

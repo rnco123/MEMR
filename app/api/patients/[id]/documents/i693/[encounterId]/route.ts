@@ -8,6 +8,7 @@ import { normalizeI693FormAddress } from '@/lib/i693/ai-fill'
 import { generateI693PdfBytes } from '@/lib/i693/generate-pdf'
 import { persistI693PdfToPatientFile } from '@/lib/i693/save-patient-document'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
+import { findPatientI693Submission } from '@/lib/i693/patient-form'
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
 import { auditPhi } from '@/lib/audit-phi'
 
@@ -38,15 +39,18 @@ export async function GET(
     // Location-scoped access check: prevents fetching another clinic's I-693 PDF
     // by guessing patientId + encounterId. Returns admin client after the check.
     const admin = await guardI693EncounterAccess(user.id, encounterId)
-    const { data: sub, error } = await admin
-      .from('i693_submissions')
-      .select('form_data, pdf_storage_path, patient_id')
-      .eq('encounter_id', encounterId)
-      .eq('patient_id', patientId)
-      .maybeSingle()
+    const sub =
+      (await findPatientI693Submission(admin, patientId)) ??
+      (
+        await admin
+          .from('i693_submissions')
+          .select('form_data, pdf_storage_path, patient_id, encounter_id')
+          .eq('encounter_id', encounterId)
+          .eq('patient_id', patientId)
+          .maybeSingle()
+      ).data
 
-    if (error) throw error
-    if (!sub) throw new ValidationError('I-693 form not found for this encounter')
+    if (!sub) throw new ValidationError('I-693 form not found for this patient')
 
     // Serves the I-693 PDF bytes — covers both cached and regenerated paths below.
     auditPhi({
@@ -58,6 +62,8 @@ export async function GET(
       metadata: { type: 'i693_pdf', patient_id: patientId, encounter_id: encounterId },
       request,
     })
+
+    const ownerEncounterId = sub.encounter_id ?? encounterId
 
     const formData = normalizeI693FormAddress(mergeI693Form(sub.form_data as Partial<I693FormData>))
 
@@ -80,7 +86,7 @@ export async function GET(
 
     const { bytes } = await generateI693PdfBytes(formData)
 
-    await persistI693PdfToPatientFile(admin, patientId, encounterId, bytes, user.id).catch(() => {})
+    await persistI693PdfToPatientFile(admin, patientId, ownerEncounterId, bytes, user.id).catch(() => {})
 
     return new NextResponse(Buffer.from(bytes), {
       status: 200,

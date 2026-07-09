@@ -1,8 +1,11 @@
 import {
   canEditPhysicalExamination,
+  getExamSystemStatus,
+  getRosSystemStatus,
   isPhysicalExaminationLocked,
   mergePhysicalExamination,
   normalizePhysicalExamination,
+  normalizeRosExamData,
 } from '@/lib/encounter/physical-examination'
 
 describe('physical examination edit rules', () => {
@@ -26,5 +29,17 @@ describe('physical examination edit rules', () => {
     expect(
       normalizePhysicalExamination({ general_appearance: 'Well nourished', remarks: '' })
     ).toEqual({ general_appearance: 'Well nourished' })
+  })
+
+  it('normalizes ros_exam_data with nested ros and exam sections', () => {
+    const normalized = normalizeRosExamData({
+      ros: { cons: 'N', skin: 'N', eyes: 'A' },
+      exam: { general: 'N', cv: 'NA' },
+      remarks: 'test',
+    })
+    expect(normalized.ros?.cons).toBe('N')
+    expect(normalized.exam?.general).toBe('N')
+    expect(getRosSystemStatus(normalized, 'cons')).toBe('N')
+    expect(getExamSystemStatus(normalized, 'cv')).toBe('NA')
   })
 })

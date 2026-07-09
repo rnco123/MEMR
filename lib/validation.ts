@@ -409,3 +409,18 @@ export const consentFormUpdateSchema = z.object({
 
 export type ConsentFormCreateInput = z.infer<typeof consentFormCreateSchema>
 export type ConsentFormUpdateInput = z.infer<typeof consentFormUpdateSchema>
+
+export const releaseLogCreateSchema = z.object({
+  task: z.string().min(1, 'Task is required').max(200).trim(),
+  description: z.string().max(2000).trim().optional().nullable(),
+  status: z.enum(['upcoming', 'released']).optional().default('upcoming'),
+})
+
+export const releaseLogUpdateSchema = z.object({
+  task: z.string().min(1).max(200).trim().optional(),
+  description: z.string().max(2000).trim().optional().nullable(),
+  status: z.enum(['upcoming', 'released']).optional(),
+})
+
+export type ReleaseLogCreateInput = z.infer<typeof releaseLogCreateSchema>
+export type ReleaseLogUpdateInput = z.infer<typeof releaseLogUpdateSchema>

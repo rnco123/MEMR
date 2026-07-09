@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildI693Href } from '@/lib/i693/paths'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
+import { findPatientI693Submission } from '@/lib/i693/patient-form'
 
 export type ImmigrationPatientDocument = {
   id: string
@@ -29,40 +30,35 @@ export async function listImmigrationDocumentsForPatient(
   const i693Base = options?.i693BasePath ?? '/dashboard/i-693'
   const docs: ImmigrationPatientDocument[] = []
 
-  const { data: submissions } = await admin
-    .from('i693_submissions')
-    .select('id, encounter_id, patient_id, status, pdf_storage_path, created_at, updated_at')
-    .eq('patient_id', patientId)
-    .order('updated_at', { ascending: false })
+  const submission = await findPatientI693Submission(admin, patientId)
 
-  for (const sub of submissions ?? []) {
-    const encounterId = sub.encounter_id
+  if (submission) {
+    const encounterId = submission.encounter_id
     // Exported PDFs are also stored in patient_documents — skip duplicate virtual row
-    if (sub.pdf_storage_path) continue
+    if (!submission.pdf_storage_path) {
+      const fileUrl = `/api/patients/${patientId}/documents/i693/${encounterId}`
 
-    const fileUrl = `/api/patients/${patientId}/documents/i693/${encounterId}`
-
-    docs.push({
-      id: `i693-${encounterId}`,
-      patient_id: patientId,
-      document_name: `Form I-693 — Encounter #${encounterId}`,
-      document_label: 'i693',
-      file_url: fileUrl,
-      file_name: `I-693-encounter-${encounterId}.pdf`,
-      file_size: 0,
-      file_type: 'application/pdf',
-      uploaded_by: 'system',
-      uploaded_by_name: 'Immigration workflow',
-      created_at: sub.updated_at ?? sub.created_at,
-      source: 'i693',
-      encounter_id: encounterId,
-      i693_status: sub.status,
-      open_href: buildI693Href(i693Base, { encounterId, tab: 'pdf' }),
-      is_system: true,
-    })
+      docs.push({
+        id: `i693-${patientId}`,
+        patient_id: patientId,
+        document_name: 'Form I-693',
+        document_label: 'i693',
+        file_url: fileUrl,
+        file_name: `I-693-patient-${patientId}.pdf`,
+        file_size: 0,
+        file_type: 'application/pdf',
+        uploaded_by: 'system',
+        uploaded_by_name: 'Immigration workflow',
+        created_at: submission.updated_at ?? submission.created_at ?? new Date().toISOString(),
+        source: 'i693',
+        encounter_id: encounterId,
+        i693_status: submission.status,
+        open_href: buildI693Href(i693Base, { encounterId, tab: 'pdf' }),
+        is_system: true,
+      })
+    }
+    return docs
   }
-
-  const submissionEncounterIds = new Set((submissions ?? []).map((s) => s.encounter_id))
 
   const { data: immigrationEncounters } = await admin
     .from('encounters')
@@ -78,13 +74,15 @@ export async function listImmigrationDocumentsForPatient(
     .eq('patient_id', patientId)
     .order('created_at', { ascending: false })
 
-  for (const enc of immigrationEncounters ?? []) {
-    if (!isImmigrationEncounterForI693(enc)) continue
-    if (submissionEncounterIds.has(enc.id)) continue
+  const latestImmigration = (immigrationEncounters ?? []).find((enc) =>
+    isImmigrationEncounterForI693(enc)
+  )
+
+  if (latestImmigration) {
     docs.push({
-      id: `immigration-${enc.id}`,
+      id: `immigration-${latestImmigration.id}`,
       patient_id: patientId,
-      document_name: `Immigration medical exam — Encounter #${enc.id}`,
+      document_name: 'Form I-693 (not started)',
       document_label: 'immigration',
       file_url: '',
       file_name: '',
@@ -92,10 +90,10 @@ export async function listImmigrationDocumentsForPatient(
       file_type: 'application/pdf',
       uploaded_by: 'system',
       uploaded_by_name: 'Immigration workflow',
-      created_at: enc.created_at,
+      created_at: latestImmigration.created_at,
       source: 'immigration',
-      encounter_id: enc.id,
-      open_href: buildI693Href(i693Base, { encounterId: enc.id, tab: 'form' }),
+      encounter_id: latestImmigration.id,
+      open_href: buildI693Href(i693Base, { encounterId: latestImmigration.id, tab: 'form' }),
       is_system: true,
     })
   }

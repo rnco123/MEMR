@@ -159,6 +159,12 @@ export const I693_UI_SECTIONS: { title: string; fields: I693FieldDef[] }[] = [
       { key: 'syphilis_sti.syphilis_test_type', label: 'Syphilis test type', type: 'text' },
       { key: 'syphilis_sti.syphilis_result', label: 'Syphilis serology result', type: 'text' },
       { key: 'syphilis_sti.syphilis_date', label: 'Syphilis test date', type: 'date' },
+      {
+        key: 'syphilis_sti.nonreactive_date_reported',
+        label: 'Nontreponemal nonreactive date reported',
+        type: 'date',
+      },
+      { key: 'syphilis_sti.screening_titer', label: 'Screening reactive titer', type: 'text' },
       { key: 'syphilis_sti.gonorrhea_result', label: 'Gonorrhea result', type: 'text' },
       { key: 'syphilis_sti.gonorrhea_date', label: 'Gonorrhea test date', type: 'date' },
       { key: 'syphilis_sti.other_sti', label: 'Other STI screening', type: 'text' },

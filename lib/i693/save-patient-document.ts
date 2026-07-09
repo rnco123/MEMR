@@ -8,6 +8,8 @@ export type PersistI693PdfOptions = {
   preserveSubmissionStatus?: boolean
 }
 
+import { findPatientI693Submission } from '@/lib/i693/patient-form'
+
 /** Store generated I-693 PDF in patient-documents bucket and link on submission row. */
 export async function persistI693PdfToPatientFile(
   admin: SupabaseClient,
@@ -38,7 +40,7 @@ export async function persistI693PdfToPatientFile(
     submissionPatch.status = 'exported'
   }
 
-  await admin.from('i693_submissions').update(submissionPatch).eq('encounter_id', encounterId)
+  await admin.from('i693_submissions').update(submissionPatch).eq('patient_id', patientId)
 
   const { data: existing } = await admin
     .from('patient_documents')
