@@ -10,6 +10,7 @@ import { DobDateInput } from '@/components/DobDateInput'
 import { AddressLookupFields } from '@/components/AddressLookupFields'
 import type { EncounterPatientInfo, PatientInfoAuditSummary, PatientInfoUpdatePayload } from '@/lib/encounter/encounter-patient-info'
 import { normalizePatientGender } from '@/lib/encounter/patient-gender'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import { formatClinicDateOnly, formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate } from '@/lib/datetime/date-input'
 
@@ -34,10 +35,16 @@ function normalizeGenderValue(value: string | null | undefined): (typeof GENDER_
 }
 
 function patientFormFromRecord(patient: EncounterPatientInfo): PatientInfoUpdatePayload {
-  const { id: _id, patient_code: _code, ...fields } = patient
   return {
-    ...fields,
-    gender: normalizePatientGender(fields.gender),
+    first_name: patient.first_name,
+    last_name: patient.last_name,
+    email: patient.email,
+    phone: patient.phone,
+    gender: normalizePatientGender(patient.gender),
+    date_of_birth: patient.date_of_birth,
+    street_address: patient.street_address,
+    state: patient.state,
+    zip_code: patient.zip_code,
   }
 }
 
@@ -232,9 +239,12 @@ export function EncounterPatientInfoPanel({
             </div>
             <div>
               <label className="text-slate-500 text-sm mb-1 font-semibold block">{t('encounter_modal.patient_code')}</label>
-              <p className="text-slate-900 font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                {patient.patient_code || t('common.na')}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-slate-900 font-mono bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
+                  {patient.patient_code || t('common.na')}
+                </p>
+                <PatientSourceBadge source={patient.created_by_source} size="md" />
+              </div>
               <p className="text-xs text-slate-400 mt-1">{t('encounter_modal.patient_code_readonly')}</p>
             </div>
             <div>
@@ -326,7 +336,10 @@ export function EncounterPatientInfoPanel({
           </div>
           <div>
             <p className="text-slate-500 text-sm mb-1">{t('encounter_modal.patient_code')}</p>
-            <p className="text-slate-900 font-mono">{patient.patient_code || t('common.na')}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-slate-900 font-mono">{patient.patient_code || t('common.na')}</p>
+              <PatientSourceBadge source={patient.created_by_source} />
+            </div>
           </div>
           <div>
             <p className="text-slate-500 text-sm mb-1">{t('common.age')}</p>
@@ -360,6 +373,18 @@ export function EncounterPatientInfoPanel({
               {patient.zip_code && ` ${patient.zip_code}`}
             </p>
           </div>
+          {(patient.emergency_contact_name ||
+            patient.emergency_contact_phone ||
+            patient.emergency_contact_relationship) && (
+            <div className="md:col-span-2">
+              <p className="text-slate-500 text-sm mb-1">{t('patient_register.emergency_contact')}</p>
+              <p className="text-slate-900">
+                {[patient.emergency_contact_name, patient.emergency_contact_relationship, patient.emergency_contact_phone]
+                  .filter(Boolean)
+                  .join(' · ') || t('common.na')}
+              </p>
+            </div>
+          )}
         </div>
       )}
     </div>

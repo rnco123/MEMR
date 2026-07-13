@@ -14,6 +14,7 @@ import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
 interface Patient {
   id: number // bigint
@@ -28,6 +29,7 @@ interface Patient {
   last_visit?: string
   location_id?: number | null
   location_title?: string | null
+  created_by_source?: string | null
 }
 
 const PAGE_SIZE = 10
@@ -171,7 +173,10 @@ function PatientsHistoryPage() {
                   {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-slate-900 truncate">{patient.first_name} {patient.last_name}</p>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <p className="font-semibold text-slate-900 truncate">{patient.first_name} {patient.last_name}</p>
+                    <PatientSourceBadge source={patient.created_by_source} />
+                  </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {patient.gender && `${patient.gender === 'Male' ? t('common.male') : patient.gender === 'Female' ? t('common.female') : patient.gender} · `}
                     {calculateAge(patient.date_of_birth)} {t('patients.years_short')}
@@ -328,9 +333,12 @@ function PatientsHistoryPage() {
                       {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-slate-900 font-semibold text-sm truncate">
-                        {patient.first_name} {patient.last_name}
-                      </h3>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-slate-900 font-semibold text-sm truncate">
+                          {patient.first_name} {patient.last_name}
+                        </h3>
+                        <PatientSourceBadge source={patient.created_by_source} />
+                      </div>
                       <p className="text-slate-400 text-xs font-mono">{t('common.id')}: {patient.id}</p>
                     </div>
                   </div>

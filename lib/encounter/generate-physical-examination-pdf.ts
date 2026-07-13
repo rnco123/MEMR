@@ -1,9 +1,11 @@
 import {
   coerceSystemStatus,
+  formatFindingLabels,
   formatPhysicalExaminationForContext,
   getExamSystemStatus,
   getRosSystemStatus,
   type ExamData,
+  type FindingSelectionMap,
   type PhysicalExamAuditSummary,
   type PhysicalExaminationData,
   type RosData,
@@ -63,6 +65,8 @@ function formatAuditLine(audit: NonNullable<PhysicalExamAuditSummary>): string {
 function rosExamHasContent(data: RosExamData | null | undefined): boolean {
   if (!data) return false
   if (data.remarks?.trim()) return true
+  if (data.ros_findings && Object.keys(data.ros_findings).length) return true
+  if (data.exam_findings && Object.keys(data.exam_findings).length) return true
   for (const v of Object.values(data.ros ?? {})) {
     if (coerceSystemStatus(v)) return true
     if (typeof v === 'string' && v.trim()) return true
@@ -311,7 +315,8 @@ class PhysicalExamPdfLayout {
     title: string,
     rows: RosRowDef[] | ExamRowDef[],
     getStatus: (key: string) => SystemStatus | undefined,
-    getSectionData: () => Record<string, unknown> | undefined
+    getSectionData: () => Record<string, unknown> | undefined,
+    findings: FindingSelectionMap | undefined
   ) {
     const blockTop = this.y
     this.drawSectionTitle(title)
@@ -320,6 +325,8 @@ class PhysicalExamPdfLayout {
     for (const row of rows) {
       const status = getStatus(row.key)
       const extras = collectExtras(getSectionData(), row.extras)
+      const abnormal = formatFindingLabels(findings?.[row.key])
+      if (abnormal) extras.unshift(`Abnormal: ${abnormal}`)
       this.drawTableRow(row.label, status, extras, layout)
     }
 
@@ -336,14 +343,16 @@ class PhysicalExamPdfLayout {
       'Review of Systems (ROS)',
       ROS_ROWS,
       (key) => getRosSystemStatus(ctx.rosExam, key as keyof RosData),
-      () => ctx.rosExam.ros as Record<string, unknown> | undefined
+      () => ctx.rosExam.ros as Record<string, unknown> | undefined,
+      ctx.rosExam.ros_findings
     )
 
     this.drawSystemTable(
       'Physical Examination (EXAM)',
       EXAM_ROWS,
       (key) => getExamSystemStatus(ctx.rosExam, key as keyof ExamData),
-      () => ctx.rosExam.exam as Record<string, unknown> | undefined
+      () => ctx.rosExam.exam as Record<string, unknown> | undefined,
+      ctx.rosExam.exam_findings
     )
   }
 

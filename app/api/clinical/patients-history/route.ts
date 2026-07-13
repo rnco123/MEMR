@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     let query = admin
       .from('patients')
       .select(
-        'id, first_name, last_name, email, phone, date_of_birth, gender, created_at, location_id, locations(title)',
+        'id, first_name, last_name, email, phone, date_of_birth, gender, created_at, location_id, created_by_source, locations(title)',
         { count: 'exact' }
       )
 
@@ -120,6 +120,7 @@ export async function GET(req: NextRequest) {
         created_at: patient.created_at,
         location_id: patient.location_id,
         location_title: locationTitle,
+        created_by_source: (patient as { created_by_source?: string | null }).created_by_source ?? 'QR',
         encounter_count: encounterCounts[patient.id] || 0,
         last_visit: lastVisit,
       }

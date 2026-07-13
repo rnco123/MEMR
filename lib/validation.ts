@@ -29,22 +29,28 @@ export const patientSchema = z.object({
 export type PatientInput = z.infer<typeof patientSchema>
 
 // Document upload validation
+export const PATIENT_DOCUMENT_LABELS = [
+  'image',
+  'report',
+  'bill',
+  'prescription',
+  'lab_result',
+  'xray',
+  'immigration',
+  'i693',
+  'id_document',
+  'previous_medical_records',
+  'imaging',
+  'other',
+] as const
+
 export const documentUploadSchema = z.object({
   document_name: z.string().min(1, 'Document name is required').max(200).trim(),
-  document_label: z.enum([
-    'image',
-    'report',
-    'bill',
-    'prescription',
-    'lab_result',
-    'xray',
-    'immigration',
-    'i693',
-    'other',
-  ]),
+  document_label: z.enum(PATIENT_DOCUMENT_LABELS),
 })
 
 export type DocumentUploadInput = z.infer<typeof documentUploadSchema>
+export type PatientDocumentLabel = (typeof PATIENT_DOCUMENT_LABELS)[number]
 
 // Message validation
 export const messageSchema = z.object({
@@ -114,6 +120,38 @@ export const nurseWalkInIntakeSchema = z.object({
   drug_use: z.boolean().optional(),
   occupation: z.number().int().positive().optional().nullable(),
 })
+
+/** Nurse-created (Direct) patient registration — EMR-only, never syncs to external Supabase. */
+export const nursePatientCreateSchema = z.object({
+  first_name: z.string().min(1, 'First name is required').max(100).trim(),
+  last_name: z.string().min(1, 'Last name is required').max(100).trim(),
+  email: z.union([z.string().email().max(200), z.literal(''), z.null()]).optional(),
+  phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  gender: z.enum(['male', 'female', 'other']).optional().nullable(),
+  date_of_birth: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD')
+    .optional()
+    .nullable(),
+  street_address: z.union([z.string().max(500), z.literal(''), z.null()]).optional(),
+  state: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
+  zip_code: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),
+  location_id: z.number().int().positive(),
+  is_text_opt_in: z.boolean().optional(),
+  is_check_opt_in: z.boolean().optional(),
+  emergency_contact_name: z.union([z.string().max(200), z.literal(''), z.null()]).optional(),
+  emergency_contact_phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  emergency_contact_relationship: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
+  /** Optional intake / medical history captured at registration (stored on intake_form via a registration appointment). */
+  intake: nurseWalkInIntakeSchema.optional(),
+  /** When true and intake (or visit defaults) are provided, also create an encounter like walk-in. */
+  start_encounter: z.boolean().optional(),
+  service_id: z.number().int().positive().optional().nullable(),
+  onsite_type: z.enum(['telemedicine', 'onsite']).optional(),
+  pharmacy_id: z.number().int().positive().optional().nullable(),
+})
+
+export type NursePatientCreateInput = z.infer<typeof nursePatientCreateSchema>
 
 export const nurseWalkInCreateSchema = z.object({
   patient_id: z.number().int().positive(),
@@ -186,6 +224,8 @@ const physicalExamField = z.string().max(4000).optional().nullable()
 
 const systemStatusField = z.enum(['N', 'A', 'NA']).nullable().optional()
 
+const findingSelectionMap = z.record(z.string(), z.array(z.string().max(200))).optional()
+
 export const rosExamDataSchema = z.object({
   ros: z.object({
     cons: systemStatusField,
@@ -225,6 +265,8 @@ export const rosExamDataSchema = z.object({
     ms_sites: z.string().max(500).optional().nullable(),
     neuro: systemStatusField,
   }).optional(),
+  ros_findings: findingSelectionMap,
+  exam_findings: findingSelectionMap,
   remarks: z.string().max(8000).optional().nullable(),
 }).optional()
 

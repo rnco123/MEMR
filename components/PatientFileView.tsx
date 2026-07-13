@@ -11,6 +11,7 @@ import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/dat
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { printPatientDocument } from '@/lib/patient-documents/print-document'
 import { getEncounterProviderLabelKey } from '@/lib/roles'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
 const DOCUMENTS_VIEW_STORAGE_KEY = 'memr.patientDocumentsView'
 
@@ -57,6 +58,11 @@ interface Patient {
   created_at: string
   location_id?: number | null
   locations?: { title?: string | null; location_code?: string | null } | null
+  created_by_source?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  emergency_contact_relationship?: string | null
+  patient_code?: string | null
 }
 
 interface Pharmacy {
@@ -149,6 +155,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       | 'xray'
       | 'immigration'
       | 'i693'
+      | 'id_document'
+      | 'previous_medical_records'
+      | 'imaging'
       | 'other',
   })
   const [viewingDocument, setViewingDocument] = useState<PatientDocument | null>(null)
@@ -359,6 +368,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       xray: 'bg-orange-500/20 text-orange-300',
       immigration: 'bg-indigo-500/20 text-indigo-700',
       i693: 'bg-violet-500/20 text-violet-700',
+      id_document: 'bg-cyan-500/20 text-cyan-800',
+      previous_medical_records: 'bg-teal-500/20 text-teal-800',
+      imaging: 'bg-fuchsia-500/20 text-fuchsia-800',
       other: 'bg-gray-500/20 text-gray-300',
     }
     return colors[label] || colors.other
@@ -375,6 +387,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
         xray: t('patient_file.doc_label_xray'),
         immigration: t('patient_file.doc_label_immigration'),
         i693: t('patient_file.doc_label_i693'),
+        id_document: t('patient_file.doc_label_id_document'),
+        previous_medical_records: t('patient_file.doc_label_previous_medical_records'),
+        imaging: t('patient_file.doc_label_imaging'),
         other: t('patient_file.doc_label_other'),
       }
       return names[label] || t('patient_file.doc_label_other')
@@ -661,6 +676,12 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                 <h2 className="text-xl font-bold text-slate-900">
                   {patient.first_name} {patient.last_name}
                 </h2>
+                <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+                  <PatientSourceBadge source={patient.created_by_source} size="md" />
+                  {patient.patient_code ? (
+                    <span className="text-xs font-mono text-slate-500">{patient.patient_code}</span>
+                  ) : null}
+                </div>
               </div>
               
               <div className="space-y-3 text-sm">
@@ -1817,6 +1838,9 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <option value="prescription">{t('patient_file.doc_label_prescription')}</option>
                                 <option value="lab_result">{t('patient_file.doc_label_lab_result')}</option>
                                 <option value="xray">{t('patient_file.doc_label_xray')}</option>
+                                <option value="imaging">{t('patient_file.doc_label_imaging')}</option>
+                                <option value="id_document">{t('patient_file.doc_label_id_document')}</option>
+                                <option value="previous_medical_records">{t('patient_file.doc_label_previous_medical_records')}</option>
                                 <option value="immigration">{t('patient_file.doc_label_immigration')}</option>
                                 <option value="i693">{t('patient_file.doc_label_i693')}</option>
                                 <option value="other">{t('patient_file.doc_label_other')}</option>

@@ -44,6 +44,7 @@ export type FlowboardRow = {
     phone: string | null
     date_of_birth: string | null
     location_id?: number | null
+    created_by_source?: string | null
   } | null
 }
 
@@ -73,7 +74,7 @@ export async function buildFlowboardRows(
   const [{ data: patients }, { data: encounters }] = await Promise.all([
     admin
       .from('patients')
-      .select('id, first_name, last_name, email, phone, date_of_birth, location_id')
+      .select('id, first_name, last_name, email, phone, date_of_birth, location_id, created_by_source')
       .in('id', patientIds),
     admin
       .from('encounters')
@@ -165,6 +166,7 @@ export async function buildFlowboardRows(
             phone: patient.phone,
             date_of_birth: patient.date_of_birth,
             location_id: patient.location_id,
+            created_by_source: (patient as { created_by_source?: string | null }).created_by_source ?? 'QR',
           }
         : null,
     })

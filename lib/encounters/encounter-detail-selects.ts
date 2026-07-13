@@ -9,10 +9,10 @@ export const ENCOUNTER_DETAIL_SELECT =
 export const ENCOUNTER_STATUS_SELECT = 'id, status'
 
 export const PATIENT_DETAIL_SELECT =
-  'id, first_name, last_name, email, phone, gender, date_of_birth, zip_code, state, street_address, patient_code, location_id, created_at'
+  'id, first_name, last_name, email, phone, gender, date_of_birth, zip_code, state, street_address, patient_code, location_id, created_at, created_by_source, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship'
 
 export const PATIENT_FILE_SELECT =
-  'id, first_name, last_name, email, phone, gender, date_of_birth, zip_code, state, street_address, patient_code, location_id, created_at, locations(title, location_code)'
+  'id, first_name, last_name, email, phone, gender, date_of_birth, zip_code, state, street_address, patient_code, location_id, created_at, created_by_source, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, locations(title, location_code)'
 
 export const APPOINTMENT_DETAIL_SELECT =
   'id, appointment_date, appointment_time, onsite_type, patient_id, service_id, location_id, services:service_id ( title_en, title_es ), locations:location_id ( title, location_code )'

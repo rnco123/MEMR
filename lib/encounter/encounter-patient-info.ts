@@ -24,6 +24,10 @@ export type PatientInfoUpdatePayload = {
 export type EncounterPatientInfo = PatientInfoUpdatePayload & {
   id: number
   patient_code: string | null
+  created_by_source?: string | null
+  emergency_contact_name?: string | null
+  emergency_contact_phone?: string | null
+  emergency_contact_relationship?: string | null
 }
 
 export type PatientInfoAuditSummary = {
@@ -34,7 +38,7 @@ export type PatientInfoAuditSummary = {
 } | null
 
 export const PATIENT_INFO_SELECT =
-  'id, first_name, last_name, email, phone, gender, date_of_birth, street_address, state, zip_code, patient_code'
+  'id, first_name, last_name, email, phone, gender, date_of_birth, street_address, state, zip_code, patient_code, created_by_source, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship'
 
 const PATIENT_INFO_VIEWER_ROLES = CLINICAL_STAFF_WITH_ADMIN_ROLE_SET
 
@@ -80,6 +84,10 @@ export function normalizePatientRow(row: Record<string, unknown>): EncounterPati
     state: normalizeNullable(row.state as string | null),
     zip_code: normalizeNullable(row.zip_code as string | null),
     patient_code: normalizeNullable(row.patient_code as string | null),
+    created_by_source: normalizeNullable(row.created_by_source as string | null),
+    emergency_contact_name: normalizeNullable(row.emergency_contact_name as string | null),
+    emergency_contact_phone: normalizeNullable(row.emergency_contact_phone as string | null),
+    emergency_contact_relationship: normalizeNullable(row.emergency_contact_relationship as string | null),
   }
 }
 

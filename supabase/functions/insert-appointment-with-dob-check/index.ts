@@ -121,6 +121,8 @@ Deno.serve(async (req) => {
           location_id,
           is_text_opt_in,
           is_check_opt_in,
+          // Existing QR registration path — keep EMR ↔ QR sync behavior unchanged.
+          created_by_source: 'QR',
         })
         .select('id')
         .single()
