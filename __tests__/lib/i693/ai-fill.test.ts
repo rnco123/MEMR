@@ -45,6 +45,7 @@ describe('normalizeI693FormAddress', () => {
     const form = normalizeI693FormAddress(
       mergeI693Form({
         applicant: {
+          ...EMPTY_I693_FORM.applicant,
           street: '1302 Binz St',
           state: 'TX',
           zip: '77054',
@@ -59,6 +60,7 @@ describe('normalizeI693FormAddress', () => {
     const form = normalizeI693FormAddress(
       mergeI693Form({
         applicant: {
+          ...EMPTY_I693_FORM.applicant,
           street: '1302 Binz St',
           state: 'TX',
           zip: '77054',

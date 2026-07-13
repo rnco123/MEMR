@@ -13,8 +13,35 @@ import { loadEncounterForRx } from '@/lib/prescriptions/encounter-prescriptions'
 import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
 import { canManageEncounterPharmacy, canViewClinicalEncounterContent } from '@/lib/roles'
 import { loadActivePharmacyRegistry } from '@/lib/pharmacies/load-active-registry'
+import { guardEncounterAccess } from '@/lib/encounters/guard'
 
 export const dynamic = 'force-dynamic'
+
+/**
+ * Best-effort patient ZIP for proximity ranking. Access is guarded, but a
+ * failure here (no access, no ZIP on file) must never break pharmacy search —
+ * we just fall back to the unranked list.
+ */
+async function resolvePatientAnchorZip(
+  userId: string,
+  admin: ReturnType<typeof createAdminClient>,
+  encounterIdRaw: string | null
+): Promise<string | null> {
+  const encounterId = Number(encounterIdRaw)
+  if (!encounterIdRaw || !Number.isFinite(encounterId)) return null
+  try {
+    await guardEncounterAccess(userId, encounterId)
+    const { data } = await admin
+      .from('encounters')
+      .select('patient_id, patients:patient_id ( zip_code )')
+      .eq('id', encounterId)
+      .maybeSingle()
+    const patient = Array.isArray(data?.patients) ? data?.patients[0] : data?.patients
+    return (patient?.zip_code as string | null) ?? null
+  } catch {
+    return null
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -32,7 +59,12 @@ export async function GET(request: NextRequest) {
 
     const search = request.nextUrl.searchParams.get('search')
     const admin = createAdminClient()
-    const data = await loadActivePharmacyRegistry(admin, { search })
+    const anchorZip = await resolvePatientAnchorZip(
+      user.id,
+      admin,
+      request.nextUrl.searchParams.get('encounter_id')
+    )
+    const data = await loadActivePharmacyRegistry(admin, { search, anchorZip })
     return NextResponse.json({ data })
   } catch (e) {
     return handleApiError(e)

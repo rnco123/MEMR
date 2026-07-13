@@ -63,4 +63,31 @@ describe('loadActivePharmacyRegistry', () => {
     expect(calls.filter((c) => c.method === 'or')).toHaveLength(1)
     expect(calls.find((c) => c.method === 'limit')?.arg).toBe(500)
   })
+
+  it('ranks results nearest-first and stamps distance when given a patient ZIP', async () => {
+    // Anchor = Dallas (75218). Houston store is ~200 mi, a Dallas store is ~0 mi.
+    const { admin } = mockAdmin([
+      { id: 1, name: 'Walmart Houston', zip_code: '77036' },
+      { id: 2, name: 'Walmart Dallas', zip_code: '75218' },
+    ])
+    const result = await loadActivePharmacyRegistry(admin, {
+      search: 'walmart',
+      anchorZip: '75218',
+    })
+
+    expect(result.map((p) => p.id)).toEqual([2, 1]) // nearest first
+    expect(result[0]?.distanceMiles).toBe(0)
+    expect(result[1]?.distanceMiles).toBeGreaterThan(100)
+  })
+
+  it('leaves order untouched and distance null without an anchor ZIP', async () => {
+    const { admin } = mockAdmin([
+      { id: 1, name: 'Walmart Houston', zip_code: '77036' },
+      { id: 2, name: 'Walmart Dallas', zip_code: '75218' },
+    ])
+    const result = await loadActivePharmacyRegistry(admin, { search: 'walmart' })
+
+    expect(result.map((p) => p.id)).toEqual([1, 2]) // query order preserved
+    expect(result[0]?.distanceMiles).toBeNull()
+  })
 })
