@@ -22,6 +22,7 @@ import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import {
   FlowboardFilterField,
   FlowboardFilterToolbar,
@@ -766,7 +767,12 @@ function NurseFlowboardPage() {
                           ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
                           : t('flow.unknown_patient')}
                       </h3>
-                      <p className="text-slate-400 text-xs font-mono">{t('common.id')}: {appointment.patient_id}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <p className="text-slate-400 text-xs font-mono">
+                          {t('common.id')}: {appointment.patient_id}
+                        </p>
+                        <PatientSourceBadge source={appointment.patient?.created_by_source} />
+                      </div>
                     </div>
                   </div>
 

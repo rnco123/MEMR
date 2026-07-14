@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { ValidationError } from '@/lib/api-error-handler'
-import { isPhysicianRole, CLINICAL_STAFF_ROLE_VALUES, CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES } from '@/lib/roles'
+import { CLINICAL_STAFF_ROLE_VALUES, CLINICAL_STAFF_WITH_ADMIN_ROLE_VALUES } from '@/lib/roles'
 import { getDoctorRowId } from '@/lib/clinical'
 import { fetchProfileFields } from '@/lib/fetch-user-role'
 import { cleanSoapSection } from '@/lib/soap/clean-soap-section'
@@ -24,18 +24,16 @@ const SOAP_EDITABLE_UNTIL = 'completed'
 const SOAP_EDITOR_ROLES = new Set<string>(CLINICAL_STAFF_ROLE_VALUES)
 
 /**
- * SOAP edit rules:
+ * SOAP edit rules for the original doctor note:
  * - Before completed: doctor, nurse, and staff may edit.
- * - After completed: only the doctor may edit.
+ * - After completed: original SOAP is locked — use amendment notes instead.
  */
 export function canEditEncounterSoap(
   status: string | null | undefined,
-  role?: string | null
+  _role?: string | null
 ): boolean {
   if (!status) return false
-  if (status === SOAP_EDITABLE_UNTIL) {
-    return isPhysicianRole(role)
-  }
+  if (status === SOAP_EDITABLE_UNTIL) return false
   return true
 }
 

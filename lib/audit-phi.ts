@@ -51,16 +51,18 @@ export interface AuditPhiParams {
 }
 
 function requestContext(request?: NextRequest | Request): {
-  ip: string
+  ip: string | null
   userAgent: string
   pageUrl: string | null
 } {
-  if (!request) return { ip: 'unknown', userAgent: 'unknown', pageUrl: null }
-  const ip =
+  if (!request) return { ip: null, userAgent: 'unknown', pageUrl: null }
+  const rawIp =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') ||
     request.headers.get('cf-connecting-ip') ||
-    'unknown'
+    null
+  // Postgres `inet` rejects placeholders like "unknown".
+  const ip = rawIp && rawIp !== 'unknown' ? rawIp : null
   let pageUrl: string | null = (request as NextRequest).nextUrl?.pathname ?? null
   if (!pageUrl && request.url) {
     try {

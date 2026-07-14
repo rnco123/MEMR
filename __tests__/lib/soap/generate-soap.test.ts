@@ -55,6 +55,24 @@ describe('buildSubjectiveFromIntake', () => {
     const iStatement = buildSubjectiveFromIntake({ symptoms_description: "I can't sleep at night" })
     expect(iStatement).toContain("Patient reports I can't sleep at night.")
   })
+
+  it('normalizes JSON-stringified intake lists instead of printing brackets', () => {
+    const text = buildSubjectiveFromIntake({
+      severity: 8,
+      relieving_factors: '["Rest"]',
+      medical_conditions: '["no"]',
+      surgeries: '["No"]',
+      allergies: '["No"]',
+      current_medications: '["no"]',
+    })
+
+    expect(text).toContain('Relieving factors: Rest.')
+    expect(text).toContain('Past medical history: No.')
+    expect(text).toContain('Surgical history: No.')
+    expect(text).toContain('Allergies: No.')
+    expect(text).toContain('Current medications: No.')
+    expect(text).not.toContain('[')
+  })
 })
 
 describe('buildObjectiveFromChart', () => {

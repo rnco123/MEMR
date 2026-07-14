@@ -2,6 +2,10 @@
 -- Mirrors doctor_soapnotes SOAP columns; references the original doctor note.
 -- Multiple amendment rows per encounter are allowed (append-only audit trail).
 
+-- Composite unique required before the composite FK below.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_doctor_soapnotes_id_encounter_id
+  ON public.doctor_soapnotes (id, encounter_id);
+
 CREATE TABLE IF NOT EXISTS public.amendment_notes (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   encounter_id BIGINT NOT NULL REFERENCES public.encounters(id) ON DELETE CASCADE,
@@ -27,10 +31,6 @@ COMMENT ON COLUMN public.amendment_notes.doctor_soapnote_id IS
   'Doctor SOAP note being amended; must belong to the same encounter.';
 COMMENT ON COLUMN public.amendment_notes.doctor_id IS
   'Doctor who authored this amendment (typically the encounter doctor).';
-
--- doctor_soapnotes already has UNIQUE(encounter_id); add composite unique for FK pairing.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_doctor_soapnotes_id_encounter_id
-  ON public.doctor_soapnotes (id, encounter_id);
 
 CREATE INDEX IF NOT EXISTS idx_amendment_notes_encounter_id
   ON public.amendment_notes (encounter_id);

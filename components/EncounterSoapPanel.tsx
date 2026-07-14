@@ -7,7 +7,7 @@ import { isForbiddenResponse } from '@/lib/http/api-response'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterSectionEditButton } from '@/components/EncounterSectionEditButton'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
-import { cleanSoapSection } from '@/lib/soap/clean-soap-section'
+import { cleanSoapSection, normalizeJsonListSnippets } from '@/lib/soap/clean-soap-section'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 
 type SoapFields = {
@@ -41,6 +41,17 @@ type SoapAudit = {
   created_at: string
 }
 
+type AmendmentNote = SoapFields & {
+  id: number
+  encounter_id: number
+  doctor_soapnote_id: number
+  doctor_id: number
+  amended_by: string | null
+  amended_by_name: string | null
+  amended_by_role: string | null
+  created_at: string
+}
+
 const blankForm: SoapFields = {
   subjective_text: '',
   objective_text: '',
@@ -69,10 +80,10 @@ function soapFromAi(ai: AiSoap | null): SoapFields {
 function soapFromDoctor(doc: DoctorSoap | null): SoapFields {
   if (!doc) return { ...blankForm }
   return {
-    subjective_text: doc.subjective_text?.trim() ?? '',
-    objective_text: doc.objective_text?.trim() ?? '',
-    assessment_text: doc.assessment_text?.trim() ?? '',
-    plan_text: doc.plan_text?.trim() ?? '',
+    subjective_text: normalizeJsonListSnippets(doc.subjective_text?.trim() ?? ''),
+    objective_text: normalizeJsonListSnippets(doc.objective_text?.trim() ?? ''),
+    assessment_text: normalizeJsonListSnippets(doc.assessment_text?.trim() ?? ''),
+    plan_text: normalizeJsonListSnippets(doc.plan_text?.trim() ?? ''),
   }
 }
 
@@ -96,6 +107,14 @@ export function EncounterSoapPanel({
   const [seededFromAi, setSeededFromAi] = useState(false)
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false)
   const [resetting, setResetting] = useState(false)
+  const [amendments, setAmendments] = useState<AmendmentNote[]>([])
+  const [canAmend, setCanAmend] = useState(false)
+  const [amendmentsLoading, setAmendmentsLoading] = useState(false)
+  const [amending, setAmending] = useState(false)
+  const [amendmentForm, setAmendmentForm] = useState<SoapFields>(blankForm)
+  const [savingAmendment, setSavingAmendment] = useState(false)
+
+  const isCompleted = encounterStatus === 'completed'
 
   const loadDoctorSoap = useCallback(async () => {
     setLoading(true)
@@ -122,9 +141,39 @@ export function EncounterSoapPanel({
     }
   }, [encounterId, canEdit, t])
 
+  const loadAmendments = useCallback(async () => {
+    if (encounterStatus !== 'completed') {
+      setAmendments([])
+      setCanAmend(false)
+      return
+    }
+    setAmendmentsLoading(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/amendments`, { credentials: 'include' })
+      const json = await res.json()
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) {
+          setCanAmend(false)
+          return
+        }
+        throw new Error(json.error || t('encounter_modal.amendment_load_failed'))
+      }
+      setAmendments((json.amendments as AmendmentNote[]) ?? [])
+      setCanAmend(Boolean(json.can_amend))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.amendment_load_failed'))
+    } finally {
+      setAmendmentsLoading(false)
+    }
+  }, [encounterId, encounterStatus, t])
+
   useEffect(() => {
     void loadDoctorSoap()
   }, [loadDoctorSoap])
+
+  useEffect(() => {
+    void loadAmendments()
+  }, [loadAmendments])
 
   const displaySoap = useMemo(() => {
     if (doctorSoap) return soapFromDoctor(doctorSoap)
@@ -235,6 +284,82 @@ export function EncounterSoapPanel({
     return t('encounter_modal.soap_last_edited', { name, role: roleLabel, when })
   }
 
+  const formatAmendmentMeta = (note: AmendmentNote) => {
+    const when = formatClinicDateTimeForLanguage(note.created_at, language)
+    const name = note.amended_by_name || t('common.unknown')
+    const roleLabel =
+      note.amended_by_role === 'doctor'
+        ? t('encounter_modal.soap_role_doctor')
+        : note.amended_by_role === 'nurse' || note.amended_by_role === 'staff'
+          ? t('encounter_modal.soap_role_nurse')
+          : note.amended_by_role === 'admin'
+            ? t('encounter_modal.soap_role_admin')
+            : note.amended_by_role || ''
+    return t('encounter_modal.amendment_by', { name, role: roleLabel, when })
+  }
+
+  const latestSoapForAmendmentSeed = (): SoapFields => {
+    const last = amendments[amendments.length - 1]
+    if (last) {
+      return {
+        subjective_text: last.subjective_text ?? '',
+        objective_text: last.objective_text ?? '',
+        assessment_text: last.assessment_text ?? '',
+        plan_text: last.plan_text ?? '',
+      }
+    }
+    return displaySoap
+  }
+
+  const startAmendment = () => {
+    setAmendmentForm(latestSoapForAmendmentSeed())
+    setAmending(true)
+  }
+
+  const cancelAmendment = () => {
+    setAmending(false)
+    setAmendmentForm(blankForm)
+  }
+
+  const saveAmendment = async () => {
+    const fields: Array<keyof SoapFields> = [
+      'subjective_text',
+      'objective_text',
+      'assessment_text',
+      'plan_text',
+    ]
+    for (const field of fields) {
+      if (!amendmentForm[field].trim()) {
+        toast.error(t('encounter_modal.soap_all_sections_required'))
+        return
+      }
+    }
+
+    setSavingAmendment(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/amendments`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(amendmentForm),
+      })
+      const json = await res.json()
+      if (!res.ok) {
+        if (isForbiddenResponse(res.status)) return
+        throw new Error(json.error || t('encounter_modal.amendment_save_failed'))
+      }
+      const created = json.amendment as AmendmentNote
+      setAmendments((prev) => [...prev, created])
+      setAmending(false)
+      setAmendmentForm(blankForm)
+      toast.success(t('encounter_modal.amendment_saved'))
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('encounter_modal.amendment_save_failed'))
+    } finally {
+      setSavingAmendment(false)
+    }
+  }
+
   const renderReadonlySection = (label: string, value: string) => (
     <div>
       <p className="text-slate-500 text-sm mb-2 font-semibold">{label}</p>
@@ -256,6 +381,22 @@ export function EncounterSoapPanel({
         onChange={(e) => setForm((f) => ({ ...f, [field]: e.target.value }))}
         rows={rows}
         className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900"
+      />
+    </div>
+  )
+
+  const renderAmendmentEditSection = (
+    label: string,
+    field: keyof SoapFields,
+    rows = 4
+  ) => (
+    <div>
+      <label className="text-slate-500 text-sm mb-2 font-semibold block">{label}</label>
+      <textarea
+        value={amendmentForm[field]}
+        onChange={(e) => setAmendmentForm((f) => ({ ...f, [field]: e.target.value }))}
+        rows={rows}
+        className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500/30"
       />
     </div>
   )
@@ -306,6 +447,11 @@ export function EncounterSoapPanel({
           ) : null}
           {showingAiDraft ? (
             <p className="text-xs text-slate-500 mt-1">{t('encounter_modal.soap_ai_draft_hint')}</p>
+          ) : null}
+          {isCompleted ? (
+            <p className="text-xs text-amber-800 mt-2 font-medium bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-1.5 inline-block">
+              {t('encounter_modal.soap_locked_completed')}
+            </p>
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -390,6 +536,103 @@ export function EncounterSoapPanel({
           {renderReadonlySection(t('encounter_modal.soap_plan'), displaySoap.plan_text)}
         </div>
       )}
+
+      {isCompleted ? (
+        <div className="mt-8 pt-6 border-t border-slate-200">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
+            <div>
+              <h4 className="text-base font-bold text-slate-900">{t('encounter_modal.amendments')}</h4>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl">{t('encounter_modal.amendments_hint')}</p>
+            </div>
+            {canAmend && !amending ? (
+              <button
+                type="button"
+                onClick={startAmendment}
+                className="px-3.5 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 shadow-sm"
+              >
+                {t('encounter_modal.amendment_add')}
+              </button>
+            ) : null}
+          </div>
+
+          {amendmentsLoading ? (
+            <div className="flex justify-center py-4">
+              <LoadingSpinner size="sm" compact />
+            </div>
+          ) : null}
+
+          {!amendmentsLoading && amendments.length === 0 && !amending ? (
+            <p className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5">
+              {hasDoctorSoap
+                ? t('encounter_modal.amendments_empty')
+                : t('encounter_modal.amendments_need_doctor_soap')}
+            </p>
+          ) : null}
+
+          <div className="space-y-4">
+            {amendments.map((note, index) => (
+              <div
+                key={note.id}
+                className="rounded-xl border border-amber-200/80 bg-amber-50/40 p-4 space-y-3"
+              >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <p className="text-sm font-bold text-amber-900">
+                    {t('encounter_modal.amendment_number', { n: index + 1 })}
+                  </p>
+                  <p className="text-xs text-amber-800 font-medium">{formatAmendmentMeta(note)}</p>
+                </div>
+                {renderReadonlySection(
+                  t('encounter_modal.soap_subjective'),
+                  normalizeJsonListSnippets(note.subjective_text ?? '')
+                )}
+                {renderReadonlySection(
+                  t('encounter_modal.soap_objective'),
+                  normalizeJsonListSnippets(note.objective_text ?? '')
+                )}
+                {renderReadonlySection(
+                  t('encounter_modal.soap_assessment'),
+                  normalizeJsonListSnippets(note.assessment_text ?? '')
+                )}
+                {renderReadonlySection(
+                  t('encounter_modal.soap_plan'),
+                  normalizeJsonListSnippets(note.plan_text ?? '')
+                )}
+              </div>
+            ))}
+          </div>
+
+          {amending ? (
+            <div className="mt-4 rounded-xl border border-amber-300 bg-white p-4 space-y-4 shadow-sm">
+              <p className="text-sm font-semibold text-amber-900">
+                {t('encounter_modal.amendment_add')}
+              </p>
+              {renderAmendmentEditSection(t('encounter_modal.soap_subjective'), 'subjective_text', 5)}
+              {renderAmendmentEditSection(t('encounter_modal.soap_objective'), 'objective_text', 5)}
+              {renderAmendmentEditSection(t('encounter_modal.soap_assessment'), 'assessment_text', 4)}
+              {renderAmendmentEditSection(t('encounter_modal.soap_plan'), 'plan_text', 4)}
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void saveAmendment()}
+                  disabled={savingAmendment}
+                  className="px-4 py-2 rounded-lg bg-amber-600 text-white text-sm font-medium hover:bg-amber-700 disabled:opacity-50"
+                >
+                  {savingAmendment ? t('common.saving') : t('encounter_modal.amendment_save')}
+                </button>
+                <button
+                  type="button"
+                  onClick={cancelAmendment}
+                  disabled={savingAmendment}
+                  className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm font-medium hover:bg-slate-200"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <ConfirmDialog
         open={resetConfirmOpen}
         onClose={() => setResetConfirmOpen(false)}

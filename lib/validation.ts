@@ -121,7 +121,10 @@ export const nurseWalkInIntakeSchema = z.object({
   occupation: z.number().int().positive().optional().nullable(),
 })
 
-/** Nurse-created (Direct) patient registration — EMR-only, never syncs to external Supabase. */
+/** Nurse-created (Direct) patient registration — EMR-only, never syncs to external Supabase.
+ * Always creates a same-day appointment + encounter at `appointment_initiated`.
+ * Intake / vitals / physical exam are entered later from the encounter modal.
+ */
 export const nursePatientCreateSchema = z.object({
   first_name: z.string().min(1, 'First name is required').max(100).trim(),
   last_name: z.string().min(1, 'Last name is required').max(100).trim(),
@@ -139,15 +142,10 @@ export const nursePatientCreateSchema = z.object({
   location_id: z.number().int().positive(),
   is_text_opt_in: z.boolean().optional(),
   is_check_opt_in: z.boolean().optional(),
-  emergency_contact_name: z.union([z.string().max(200), z.literal(''), z.null()]).optional(),
-  emergency_contact_phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
-  emergency_contact_relationship: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
-  /** Optional intake / medical history captured at registration (stored on intake_form via a registration appointment). */
-  intake: nurseWalkInIntakeSchema.optional(),
-  /** When true and intake (or visit defaults) are provided, also create an encounter like walk-in. */
-  start_encounter: z.boolean().optional(),
-  service_id: z.number().int().positive().optional().nullable(),
-  onsite_type: z.enum(['telemedicine', 'onsite']).optional(),
+  /** Direct registration always opens as on-site; telemedicine is not selected here. */
+  onsite_type: z.enum(['telemedicine', 'onsite']).optional().default('onsite'),
+  /** Required clinic service / treatment type for the appointment. */
+  service_id: z.number().int().positive(),
   pharmacy_id: z.number().int().positive().optional().nullable(),
 })
 
@@ -404,6 +402,16 @@ export const doctorSoapSaveSchema = z.object({
 })
 
 export type DoctorSoapSaveInput = z.infer<typeof doctorSoapSaveSchema>
+
+/** Post-completion additive SOAP amendment (does not overwrite original). */
+export const amendmentNoteSaveSchema = z.object({
+  subjective_text: z.string().min(1, 'Subjective is required').max(50000),
+  objective_text: z.string().min(1, 'Objective is required').max(50000),
+  assessment_text: z.string().min(1, 'Assessment is required').max(50000),
+  plan_text: z.string().min(1, 'Plan is required').max(50000),
+})
+
+export type AmendmentNoteSaveInput = z.infer<typeof amendmentNoteSaveSchema>
 
 export const patientInfoSaveSchema = z.object({
   first_name: z.string().min(1, 'First name is required').max(100).trim(),

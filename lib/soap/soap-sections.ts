@@ -8,8 +8,43 @@ import { occupationNameById } from '@/lib/intake/occupations'
  */
 
 const s = (v: unknown) => (v == null ? '' : String(v).trim())
-const arr = (v: unknown) =>
-  Array.isArray(v) ? v.map((x) => s(x)).filter(Boolean).join(', ') : s(v)
+
+function formatListItem(raw: string): string {
+  const text = raw.trim()
+  if (!text) return ''
+  if (/^yes$/i.test(text)) return 'Yes'
+  if (/^no$/i.test(text)) return 'No'
+  return text
+}
+
+/**
+ * Arrays (or JSON-stringified arrays from intake storage) → readable CSV text.
+ * Never leaves `["Rest"]` / `["no"]` in the note.
+ */
+export function formatIntakeListValue(v: unknown): string {
+  if (v == null) return ''
+  if (Array.isArray(v)) {
+    return v.map((x) => formatListItem(s(x))).filter(Boolean).join(', ')
+  }
+  if (typeof v === 'string') {
+    const trimmed = v.trim()
+    if (!trimmed) return ''
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown
+        if (Array.isArray(parsed)) {
+          return parsed.map((x) => formatListItem(s(x))).filter(Boolean).join(', ')
+        }
+      } catch {
+        // fall through — plain free text that happened to start with '['
+      }
+    }
+    return formatListItem(trimmed)
+  }
+  return formatListItem(s(v))
+}
+
+const arr = formatIntakeListValue
 
 /**
  * Light, deterministic cleanup of patient-typed free text: whitespace,
@@ -56,7 +91,7 @@ export function buildSubjectiveFromIntake(intake: Record<string, unknown> | null
   const symptoms = midSentence(intake.symptoms_description)
   const location = tidyFreeText(intake.location)
   const onset = tidyFreeText(intake.onset)
-  const relieving = tidyFreeText(intake.relieving_factors)
+  const relieving = tidyFreeText(arr(intake.relieving_factors))
 
   if (cc) lines.push(`Chief complaint: ${cc}.`)
   if (symptoms) lines.push(`Patient reports ${symptoms}.`)

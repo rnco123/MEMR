@@ -373,18 +373,6 @@ export function EncounterPatientInfoPanel({
               {patient.zip_code && ` ${patient.zip_code}`}
             </p>
           </div>
-          {(patient.emergency_contact_name ||
-            patient.emergency_contact_phone ||
-            patient.emergency_contact_relationship) && (
-            <div className="md:col-span-2">
-              <p className="text-slate-500 text-sm mb-1">{t('patient_register.emergency_contact')}</p>
-              <p className="text-slate-900">
-                {[patient.emergency_contact_name, patient.emergency_contact_relationship, patient.emergency_contact_phone]
-                  .filter(Boolean)
-                  .join(' · ') || t('common.na')}
-              </p>
-            </div>
-          )}
         </div>
       )}
     </div>
