@@ -106,8 +106,8 @@ test.describe('nurse flowboard — add new patient', () => {
     // Press Tab/Enter to close the calendar picker if it opened
     await page.keyboard.press('Escape')
 
-    // Gender dropdown
-    const genderSelect = page.locator('select').filter({ hasText: /select|male|female/i })
+    // Gender dropdown — scope to Patient details section to avoid matching Treatment type select
+    const genderSelect = page.locator('section').filter({ hasText: /patient details/i }).getByRole('combobox')
     await genderSelect.selectOption(PATIENT.gender)
 
     // ── Contact information ──────────────────────────────────────────────────────
@@ -204,13 +204,22 @@ test.describe('nurse flowboard — add new patient', () => {
       timeout: 20000,
     })
 
+    // After wizard closes, an encounter detail modal may auto-open — close it first
+    // so it doesn't block clicks on the flowboard table
+    const autoOpenModal = page.locator('.fixed.inset-0').filter({ hasText: /appointment initiated/i })
+    const autoOpenVisible = await autoOpenModal.isVisible({ timeout: 5000 }).catch(() => false)
+    if (autoOpenVisible) {
+      await page.keyboard.press('Escape')
+      await autoOpenModal.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
+    }
+
     // ── Part A: Flowboard → View button opens encounter detail modal ──────────
     const aliHassanRow = page.getByRole('heading', { name: /^Ali Hassan$/i }).last()
     await expect(aliHassanRow).toBeVisible({ timeout: 15000 })
 
     // Click View on that row → encounter modal opens (no page navigation)
     const rowContainer = aliHassanRow.locator('../../../..')
-    await rowContainer.getByRole('button', { name: /^view$/i }).click()
+    await rowContainer.getByRole('button', { name: /^view$/i }).click({ force: true })
 
     // Verify encounter detail modal shows Ali Hassan + Appointment Initiated
     const encounterModal = page.getByTestId('encounter-detail-modal').or(

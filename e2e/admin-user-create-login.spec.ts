@@ -114,9 +114,9 @@ test.describe('admin user creation and login', () => {
           /\/api\/admin\/users/.test(response.url()) && response.request().method() === 'POST',
         { timeout: 90000 }
       )
-      // Submit button: testid on local, "Create Account" on deployed
+      // Submit button: testid on local, form submit button on deployed
       const submitBtn = page.getByTestId('admin-users-submit-button').or(
-        page.getByRole('button', { name: /create account/i })
+        page.locator('form').getByRole('button', { name: 'Create Account' })
       )
       await submitBtn.click()
 

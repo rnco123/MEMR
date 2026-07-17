@@ -85,9 +85,9 @@ test.describe('nurse flowboard add encounter', () => {
     )
     await firstPatientButton.click()
 
-    // Submit encounter button — testid on local, button text on deployed
+    // Submit encounter button — testid on local, exact text on deployed
     const submitEncounterBtn = page.getByTestId('nurse-add-encounter-submit-button').or(
-      page.getByRole('button', { name: /create encounter|save encounter|submit/i })
+      page.getByRole('button', { name: 'Create encounter' })
     )
     await expect(submitEncounterBtn).toBeVisible({ timeout: 30000 })
     await submitEncounterBtn.click()
