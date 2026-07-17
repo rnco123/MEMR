@@ -16,14 +16,11 @@ function requireCredentials() {
 async function signInAsNurse(page: Page, email: string, password: string) {
   const json = await adaptiveSignIn(page, email, password)
   expect(json.role, 'Expected the authenticated account to resolve to nurse role').toBe('nurse')
-  // Wait for the post-login delayed redirect to land on /dashboard
   await page.waitForURL(/\/dashboard(?:\/)?/, { timeout: 45000 })
-  // Wait for the redirect animation to finish
   await page.waitForFunction(
     () => !document.body.innerText.includes('Redirecting to dashboard'),
     { timeout: 15000 }
   ).catch(() => {})
-  // Wait for /api/me/profile to complete
   await page.waitForResponse(
     r => r.url().includes('/api/me/profile') && r.status() < 400,
     { timeout: 30000 }
@@ -32,94 +29,82 @@ async function signInAsNurse(page: Page, email: string, password: string) {
 }
 
 test.describe('nurse flowboard add encounter', () => {
-  test.setTimeout(300000) // 5 minutes
+  test.setTimeout(300000)
 
   test('nurse can add an encounter for an existing patient', async ({ page }) => {
     requireCredentials()
 
     await signInAsNurse(page, nurseEmail, nursePassword)
 
-    // Click the "Virtual waiting room" sidebar link for client-side navigation.
-    // This keeps React mounted so role stays confirmed through the navigation.
     await page.getByRole('link', { name: /virtual waiting room/i }).click()
-    // The link goes to /dashboard/flowboard which redirects nurses to /dashboard/nurse-flowboard
     await page.waitForURL(/\/dashboard\/(nurse-)?flowboard/, { timeout: 30000 })
 
-    // Add encounter button: testid on local, button text on deployed
+    // Add encounter button — testid on local, button text on deployed
     const addEncounterBtn = page.getByTestId('nurse-flowboard-add-encounter-button').or(
       page.getByRole('button', { name: /add encounter/i })
     )
     await expect(addEncounterBtn).toBeVisible({ timeout: 30000 })
-
-    // Wait for the appointments fetch to settle
     await page.waitForLoadState('networkidle')
     await expect(addEncounterBtn).toBeVisible({ timeout: 10000 })
     await addEncounterBtn.click()
 
-    // Modal: testid on local, heading text on deployed
-    const modal = page.getByTestId('nurse-add-encounter-modal').or(
-      page.getByRole('heading', { name: /add encounter for existing patient/i }).locator('../../../..')
-    )
-    await expect(modal).toBeVisible({ timeout: 30000 })
+    // Wait for modal to open — detect by testid or heading
+    const modalByTestId = page.getByTestId('nurse-add-encounter-modal')
+    const modalByHeading = page.getByRole('heading', { name: /add encounter for existing patient/i })
+    const hasTestId = await modalByTestId.isVisible({ timeout: 5000 }).catch(() => false)
+    if (!hasTestId) {
+      await expect(modalByHeading).toBeVisible({ timeout: 30000 })
+    }
 
-    // The modal fetches services/pharmacies on open (optionsLoading).
-    // Wait for the search input to appear — it's only rendered when optionsLoading=false.
-    // This fetch can be slow; give it up to 60s.
-    const searchInput = modal.locator('input').first()
+    // Search input — appears after optionsLoading finishes
+    const searchInput = page.locator('[data-testid="nurse-add-encounter-modal"] input, [role="dialog"] input').first()
     await expect(searchInput).toBeVisible({ timeout: 60000 })
 
-    // Now wait for show-all button and click it.
-    // Button text is "Show all patients in my location"
-    const showAllButton = modal.getByRole('button', { name: /show all patients/i })
+    // Show all patients button
+    const showAllButton = page.getByRole('button', { name: /show all patients/i })
     await expect(showAllButton).toBeVisible({ timeout: 30000 })
 
-    // Intercept the patient-search response before clicking
     const patientSearchPromise = page.waitForResponse(
-      response => response.url().includes('/api/nurse/patient-search'),
+      r => r.url().includes('/api/nurse/patient-search'),
       { timeout: 30000 }
     )
     await showAllButton.click()
     await patientSearchPromise
 
-    const patientButtons = modal.locator('[data-testid^="nurse-add-encounter-patient-"]').or(
-      modal.locator('button').filter({ hasText: /^\w+ \w+/ }) // patient name buttons
+    // First patient button — testid pattern on local, any button in results on deployed
+    const firstPatientButton = page.locator('[data-testid^="nurse-add-encounter-patient-"]').first().or(
+      page.locator('[role="dialog"] button, [data-testid="nurse-add-encounter-modal"] button')
+        .filter({ hasText: /\w+ \w+/ })
+        .first()
     )
-    const firstPatientButton = patientButtons.first()
     await expect(firstPatientButton).toBeVisible({ timeout: 30000 })
 
     const createResponsePromise = page.waitForResponse(
-      response =>
-        response.url().endsWith('/api/nurse/walk-in') && response.request().method() === 'POST'
+      r => r.url().endsWith('/api/nurse/walk-in') && r.request().method() === 'POST',
+      { timeout: 60000 }
     )
     await firstPatientButton.click()
 
-    // Submit button: testid on local, button text on deployed
-    const submitEncounterBtn = modal.getByTestId('nurse-add-encounter-submit-button').or(
-      modal.getByRole('button', { name: /create encounter|submit/i })
+    // Submit encounter button — testid on local, button text on deployed
+    const submitEncounterBtn = page.getByTestId('nurse-add-encounter-submit-button').or(
+      page.getByRole('button', { name: /create encounter|save encounter|submit/i })
     )
     await expect(submitEncounterBtn).toBeVisible({ timeout: 30000 })
     await submitEncounterBtn.click()
 
     const createResponse = await createResponsePromise
-    expect(
-      createResponse.ok(),
-      `Encounter create failed with ${createResponse.status()}`
-    ).toBeTruthy()
+    expect(createResponse.ok(), `Encounter create failed with ${createResponse.status()}`).toBeTruthy()
 
     const createJson = (await createResponse.json()) as {
-      data?: {
-        encounter_id?: number
-        appointment_id?: number
-        patient_id?: number
-      }
+      data?: { encounter_id?: number; appointment_id?: number; patient_id?: number }
     }
     const encounterId = createJson.data?.encounter_id
     const appointmentId = createJson.data?.appointment_id
     const patientId = createJson.data?.patient_id
 
-    expect(encounterId, 'Expected walk-in create to return an encounter id').toBeTruthy()
-    expect(appointmentId, 'Expected walk-in create to return an appointment id').toBeTruthy()
-    expect(patientId, 'Expected walk-in create to return a patient id').toBeTruthy()
+    expect(encounterId, 'Expected encounter id').toBeTruthy()
+    expect(appointmentId, 'Expected appointment id').toBeTruthy()
+    expect(patientId, 'Expected patient id').toBeTruthy()
 
     const detailJson = await page.evaluate(async (id) => {
       const res = await fetch(`/api/encounters/${id}/detail`, { credentials: 'include' })
@@ -136,11 +121,7 @@ test.describe('nurse flowboard add encounter', () => {
     expect(detailJson.patient?.id).toBe(patientId)
     expect(detailJson.encounter?.status).toBe('appointment_initiated')
 
-    // Encounter detail modal: testid on local, visible text on deployed
-    const encounterDetailModal = page.getByTestId('encounter-detail-modal').or(
-      page.locator('*').filter({ hasText: /appointment initiated/i }).first()
-    )
-    await expect(encounterDetailModal).toBeVisible({ timeout: 30000 })
+    // Encounter detail confirmation
     await expect(page.getByText(/appointment initiated/i).first()).toBeVisible({ timeout: 30000 })
   })
 })

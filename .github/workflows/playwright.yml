@@ -15,10 +15,7 @@ jobs:
     timeout-minutes: 30
 
     env:
-      # All tests run against the deployed testing URL — no local server needed
       PLAYWRIGHT_BASE_URL: https://mcm-testing.up.railway.app
-
-      # Test credentials stored as GitHub secrets
       PLAYWRIGHT_ADMIN_EMAIL: ${{ secrets.PLAYWRIGHT_ADMIN_EMAIL }}
       PLAYWRIGHT_ADMIN_PASSWORD: ${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}
       PLAYWRIGHT_NURSE_EMAIL: ${{ secrets.PLAYWRIGHT_NURSE_EMAIL }}
@@ -40,8 +37,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Run E2E tests
-        run: npx playwright test e2e/nurse-flowboard-add-encounter.spec.ts e2e/nurse-flowboard-add-patient.spec.ts e2e/admin-user-create-login.spec.ts
+      - name: Run all E2E tests against deployed URL
+        run: npx playwright test e2e/admin-user-create-login.spec.ts e2e/nurse-flowboard-add-encounter.spec.ts e2e/nurse-flowboard-add-patient.spec.ts
         env:
           CI: true
 
