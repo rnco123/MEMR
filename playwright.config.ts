@@ -23,17 +23,19 @@ export default defineConfig({
     actionTimeout: 30000,
     navigationTimeout: 60000,
   },
-  webServer: {
-    command: 'npm run dev',
-    url: baseURL,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-    env: {
-      APP_ENV: 'development',
-      NEXT_PUBLIC_TURNSTILE_SITE_KEY: '',
-      TURNSTILE_SECRET_KEY: '',
-    },
-  },
+  webServer: process.env.PLAYWRIGHT_BASE_URL?.startsWith('https://')
+    ? undefined
+    : {
+        command: 'npm run dev',
+        url: baseURL,
+        reuseExistingServer: !process.env.CI,
+        timeout: 120000,
+        env: {
+          APP_ENV: 'development',
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: '',
+          TURNSTILE_SECRET_KEY: '',
+        },
+      },
   projects: [
     {
       name: 'chromium',
