@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { signIn as adaptiveSignIn } from './helpers/sign-in'
 
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
@@ -13,18 +14,7 @@ function requireCredentials() {
 }
 
 async function signInAsNurse(page: Page, email: string, password: string) {
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const loginForm = page.getByTestId('login-form').nth(1)
-  await loginForm.getByTestId('login-email-input').fill(email)
-  await loginForm.getByTestId('login-password-input').fill(password)
-  const responsePromise = page.waitForResponse(
-    response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST'
-  )
-  await loginForm.getByTestId('login-submit-button').click()
-  const response = await responsePromise
-  expect(response.ok(), `Login failed with ${response.status()}`).toBeTruthy()
-  const json = (await response.json()) as { role?: string | null }
+  const json = await adaptiveSignIn(page, email, password)
   expect(json.role, 'Expected the authenticated account to resolve to nurse role').toBe('nurse')
   // Wait for the post-login delayed redirect to land on /dashboard
   await page.waitForURL(/\/dashboard(?:\/)?/, { timeout: 45000 })
@@ -33,8 +23,7 @@ async function signInAsNurse(page: Page, email: string, password: string) {
     () => !document.body.innerText.includes('Redirecting to dashboard'),
     { timeout: 15000 }
   ).catch(() => {})
-  // Wait for /api/me/profile to complete — this warms the profile cache so the
-  // next page load resolves role fast enough for withRoleProtection to pass
+  // Wait for /api/me/profile to complete
   await page.waitForResponse(
     r => r.url().includes('/api/me/profile') && r.status() < 400,
     { timeout: 30000 }

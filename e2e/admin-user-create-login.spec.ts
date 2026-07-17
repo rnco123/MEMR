@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test'
+import { signIn as adaptiveSignIn } from './helpers/sign-in'
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
@@ -27,20 +28,7 @@ function makeUniqueUser() {
 }
 
 async function signIn(page: Page, email: string, password: string) {
-  await page.goto('/login')
-  await page.waitForLoadState('networkidle')
-  const loginForm = page.getByTestId('login-form').nth(1)
-  await loginForm.getByTestId('login-email-input').fill(email)
-  await loginForm.getByTestId('login-password-input').fill(password)
-  const loginResponsePromise = page.waitForResponse(
-    response => response.url().endsWith('/api/auth/login') && response.request().method() === 'POST'
-  )
-  await loginForm.getByTestId('login-submit-button').click()
-  const loginResponse = await loginResponsePromise
-  expect(loginResponse.ok(), `Login failed with ${loginResponse.status()}`).toBeTruthy()
-  // Wait for the client-side redirect to complete after a successful login
-  await page.waitForLoadState('networkidle')
-  return (await loginResponse.json()) as { role?: string | null }
+  return adaptiveSignIn(page, email, password)
 }
 
 async function signInAsAdmin(page: Page, email: string, password: string) {
@@ -48,8 +36,6 @@ async function signInAsAdmin(page: Page, email: string, password: string) {
   expect(loginJson.role, 'Expected the authenticated account to resolve to admin role').toBe(
     'admin'
   )
-  // The app shows a post-login animation then does router.push('/admin') after ~1800ms delay.
-  // Wait up to 45s for the URL to settle on /admin.
   await page.waitForURL(/\/admin(?:\/)?$/, { timeout: 45000 })
 }
 
