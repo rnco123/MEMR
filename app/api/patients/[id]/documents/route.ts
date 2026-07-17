@@ -9,6 +9,7 @@ import { handleApiError } from '@/lib/api-error-handler'
 import { PATIENT_DOCUMENT_SELECT } from '@/lib/encounters/encounter-detail-selects'
 import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
 import { auditPhi } from '@/lib/audit-phi'
+import { PATIENT_DOCUMENT_LABELS } from '@/lib/validation'
 
 // Patient documents: for doctors and nurses to upload and manage documents for a patient.
 // Force dynamic rendering since we use cookies for authentication
@@ -116,7 +117,10 @@ export async function GET(
       request,
     })
 
-    return NextResponse.json({ documents: merged })
+    return NextResponse.json(
+      { documents: merged },
+      { headers: { 'Cache-Control': 'private, no-store, max-age=0' } }
+    )
   } catch (error) {
     return handleApiError(error)
   }
@@ -190,18 +194,7 @@ export async function POST(
 
     const contentType = resolvePatientDocumentContentType(file) ?? 'application/octet-stream'
 
-    const validCategories = [
-      'image',
-      'report',
-      'bill',
-      'prescription',
-      'lab_result',
-      'xray',
-      'immigration',
-      'i693',
-      'other',
-    ]
-    if (!validCategories.includes(documentLabel)) {
+    if (!(PATIENT_DOCUMENT_LABELS as readonly string[]).includes(documentLabel)) {
       return NextResponse.json({ error: 'Invalid document category' }, { status: 400 })
     }
 

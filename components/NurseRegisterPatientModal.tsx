@@ -9,6 +9,10 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import type { PatientDocumentLabel } from '@/lib/validation'
+import {
+  PATIENT_DOCUMENT_ACCEPT,
+  validatePatientDocumentUpload,
+} from '@/lib/security/file-upload'
 
 const INPUT =
   'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/35 focus:border-violet-400 transition-shadow'
@@ -34,6 +38,13 @@ type CreatedPatient = {
   created_by_source: string
 }
 
+type PendingDocument = {
+  file: File
+  label: PatientDocumentLabel
+  id: string
+  error?: string
+}
+
 type Props = {
   isOpen: boolean
   onClose: () => void
@@ -46,11 +57,18 @@ type Props = {
 }
 
 const DOCUMENT_UPLOAD_OPTIONS: Array<{ value: PatientDocumentLabel; labelKey: string }> = [
-  { value: 'id_document', labelKey: 'patient_register.doc_id' },
-  { value: 'previous_medical_records', labelKey: 'patient_register.doc_previous_records' },
-  { value: 'lab_result', labelKey: 'patient_register.doc_lab' },
-  { value: 'imaging', labelKey: 'patient_register.doc_imaging' },
-  { value: 'other', labelKey: 'patient_register.doc_other' },
+  { value: 'id_document', labelKey: 'patient_file.doc_label_id_document' },
+  { value: 'previous_medical_records', labelKey: 'patient_file.doc_label_previous_medical_records' },
+  { value: 'image', labelKey: 'patient_file.doc_label_image' },
+  { value: 'report', labelKey: 'patient_file.doc_label_report' },
+  { value: 'bill', labelKey: 'patient_file.doc_label_bill' },
+  { value: 'prescription', labelKey: 'patient_file.doc_label_prescription' },
+  { value: 'lab_result', labelKey: 'patient_file.doc_label_lab_result' },
+  { value: 'xray', labelKey: 'patient_file.doc_label_xray' },
+  { value: 'imaging', labelKey: 'patient_file.doc_label_imaging' },
+  { value: 'immigration', labelKey: 'patient_file.doc_label_immigration' },
+  { value: 'i693', labelKey: 'patient_file.doc_label_i693' },
+  { value: 'other', labelKey: 'patient_file.doc_label_other' },
 ]
 
 export function NurseRegisterPatientModal({
@@ -97,10 +115,9 @@ export function NurseRegisterPatientModal({
   const [createdEncounterId, setCreatedEncounterId] = useState<number | null>(null)
   const [createdAppointmentId, setCreatedAppointmentId] = useState<number | null>(null)
 
-  const [pendingFiles, setPendingFiles] = useState<
-    Array<{ file: File; label: PatientDocumentLabel; id: string }>
-  >([])
+  const [pendingFiles, setPendingFiles] = useState<PendingDocument[]>([])
   const [uploadLabel, setUploadLabel] = useState<PatientDocumentLabel>('id_document')
+  const [dropActive, setDropActive] = useState(false)
 
   const notifiedRef = useRef(false)
 
@@ -126,6 +143,7 @@ export function NurseRegisterPatientModal({
     setCreatedAppointmentId(null)
     setPendingFiles([])
     setUploadLabel('id_document')
+    setDropActive(false)
     notifiedRef.current = false
   }, [])
 
@@ -149,12 +167,15 @@ export function NurseRegisterPatientModal({
     let cancelled = false
     setServicesLoading(true)
     fetch('/api/nurse/walk-in', { credentials: 'include' })
-      .then((r) => r.json())
+      .then(async (response) => {
+        const json = await response.json()
+        if (!response.ok) throw new Error(json.error || t('nurse_walkin.options_failed'))
+        return json
+      })
       .then((json) => {
         if (cancelled) return
         const rows = (json.services ?? []) as ServiceRow[]
         setServices(rows)
-        if (rows[0]?.id) setServiceId(String(rows[0].id))
       })
       .catch(() => {
         if (!cancelled) toast.error(t('nurse_walkin.options_failed'))
@@ -167,13 +188,27 @@ export function NurseRegisterPatientModal({
     }
   }, [isOpen, t])
 
-  const serviceTitle = (s: ServiceRow) =>
-    language === 'es' && s.title_es ? s.title_es : s.title_en
-
   const selectedLocation = useMemo(
     () => assignedLocations.find((loc) => String(loc.id) === locationId) ?? null,
     [assignedLocations, locationId]
   )
+  const isKempwoodTenant = selectedLocation?.tenant_id === 3
+
+  const availableServices = services
+
+  useEffect(() => {
+    setServiceId((current) => {
+      if (availableServices.some((service) => String(service.id) === current)) return current
+      return availableServices[0]?.id ? String(availableServices[0].id) : ''
+    })
+  }, [availableServices])
+
+  const serviceTitle = (service: ServiceRow) => {
+    const title = language === 'es' && service.title_es
+      ? service.title_es
+      : service.title_en
+    return isKempwoodTenant ? title.replace(/\s*\$220\s*$/, '') : title
+  }
 
   const filteredLocations = useMemo(() => {
     const q = locationQuery.trim().toLowerCase()
@@ -278,12 +313,34 @@ export function NurseRegisterPatientModal({
 
   const addPendingFile = (fileList: FileList | null) => {
     if (!fileList?.length) return
-    const next = Array.from(fileList).map((file) => ({
-      file,
-      label: uploadLabel,
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random()}`,
-    }))
-    setPendingFiles((prev) => [...prev, ...next])
+    const validFiles: PendingDocument[] = []
+    const invalidFiles: string[] = []
+
+    Array.from(fileList).forEach((file) => {
+      const result = validatePatientDocumentUpload(file)
+      if (!result.valid) {
+        invalidFiles.push(`${file.name}: ${result.error || t('patient_register.upload_failed')}`)
+        return
+      }
+      validFiles.push({
+        file,
+        label: uploadLabel,
+        id: `${file.name}-${file.size}-${file.lastModified}`,
+      })
+    })
+
+    setPendingFiles((prev) => {
+      const existingIds = new Set(prev.map((item) => item.id))
+      return [...prev, ...validFiles.filter((item) => !existingIds.has(item.id))]
+    })
+    if (invalidFiles.length > 0) {
+      toast.error(invalidFiles[0], {
+        description:
+          invalidFiles.length > 1
+            ? t('patient_register.files_rejected', { count: invalidFiles.length })
+            : undefined,
+      })
+    }
   }
 
   const uploadDocuments = async () => {
@@ -293,7 +350,8 @@ export function NurseRegisterPatientModal({
     }
     setUploading(true)
     try {
-      for (const item of pendingFiles) {
+      let failedCount = 0
+      for (const item of [...pendingFiles]) {
         const formData = new FormData()
         formData.append('file', item.file)
         formData.append('document_label', item.label)
@@ -305,8 +363,21 @@ export function NurseRegisterPatientModal({
         })
         const json = await res.json()
         if (!res.ok) {
-          throw new Error(json.error || t('patient_register.upload_failed'))
+          failedCount += 1
+          setPendingFiles((prev) =>
+            prev.map((pending) =>
+              pending.id === item.id
+                ? { ...pending, error: json.error || t('patient_register.upload_failed') }
+                : pending
+            )
+          )
+          continue
         }
+        setPendingFiles((prev) => prev.filter((pending) => pending.id !== item.id))
+      }
+      if (failedCount > 0) {
+        toast.error(t('patient_register.upload_partial', { count: failedCount }))
+        return
       }
       toast.success(t('patient_register.upload_success'))
       notifyCreated(created, createdEncounterId, createdAppointmentId)
@@ -319,6 +390,11 @@ export function NurseRegisterPatientModal({
   }
 
   const stepIndex = step === 'location' ? 0 : step === 'form' ? 1 : 2
+  const pendingBytes = pendingFiles.reduce((total, item) => total + item.file.size, 0)
+  const formatFileSize = (bytes: number) => {
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  }
   const stepLabels = [
     t('patient_register.location'),
     t('patient_register.patient_details'),
@@ -514,14 +590,14 @@ export function NurseRegisterPatientModal({
                   <select
                     value={serviceId}
                     onChange={(e) => setServiceId(e.target.value)}
-                    disabled={servicesLoading || services.length === 0}
+                    disabled={servicesLoading || availableServices.length === 0}
                     className={`${INPUT} mt-1.5`}
                     required
                   >
-                    {services.length === 0 ? (
+                    {availableServices.length === 0 ? (
                       <option value="">{t('patient_register.treatment_type_ph')}</option>
                     ) : null}
-                    {services.map((s) => (
+                    {availableServices.map((s) => (
                       <option key={s.id} value={s.id}>
                         {serviceTitle(s)}
                       </option>
@@ -654,14 +730,26 @@ export function NurseRegisterPatientModal({
               </section>
             </>
           ) : (
-            <section className={CARD}>
-              <h3 className={SECTION}>{t('patient_register.documents')}</h3>
-              <p className="text-xs text-slate-500 -mt-1">
-                {t('patient_register.documents_hint', {
-                  name: created ? `${created.first_name} ${created.last_name}` : '',
-                })}
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <section className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm">
+              <div className="border-b border-slate-100 bg-gradient-to-r from-violet-50/80 to-fuchsia-50/40 px-5 py-4">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm shadow-violet-600/20">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-3-3v6m5 6H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+                    </svg>
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900">{t('patient_register.documents')}</h3>
+                    <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                      {t('patient_register.documents_hint', {
+                        name: created ? `${created.first_name} ${created.last_name}` : '',
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4 p-5">
                 <div>
                   <label className={LABEL}>{t('patient_file.document_label')}</label>
                   <select
@@ -675,49 +763,107 @@ export function NurseRegisterPatientModal({
                       </option>
                     ))}
                   </select>
+                  <p className="mt-1.5 text-xs text-slate-500">{t('patient_register.category_hint')}</p>
                 </div>
-                <div>
-                  <label className={LABEL}>{t('patient_register.choose_files')}</label>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,image/png,image/jpeg"
-                    className={`${INPUT} mt-1.5`}
-                    onChange={(e) => {
-                      addPendingFile(e.target.files)
-                      e.target.value = ''
-                    }}
-                  />
+
+                <div
+                  onDragEnter={(e) => {
+                    e.preventDefault()
+                    setDropActive(true)
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    setDropActive(true)
+                  }}
+                  onDragLeave={(e) => {
+                    e.preventDefault()
+                    const next = e.relatedTarget as Node | null
+                    if (!next || !e.currentTarget.contains(next)) setDropActive(false)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    setDropActive(false)
+                    addPendingFile(e.dataTransfer.files)
+                  }}
+                  className={`rounded-2xl border-2 border-dashed px-5 py-7 text-center transition-colors ${
+                    dropActive
+                      ? 'border-violet-500 bg-violet-50'
+                      : 'border-slate-300 bg-slate-50/70 hover:border-violet-300 hover:bg-violet-50/40'
+                  }`}
+                >
+                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-white text-violet-600 shadow-sm ring-1 ring-slate-200">
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.9A5 5 0 0115.9 6H16a5 5 0 011 9.9M12 12v9m0-9-3 3m3-3 3 3" />
+                    </svg>
+                  </div>
+                  <p className="text-sm font-semibold text-slate-800">{t('patient_register.drop_files')}</p>
+                  <p className="mt-1 text-xs text-slate-500">{t('patient_file.accepted_formats')}</p>
+                  <label className="mt-4 inline-flex cursor-pointer items-center justify-center rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-violet-700">
+                    {t('patient_register.choose_files')}
+                    <input
+                      type="file"
+                      multiple
+                      accept={PATIENT_DOCUMENT_ACCEPT}
+                      className="sr-only"
+                      onChange={(e) => {
+                        addPendingFile(e.target.files)
+                        e.target.value = ''
+                      }}
+                    />
+                  </label>
                 </div>
-              </div>
+
               {pendingFiles.length === 0 ? (
-                <p className="text-sm text-slate-500 rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-6 text-center">
+                <p className="text-center text-xs text-slate-400">
                   {t('patient_register.no_docs_yet')}
                 </p>
               ) : (
-                <ul className="space-y-2">
-                  {pendingFiles.map((item) => (
-                    <li
-                      key={item.id}
-                      className="flex items-center justify-between gap-2 rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-2.5 text-sm"
-                    >
-                      <span className="truncate text-slate-800">
-                        {item.file.name}
-                        <span className="text-slate-400 ml-2">
-                          ({t(DOCUMENT_UPLOAD_OPTIONS.find((o) => o.value === item.label)?.labelKey || 'patient_register.doc_other')})
-                        </span>
-                      </span>
-                      <button
-                        type="button"
-                        className="text-xs font-medium text-red-600 hover:underline shrink-0"
-                        onClick={() => setPendingFiles((prev) => prev.filter((p) => p.id !== item.id))}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs text-slate-500">
+                    <span>{t('patient_register.files_ready', { count: pendingFiles.length })}</span>
+                    <span>{formatFileSize(pendingBytes)}</span>
+                  </div>
+                  <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                    {pendingFiles.map((item) => (
+                      <li
+                        key={item.id}
+                        className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 ${
+                          item.error ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-white'
+                        }`}
                       >
-                        {t('common.remove')}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
+                          item.file.type === 'application/pdf'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-slate-800">{item.file.name}</span>
+                          <span className={item.error ? 'text-xs text-red-600' : 'text-xs text-slate-500'}>
+                            {item.error ||
+                              `${formatFileSize(item.file.size)} · ${t(
+                                DOCUMENT_UPLOAD_OPTIONS.find((o) => o.value === item.label)?.labelKey ||
+                                  'patient_file.doc_label_other'
+                              )}`}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setPendingFiles((prev) => prev.filter((p) => p.id !== item.id))}
+                          aria-label={`${t('common.remove')} ${item.file.name}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
+              </div>
             </section>
           )}
         </div>

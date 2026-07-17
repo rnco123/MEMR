@@ -243,7 +243,7 @@ export async function assertEncounterAccess(
 
  * Admin: all patients (including null location_id).
 
- * Others: home clinic or any visit at an assigned location; null location_id is admin-only.
+ * Others: home clinic or any visit at an assigned location.
 
  */
 
@@ -290,14 +290,6 @@ export async function assertPatientAccess(
   if (error || !patient) {
 
     throw new AuthorizationError('Patient not found or access denied')
-
-  }
-
-
-
-  if (patient.location_id == null) {
-
-    throw new AuthorizationError('Patient location not assigned; access denied')
 
   }
 

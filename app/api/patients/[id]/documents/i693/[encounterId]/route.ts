@@ -79,6 +79,7 @@ export async function GET(
           headers: {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `inline; filename="I-693-encounter-${encounterId}.pdf"`,
+            'Cache-Control': 'private, no-store, max-age=0',
           },
         })
       }
@@ -93,6 +94,7 @@ export async function GET(
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="I-693-encounter-${encounterId}.pdf"`,
+        'Cache-Control': 'private, no-store, max-age=0',
       },
     })
   } catch (e) {

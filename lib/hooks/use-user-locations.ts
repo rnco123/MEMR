@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react'
 export type UserLocation = {
   id: number
   title: string
+  tenant_id?: number | null
   address?: string | null
   location_code?: string | null
 }

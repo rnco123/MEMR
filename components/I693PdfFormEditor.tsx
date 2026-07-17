@@ -594,7 +594,9 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   }, [patientId, t])
 
   const openPatientChartSplitView = useCallback(async () => {
-    const docs = patientChartDocs.length > 0 ? patientChartDocs : await loadPatientChartDocuments()
+    // Always refresh so newly uploaded files appear and one-hour signed URLs do not
+    // become stale while the editor remains open.
+    const docs = await loadPatientChartDocuments()
     if (docs.length === 0) {
       toast.message(t('i693.splitview_patient_chart_empty'))
       return
@@ -603,7 +605,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     // so the user explicitly chooses which chart file to open.
     setSplitDocIndex(null)
     setSplitViewOpen(true)
-  }, [loadPatientChartDocuments, patientChartDocs, t])
+  }, [loadPatientChartDocuments, t])
 
   const splitViewItems = useMemo(
     () => patientChartDocs.map(patientChartDocToSplitItem),

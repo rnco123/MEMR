@@ -17,15 +17,39 @@ export async function createSignedUrlMap(
   const { data, error } = await client.storage.from(bucket).createSignedUrls(uniquePaths, expiresIn)
   if (error) {
     console.error(`[createSignedUrlMap] ${bucket}:`, error.message)
-    return map
-  }
-
-  for (const item of data ?? []) {
-    if (item.path && item.signedUrl) {
-      map.set(item.path, item.signedUrl)
-    } else if (item.path) {
-      console.error(`[createSignedUrlMap] ${bucket}/${item.path}:`, item.error ?? 'sign failed')
+  } else {
+    for (const item of data ?? []) {
+      if (item.path && item.signedUrl) {
+        map.set(item.path, item.signedUrl)
+      } else if (item.path) {
+        console.error(`[createSignedUrlMap] ${bucket}/${item.path}:`, item.error ?? 'sign failed')
+      }
     }
   }
+
+  // A single bad path can fail the whole batch. Retry missing paths individually so
+  // unrelated chart documents remain previewable.
+  const missingPaths = uniquePaths.filter((path) => !map.has(path))
+  if (missingPaths.length > 0) {
+    const results = await Promise.all(
+      missingPaths.map(async (path) => {
+        const { data: signed, error: signError } = await client.storage
+          .from(bucket)
+          .createSignedUrl(path, expiresIn)
+        if (signError || !signed?.signedUrl) {
+          console.error(
+            `[createSignedUrlMap] ${bucket}/${path}:`,
+            signError?.message ?? 'sign failed'
+          )
+          return null
+        }
+        return [path, signed.signedUrl] as const
+      })
+    )
+    for (const result of results) {
+      if (result) map.set(result[0], result[1])
+    }
+  }
+
   return map
 }

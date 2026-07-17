@@ -111,25 +111,6 @@ const emptyRxForm = (): Omit<RxLine, 'id'> => ({
   notes: '',
 })
 
-interface CategoryMemr {
-  category_id: number
-  category_name: string
-}
-
-/** Product row from GET /api/mcm/catalog (primary DB `products` or `product_memr`). */
-interface ProductRow {
-  product_id: number
-  product_name: string
-  category_id?: number | null
-}
-
-interface PreSalesProduct {
-  id: string
-  product_id: number
-  product_name: string
-  quantity: number
-}
-
 interface FinalReviewModalProps {
   encounterId: number
   appointmentId: number
@@ -141,7 +122,6 @@ interface FinalReviewModalProps {
 
 const REVIEW_STEP_KEYS = [
   'patient_review',
-  'pre_sales_product',
   'pharmacy_order',
   'followup',
   'final_summary',
@@ -170,25 +150,14 @@ export function FinalReviewModal({
   /** Follow-up step: date/time UI only (not persisted). */
   const [followupDate, setFollowupDate] = useState('')
   const [followupTime, setFollowupTime] = useState('')
-  const [preSalesProducts, setPreSalesProducts] = useState<PreSalesProduct[]>([])
   const [activeStep, setActiveStep] = useState<ReviewStep>('patient_review')
   const [saving, setSaving] = useState(false)
   const [stepTransitionLoading, setStepTransitionLoading] = useState(false)
-  const [mcmCatalogLoading, setMcmCatalogLoading] = useState(false)
   const [transcriptSuggestions, setTranscriptSuggestions] = useState<FinalReviewSuggestions | null>(null)
   const [suggestionsLoading, setSuggestionsLoading] = useState(false)
   const [suggestionsError, setSuggestionsError] = useState<string | null>(null)
   const [suggestionsNoTranscript, setSuggestionsNoTranscript] = useState(false)
   const [followupReason, setFollowupReason] = useState('')
-
-  // Categories/products for dropdowns: loaded via GET /api/mcm/catalog
-  const [categories, setCategories] = useState<CategoryMemr[]>([])
-  const [categoriesError, setCategoriesError] = useState<string | null>(null)
-  const [products, setProducts] = useState<ProductRow[]>([])
-  const [productsError, setProductsError] = useState<string | null>(null)
-  const [selectedCategoryId, setSelectedCategoryId] = useState<number | ''>('')
-  const [selectedProductId, setSelectedProductId] = useState<number | ''>('')
-  const [productQuantity, setProductQuantity] = useState(1)
 
   useEffect(() => {
     if (isOpen) {
@@ -247,54 +216,11 @@ export function FinalReviewModal({
   useEffect(() => {
     if (!isOpen) return
 
-    const fetchMcmCatalogAsync = () => {
-      void (async () => {
-        setMcmCatalogLoading(true)
-        setCategoriesError(null)
-        try {
-          const controller = new AbortController()
-          const tid = globalThis.setTimeout(() => controller.abort(), 15_000)
-          const mcmCatalogRes = await fetch('/api/mcm/catalog', {
-            method: 'GET',
-            credentials: 'include',
-            signal: controller.signal,
-          })
-          globalThis.clearTimeout(tid)
-          const mcmCatalogJson = await mcmCatalogRes.json().catch(() => ({}))
-          if (!mcmCatalogRes.ok) {
-            console.error('Error fetching MCM catalog:', mcmCatalogJson)
-            setCategoriesError(
-              typeof mcmCatalogJson.error === 'string' ? mcmCatalogJson.error : 'Failed to load MCM categories'
-            )
-            setCategories([])
-            setProducts([])
-          } else {
-            setCategories((mcmCatalogJson.categories as CategoryMemr[]) || [])
-            setProducts((mcmCatalogJson.products as ProductRow[]) || [])
-          }
-        } catch (e) {
-          const aborted =
-            (e instanceof DOMException && e.name === 'AbortError') ||
-            (e instanceof Error && e.name === 'AbortError')
-          console.error('MCM catalog fetch failed:', e)
-          setCategoriesError(
-            aborted
-              ? 'MCM catalog timed out. You can still review the encounter; try opening Pre-Sales again in a moment.'
-              : 'Could not load MCM catalog.'
-          )
-          setCategories([])
-          setProducts([])
-        } finally {
-          setMcmCatalogLoading(false)
-        }
-      })()
-    }
-
     const fetchData = async () => {
       setLoading(true)
       try {
         const res = await fetch(
-          `/api/encounters/${encounterId}/detail?prescriptions=1&pre_sales=1`,
+          `/api/encounters/${encounterId}/detail?prescriptions=1`,
           { credentials: 'include' }
         )
         const json = await res.json()
@@ -308,14 +234,13 @@ export function FinalReviewModal({
         const vitalsData = json.vitals
         const soapData = json.ai_soap as SOAPNotes | null
         const pharmacyData = json.pharmacy
-        const preSalesData = (json.pre_sales as Array<{ id: number; product_id: number | null; product_quantity: number }>) ?? []
         const rxRows = (json.prescriptions as Record<string, unknown>[]) ?? []
 
         setPatient((patientData as unknown as Patient) ?? null)
 
         if (encounterData) {
           const cached = encounterData.final_review_suggestions_json as FinalReviewSuggestions | null
-          if (cached && typeof cached === 'object' && Array.isArray(cached.pre_sales)) {
+          if (cached && typeof cached === 'object') {
             setTranscriptSuggestions(cached)
           }
           setEncounterDoctorId(
@@ -336,43 +261,6 @@ export function FinalReviewModal({
         setSoapNotes(soapData)
         setPharmacy((pharmacyData as Pharmacy) ?? null)
 
-        if (preSalesData.length) {
-          const productIds = [
-            ...new Set(
-              preSalesData
-                .map((r) => r.product_id)
-                .filter((id): id is number => id != null && Number(id) > 0)
-            ),
-          ]
-          const nameMap = new Map<number, string>()
-          if (productIds.length > 0) {
-            try {
-              const catalogRes = await fetch(
-                `/api/mcm/catalog?product_ids=${productIds.map(String).join(',')}`,
-                { credentials: 'include' }
-              )
-              const catalogJson = await catalogRes.json().catch(() => ({}))
-              if (catalogRes.ok && Array.isArray(catalogJson.products)) {
-                for (const row of catalogJson.products as { product_id: number; product_name: string }[]) {
-                  if (row.product_name) nameMap.set(row.product_id, row.product_name)
-                }
-              }
-            } catch {
-              /* keep Unknown for unresolved ids */
-            }
-          }
-          setPreSalesProducts(
-            preSalesData.map((r) => ({
-              id: `db-${r.id}`,
-              product_id: r.product_id ?? 0,
-              product_name: nameMap.get(r.product_id ?? 0) ?? 'Unknown',
-              quantity: r.product_quantity,
-            }))
-          )
-        } else {
-          setPreSalesProducts([])
-        }
-
         setRxLines(
           rxRows.map((r) => {
             const dose =
@@ -392,8 +280,6 @@ export function FinalReviewModal({
             }
           })
         )
-
-        fetchMcmCatalogAsync()
       } catch (error) {
         console.error('Error fetching final review data:', error)
         toast.error('Could not load review data. Check permissions or try again.')
@@ -411,33 +297,6 @@ export function FinalReviewModal({
     void fetchTranscriptSuggestions(false)
   }, [isOpen, loading, transcriptSuggestions, fetchTranscriptSuggestions])
 
-  // When category changes, fetch products from MCM catalog.
-  useEffect(() => {
-    if (!selectedCategoryId) {
-      setProducts([])
-      setProductsError(null)
-      setSelectedProductId('')
-      return
-    }
-    const load = async () => {
-      setProductsError(null)
-      const res = await fetch(`/api/mcm/catalog?category_id=${selectedCategoryId}`, {
-        method: 'GET',
-        credentials: 'include',
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        console.error('Error fetching MCM products:', json)
-        setProductsError(json.error || 'Failed to load products')
-        setProducts([])
-      } else {
-        setProducts((json.products as ProductRow[]) || [])
-      }
-      setSelectedProductId('')
-    }
-    load()
-  }, [selectedCategoryId])
-
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A'
     return formatCalendarDate(dateString, 'en-US', { month: 'long' }) || 'N/A'
@@ -446,37 +305,6 @@ export function FinalReviewModal({
   const calculateAge = (dob: string | null) => {
     const age = ageFromCalendarDate(dob)
     return age != null ? age : 'N/A'
-  }
-
-  const handleAddProduct = () => {
-    if (!selectedProductId || productQuantity < 1) return
-    const product = products.find((p) => p.product_id === selectedProductId)
-    if (!product) return
-    const item: PreSalesProduct = {
-      id: Date.now().toString(),
-      product_id: product.product_id,
-      product_name: product.product_name,
-      quantity: productQuantity,
-    }
-    setPreSalesProducts([...preSalesProducts, item])
-    setSelectedProductId('')
-    setProductQuantity(1)
-  }
-
-  const handleRemoveProduct = (id: string) => {
-    setPreSalesProducts(preSalesProducts.filter(p => p.id !== id))
-  }
-
-  const applyPreSalesSuggestions = () => {
-    if (!transcriptSuggestions?.pre_sales.length) return
-    const added: PreSalesProduct[] = transcriptSuggestions.pre_sales.map((s) => ({
-      id: `sug-${Date.now()}-${s.product_id}`,
-      product_id: s.product_id,
-      product_name: s.product_name,
-      quantity: s.quantity,
-    }))
-    setPreSalesProducts((prev) => [...prev, ...added])
-    toast.success(`Added ${added.length} suggested product(s)`)
   }
 
   const applyPharmacySuggestions = () => {
@@ -559,44 +387,6 @@ export function FinalReviewModal({
 
   const reviewStepIndex = REVIEW_STEP_KEYS.indexOf(activeStep)
   const isLastReviewStep = activeStep === 'final_summary'
-
-  /** Save pending lines to EMR `pre_sales` for this encounter. */
-  const persistPendingPreSales = useCallback(async (): Promise<boolean> => {
-    const pending = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
-    if (pending.length === 0) return true
-
-    const rows = pending.map((p) => ({
-      product_id: p.product_id,
-      product_quantity: p.quantity,
-    }))
-
-    const res = await fetch(`/api/encounters/${encounterId}/pre-sales`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rows }),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      console.error(json)
-      toast.error(json.error ?? 'Could not save pre-sales rows')
-      return false
-    }
-
-    toast.success('Pre-sales saved for this encounter')
-
-    const inserted = (json.data ?? []) as Array<{ id: number; product_id: number | null; product_quantity: number }>
-    const mergedNew = inserted.map((row, i) => ({
-      id: `db-${row.id}`,
-      product_id: row.product_id ?? pending[i]?.product_id ?? 0,
-      product_name: pending[i]?.product_name ?? 'Unknown',
-      quantity: row.product_quantity ?? pending[i]?.quantity ?? 0,
-    }))
-
-    setPreSalesProducts((prev) => [...prev.filter((p) => String(p.id).startsWith('db-')), ...mergedNew])
-
-    return true
-  }, [preSalesProducts, encounterId])
 
   /** Persist session-only Rx lines to EMR `prescriptions` using encounter pharmacy_id + assigned doctor. */
   const persistPendingPrescriptions = useCallback(async (): Promise<boolean> => {
@@ -689,15 +479,6 @@ export function FinalReviewModal({
 
   const goNextStep = async () => {
     const idx = REVIEW_STEP_KEYS.indexOf(activeStep)
-    if (activeStep === 'pre_sales_product') {
-      setStepTransitionLoading(true)
-      try {
-        const ok = await persistPendingPreSales()
-        if (!ok) return
-      } finally {
-        setStepTransitionLoading(false)
-      }
-    }
     if (activeStep === 'pharmacy_order') {
       setStepTransitionLoading(true)
       try {
@@ -727,15 +508,6 @@ export function FinalReviewModal({
       if (!okRx) {
         setSaving(false)
         return
-      }
-
-      const newProducts = preSalesProducts.filter((p) => !String(p.id).startsWith('db-'))
-      if (newProducts.length > 0) {
-        const okPreSales = await persistPendingPreSales()
-        if (!okPreSales) {
-          setSaving(false)
-          return
-        }
       }
 
       const statusRes = await fetch(`/api/encounters/${encounterId}/status`, {
@@ -799,10 +571,9 @@ export function FinalReviewModal({
           <div className="flex items-center gap-2 overflow-x-auto">
             {[
               { key: 'patient_review', label: '1. Patient Review' },
-              { key: 'pre_sales_product', label: '2. Pre-Sales Product' },
-              { key: 'pharmacy_order', label: '3. Pharmacy Order' },
-              { key: 'followup', label: '4. Followup' },
-              { key: 'final_summary', label: '5. Final Summary' },
+              { key: 'pharmacy_order', label: '2. Pharmacy Order' },
+              { key: 'followup', label: '3. Followup' },
+              { key: 'final_summary', label: '4. Final Summary' },
             ].map((step) => (
               <button
                 key={step.key}
@@ -815,11 +586,6 @@ export function FinalReviewModal({
                 }`}
               >
                 {step.label}
-                {step.key === 'pre_sales_product' && preSalesProducts.length > 0 && (
-                  <span className="ml-2 px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded-full text-xs">
-                    {preSalesProducts.length}
-                  </span>
-                )}
               </button>
             ))}
           </div>
@@ -1079,163 +845,6 @@ export function FinalReviewModal({
                 </div>
               )}
 
-              {activeStep === 'pre_sales_product' && (
-                <div className="space-y-6">
-                  {renderTranscriptSuggestionsShell(
-                    transcriptSuggestions ? (
-                      <div className="space-y-2 text-sm">
-                        {transcriptSuggestions.pre_sales.length === 0 ? (
-                          <p className="text-gray-400">No catalog-matched products in transcript.</p>
-                        ) : (
-                          <ul className="space-y-2">
-                            {transcriptSuggestions.pre_sales.map((s) => (
-                              <li
-                                key={`${s.product_id}-${s.source_quote ?? ''}`}
-                                className="bg-white/5 border border-white/10 rounded-lg p-3"
-                              >
-                                <p className="text-white font-medium">
-                                  {s.product_name} × {s.quantity}
-                                </p>
-                                {s.source_quote && (
-                                  <p className="text-gray-400 text-xs mt-1 italic">&ldquo;{s.source_quote}&rdquo;</p>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        {transcriptSuggestions.unmatched_tests.length > 0 && (
-                          <div className="mt-3">
-                            <p className="text-amber-300 text-xs mb-1">Unmatched tests (not in catalog):</p>
-                            <div className="flex flex-wrap gap-2">
-                              {transcriptSuggestions.unmatched_tests.map((t) => (
-                                <span
-                                  key={t}
-                                  className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs"
-                                >
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : null,
-                    {
-                      applyLabel: 'Apply to pre-sales',
-                      onApply: applyPreSalesSuggestions,
-                      applyDisabled: !transcriptSuggestions?.pre_sales.length,
-                    }
-                  )}
-
-                  {/* Add Product Form */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4">Add Product to Pre-Sales</h3>
-                    <p className="text-blue-200/80 text-sm mb-4">
-                      One encounter can have multiple products. Categories and products come from the clinic
-                      catalog. New rows save to this encounter&apos;s pre-sales list.
-                    </p>
-                    {mcmCatalogLoading && (
-                      <p className="text-cyan-300/90 text-xs mb-3">Loading MCM categories and products…</p>
-                    )}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
-                      <div>
-                        <label className="text-blue-200 text-sm mb-1 block">Category</label>
-                        <select
-                          value={selectedCategoryId}
-                          onChange={(e) => setSelectedCategoryId(e.target.value ? Number(e.target.value) : '')}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyan-500"
-                        >
-                          <option value="">Select category</option>
-                          {categories.map((c) => (
-                            <option key={c.category_id} value={c.category_id}>
-                              {c.category_name}
-                            </option>
-                          ))}
-                        </select>
-                        {categoriesError && (
-                          <p className="text-red-400 text-xs mt-1">{categoriesError}</p>
-                        )}
-                        {!categoriesError && categories.length === 0 && !loading && (
-                          <p className="text-amber-400 text-xs mt-1">No MCM categories found.</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-blue-200 text-sm mb-1 block">Product</label>
-                        <select
-                          value={selectedProductId}
-                          onChange={(e) => setSelectedProductId(e.target.value ? Number(e.target.value) : '')}
-                          disabled={!selectedCategoryId}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyan-500 disabled:opacity-60"
-                        >
-                          <option value="">Select product</option>
-                          {products.map((p) => (
-                            <option key={p.product_id} value={p.product_id}>
-                              {p.product_name}
-                            </option>
-                          ))}
-                        </select>
-                        {productsError && (
-                          <p className="text-red-400 text-xs mt-1">{productsError}</p>
-                        )}
-                        {selectedCategoryId && !productsError && products.length === 0 && (
-                          <p className="text-amber-400 text-xs mt-1">No products in this MCM category.</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="text-blue-200 text-sm mb-1 block">QTY</label>
-                        <input
-                          type="number"
-                          min="1"
-                          value={productQuantity}
-                          onChange={(e) => setProductQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-cyan-500"
-                        />
-                      </div>
-                      <div>
-                        <button
-                          onClick={handleAddProduct}
-                          disabled={!selectedProductId || productQuantity < 1}
-                          className="px-6 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors"
-                        >
-                          + Add Product
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Products List */}
-                  <div className="bg-white/5 border border-white/10 rounded-xl p-6">
-                    <h3 className="text-xl font-bold text-white mb-4">Pre-Sales Products</h3>
-                    {preSalesProducts.length === 0 ? (
-                      <p className="text-blue-200">No products added yet. Select category, then product, then QTY and click Add Product.</p>
-                    ) : (
-                      <div className="space-y-3">
-                        {preSalesProducts.map((product) => (
-                          <div
-                            key={product.id}
-                            className="bg-white/5 border border-white/10 rounded-lg p-4 flex items-center justify-between"
-                          >
-                            <div className="flex-1">
-                              <p className="text-white font-semibold">{product.product_name}</p>
-                              <p className="text-sm text-gray-300 mt-1">Qty: {product.quantity}</p>
-                            </div>
-                            {!String(product.id).startsWith('db-') && (
-                              <button
-                                onClick={() => handleRemoveProduct(product.id)}
-                                className="ml-4 p-2 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
-                              >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                </svg>
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
               {activeStep === 'pharmacy_order' && (
                 <div className="space-y-6">
                   {renderTranscriptSuggestionsShell(
@@ -1596,11 +1205,6 @@ export function FinalReviewModal({
             {!loading && (
               <span className="text-gray-500">
                 Step {reviewStepIndex + 1} of {REVIEW_STEP_KEYS.length}
-              </span>
-            )}
-            {preSalesProducts.length > 0 && (
-              <span className={loading ? '' : 'ml-2'}>
-                {preSalesProducts.length} product(s) in pre-sales
               </span>
             )}
           </div>

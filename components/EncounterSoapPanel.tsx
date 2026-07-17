@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isForbiddenResponse } from '@/lib/http/api-response'
@@ -65,6 +65,7 @@ type Props = {
   canEdit: boolean
   encounterStatus?: string | null
   onDownloadDoctorPdf?: (soap: SoapFields) => void
+  afterSoapContent?: ReactNode
 }
 
 function soapFromAi(ai: AiSoap | null): SoapFields {
@@ -93,6 +94,7 @@ export function EncounterSoapPanel({
   canEdit,
   encounterStatus = null,
   onDownloadDoctorPdf,
+  afterSoapContent,
 }: Props) {
   const { t, language } = useT()
 
@@ -431,7 +433,8 @@ export function EncounterSoapPanel({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <>
+      <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -537,8 +540,12 @@ export function EncounterSoapPanel({
         </div>
       )}
 
+      </div>
+
+      {afterSoapContent}
+
       {isCompleted ? (
-        <div className="mt-8 pt-6 border-t border-slate-200">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
             <div>
               <h4 className="text-base font-bold text-slate-900">{t('encounter_modal.amendments')}</h4>
@@ -657,6 +664,6 @@ export function EncounterSoapPanel({
           </div>
         }
       />
-    </div>
+    </>
   )
 }

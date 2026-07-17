@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { config } from '@/lib/config'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { isPhysicianNurseAdminRole } from '@/lib/roles'
 import { assertEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/assert-access'
@@ -17,9 +16,7 @@ export const dynamic = 'force-dynamic'
  * Expects body: { encounter_id: string }. Returns { success, message }.
  *
  * Generation is in-app (lib/soap/generate-soap): deterministic S/O from the
- * chart, OpenAI for A/P. The legacy Railway microservice is used only as a
- * fallback when in-app generation errors AND its URL is explicitly configured
- * — so environments without that service keep working.
+ * chart, OpenAI for A/P.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -101,31 +98,7 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Legacy fallback: only when the external service is explicitly configured.
-      const legacyUrl = config.soapNotes.apiUrl?.trim()
-      if (!legacyUrl) throw genErr
-
-      console.error('[SOAP complete-soap] In-app generation failed, trying legacy service:', genErr)
-      const res = await fetch(legacyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ encounter_id: String(encounterId) }),
-      })
-      const text = await res.text()
-      let json: unknown = null
-      try {
-        json = text ? JSON.parse(text) : null
-      } catch {
-        // response not JSON
-      }
-      if (!res.ok) {
-        console.error('[SOAP complete-soap] Legacy API error:', res.status, text)
-        return NextResponse.json(
-          { error: 'SOAP API request failed', message: `Upstream returned HTTP ${res.status}`, status: res.status },
-          { status: 502 }
-        )
-      }
-      return NextResponse.json(json ?? { success: true, message: 'SOAP data stored successfully' })
+      throw genErr
     }
   } catch (err) {
     console.error('[SOAP complete-soap] Error:', err)

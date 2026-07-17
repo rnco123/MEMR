@@ -19,6 +19,23 @@ const PATIENT_DOC_MAX_BYTES = 50 * 1024 * 1024
 const PATIENT_DOC_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
 const PATIENT_DOC_ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.pdf']
 
+function normalizedDocumentMime(fileType?: string | null): string {
+  return fileType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
+function isPdfDocument(doc: Pick<PatientDocument, 'file_type' | 'file_name' | 'document_name'>): boolean {
+  const name = (doc.file_name || doc.document_name || '').toLowerCase()
+  return normalizedDocumentMime(doc.file_type) === 'application/pdf' || name.endsWith('.pdf')
+}
+
+function isImageDocument(doc: Pick<PatientDocument, 'file_type' | 'file_name' | 'document_name'>): boolean {
+  const name = (doc.file_name || doc.document_name || '').toLowerCase()
+  return (
+    normalizedDocumentMime(doc.file_type).startsWith('image/') ||
+    /\.(png|jpe?g|webp|gif)$/i.test(name)
+  )
+}
+
 const DOCUMENTS_GRID_DENSITY_STORAGE_KEY = 'memr.patientDocumentsGridDensity'
 
 /** 0 = smallest thumbnails (most columns) … 2 = largest (fewest columns) */
@@ -468,6 +485,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     try {
       const response = await fetch(`/api/patients/${patientId.toString()}/documents`, {
         credentials: 'include',
+        cache: 'no-store',
       })
       if (response.ok) {
         const data = await response.json()
@@ -2008,13 +2026,13 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <p className="text-slate-700 font-medium mb-2">{t('patient_file.no_file_uploaded')}</p>
                                 <p className="text-slate-500 text-sm">{t('patient_file.no_file_slot')}</p>
                               </div>
-                            ) : viewingDocument.file_type === 'application/pdf' ? (
+                            ) : isPdfDocument(viewingDocument) ? (
                               <iframe
                                 src={viewingDocument.file_url}
                                 className="w-full h-full min-h-[600px] rounded-lg border border-white/10"
                                 title={viewingDocument.document_name}
                               />
-                            ) : viewingDocument.file_type?.startsWith('image/') ? (
+                            ) : isImageDocument(viewingDocument) ? (
                               <div className="flex items-center justify-center relative min-h-[400px]">
                                 {imageLoading && (
                                   <div className="absolute inset-0 flex items-center justify-center">

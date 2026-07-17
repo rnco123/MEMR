@@ -96,8 +96,8 @@ const nextConfig = {
               "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: https: blob:",
               "connect-src 'self' https://*.supabase.co https://*.daily.co wss://*.daily.co https://*.sentry.io",
-              // blob: — prescription print fallback iframe (when pop-up is blocked)
-              "frame-src 'self' blob: https://*.daily.co",
+              // Patient document previews use time-limited Supabase Storage URLs.
+              "frame-src 'self' blob: https://*.supabase.co https://*.daily.co",
               "media-src 'self' https://*.daily.co blob:",
               "object-src 'none'",
               "base-uri 'self'",

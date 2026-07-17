@@ -9,7 +9,7 @@ import { normalizePdfCheckboxExport, wantPdfCheckboxChecked } from '@/lib/i693/p
 import {
   applyVaccinationWidgetToGrid,
   isVaccinationTableWidget,
-  parseVaccinationWidget,
+  parseVaccinationWidgetAtIndex,
   vaccinationWidgetValue,
 } from '@/lib/i693/vaccination-grid-map'
 import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
@@ -218,14 +218,15 @@ async function applyVaccinationFields(
 
       const val = vaccinationWidgetValue(data, short, idx)
       if (typeof val === 'boolean') {
-        if (!val) continue
         const pdfExport = normalizePdfCheckboxExport(entry?.exportValues) ?? 'Yes'
-        pdf.annotationStorage.setValue(id, { value: 'On', exportValue: pdfExport })
+        pdf.annotationStorage.setValue(id, {
+          value: val ? 'On' : 'Off',
+          exportValue: pdfExport,
+        })
         continue
       }
 
       const text = val == null ? '' : String(val)
-      if (!text) continue
       pdf.annotationStorage.setValue(id, { value: text, formattedValue: text })
     }
   }
@@ -233,33 +234,41 @@ async function applyVaccinationFields(
 
 async function extractVaccinationFields(
   pdf: PDFDocumentProxy,
-  data: I693FormData
+  data: I693FormData,
+  respectUserClears: boolean
 ): Promise<void> {
   const fieldObjects = await pdf.getFieldObjects()
   if (!fieldObjects) return
 
-  for (const [pdfFieldName, entries] of Object.entries(fieldObjects)) {
+  for (const [pdfFieldName, rawEntries] of Object.entries(fieldObjects)) {
     const short = widgetShortName(pdfFieldName)
-    const parsed = parseVaccinationWidget(short)
-    const isCompleteMulti = short === 'Pt10Line1_CompleteSeries'
-    if (!parsed && !isCompleteMulti) continue
+    if (!isVaccinationTableWidget(short)) continue
 
-    const idx = widgetFieldIndex(pdfFieldName)
-    const entryList = entries as
-      | { id?: string; value?: string; checkBox?: boolean; exportValues?: unknown }[]
-      | undefined
-    const entry = entryList?.[idx] ?? entryList?.[0]
-    if (!entry?.id) continue
+    const entries = (rawEntries ?? []) as {
+      id?: string
+      value?: string
+      exportValues?: unknown
+    }[]
+    const nameIdx = widgetFieldIndex(pdfFieldName)
+    for (let i = 0; i < entries.length; i++) {
+      const idx = entries.length > 1 ? i : nameIdx
+      if (!parseVaccinationWidgetAtIndex(short, idx)) continue
 
-    const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
-    const val = (raw?.value ?? entry.value ?? '').toString().trim()
-    const pdfExport = normalizePdfCheckboxExport(entry.exportValues)
-    const checked =
-      entry.checkBox === true || wantPdfCheckboxChecked(val, pdfExport)
+      const entry = entries[i]
+      if (!entry?.id) continue
 
-    // pdf.js reports unchecked boxes as "Off" — do not clear pre-filled waiver flags.
-    if (val === 'Off' || (!checked && !val)) continue
-    applyVaccinationWidgetToGrid(data, short, val, checked, idx)
+      const raw = pdf.annotationStorage.getRawValue(entry.id) as { value?: string } | undefined
+      const val = (raw?.value ?? entry.value ?? '').toString().trim()
+      const pdfExport = normalizePdfCheckboxExport(entry.exportValues)
+      const checked = wantPdfCheckboxChecked(val, pdfExport)
+
+      if (val === 'Off' || (!checked && !val)) {
+        if (!respectUserClears) continue
+        applyVaccinationWidgetToGrid(data, short, '', false, idx)
+        continue
+      }
+      applyVaccinationWidgetToGrid(data, short, val, checked, idx)
+    }
   }
 }
 
@@ -442,7 +451,7 @@ export async function extractI693FormFromPdfDocument(
     }
   }
 
-  await extractVaccinationFields(pdf, next)
+  await extractVaccinationFields(pdf, next, respectUserClears)
   const widgetOptions = { respectUserClears }
   mergePdfWidgetValuesIntoForm(
     next,

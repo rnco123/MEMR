@@ -34,8 +34,23 @@ export async function listImmigrationDocumentsForPatient(
 
   if (submission) {
     const encounterId = submission.encounter_id
-    // Exported PDFs are also stored in patient_documents — skip duplicate virtual row
-    if (!submission.pdf_storage_path) {
+    // Exported PDFs normally have a patient_documents row. If that metadata write
+    // failed, retain the generated API document so the form does not disappear.
+    let hasStoredChartRow = false
+    if (submission.pdf_storage_path) {
+      const { data: storedRow, error: storedRowError } = await admin
+        .from('patient_documents')
+        .select('id')
+        .eq('patient_id', patientId)
+        .eq('file_path', submission.pdf_storage_path)
+        .maybeSingle()
+      if (storedRowError) {
+        console.error('[immigration-docs] patient document lookup:', storedRowError.message)
+      }
+      hasStoredChartRow = Boolean(storedRow?.id)
+    }
+
+    if (!hasStoredChartRow) {
       const fileUrl = `/api/patients/${patientId}/documents/i693/${encounterId}`
 
       docs.push({

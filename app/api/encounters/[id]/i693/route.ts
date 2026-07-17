@@ -28,16 +28,14 @@ async function requireStaff(supabase: Awaited<ReturnType<typeof createClient>>, 
   return role!.trim().toLowerCase()
 }
 
-function queueI693PatientFileSync(
+async function syncI693PatientFile(
   admin: ReturnType<typeof createAdminClient>,
   encounterId: number,
   patientId: number,
   formData: ReturnType<typeof mergeI693Form>,
   userId: string
-) {
-  void syncI693PdfToPatientFileAfterSave(admin, encounterId, patientId, formData, userId).catch(
-    (err) => console.error('[i693] patient file sync on save:', err)
-  )
+): Promise<void> {
+  await syncI693PdfToPatientFileAfterSave(admin, encounterId, patientId, formData, userId)
 }
 
 async function maybeSyncImmigrationCase(
@@ -188,7 +186,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         source: role === 'admin' ? 'admin' : 'clinical',
       })
       const ownerEncounterId = existing.encounter_id
-      queueI693PatientFileSync(admin, ownerEncounterId, patientId, formData, user.id)
+      await syncI693PatientFile(admin, ownerEncounterId, patientId, formData, user.id)
       return NextResponse.json({
         success: true,
         data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
@@ -212,7 +210,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       role,
       source: role === 'admin' ? 'admin' : 'clinical',
     })
-    queueI693PatientFileSync(admin, encounterId, patientId, formData, user.id)
+    await syncI693PatientFile(admin, encounterId, patientId, formData, user.id)
     return NextResponse.json({
       success: true,
       data,

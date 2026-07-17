@@ -26,6 +26,9 @@ export type ImmigrationCaseRow = {
   status_updated_by: string | null
   status_updated_by_name: string | null
   status_updated_at: string | null
+  closed_at: string | null
+  closed_by: string | null
+  closed_by_name: string | null
   created_at: string
   updated_at: string
 }

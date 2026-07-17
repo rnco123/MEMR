@@ -32,9 +32,22 @@ export type CompliancePendingReview = {
   dob: string
   chiefComplaint: string
   soap: { subjective: string; objective: string; assessment: string; plan: string }
-  diagnoses: string[]
-  medications: string[]
-  orders: string[]
+  diagnoses: ComplianceDiagnosis[]
+  medications: ComplianceCatalogOrder[]
+  orders: ComplianceCatalogOrder[]
+}
+
+export type ComplianceDiagnosis = {
+  id: number
+  icdCode: string
+  description: string
+  addedBy: string
+}
+
+export type ComplianceCatalogOrder = {
+  product: string
+  qty: number
+  addedBy: string
 }
 
 export type ComplianceTrendPoint = {
@@ -106,4 +119,7 @@ export type ComplianceReviewDetail = {
     assessment: string
     plan: string
   }
+  diagnoses: ComplianceDiagnosis[]
+  medications: ComplianceCatalogOrder[]
+  orders: ComplianceCatalogOrder[]
 }

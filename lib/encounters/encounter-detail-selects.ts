@@ -50,5 +50,3 @@ export const PATIENT_DOCUMENT_SELECT =
 
 export const PRESCRIPTION_LIST_SELECT =
   'id, medication_name, strength, dosage_instruction, dosage, instructions, route, frequency, duration, refills, status, notes, created_at'
-
-export const PRE_SALES_SELECT = 'id, product_id, product_quantity, product_quantity_taken, status'

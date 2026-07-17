@@ -50,6 +50,16 @@ export async function POST(request: Request) {
       throw new AuthorizationError('Location is outside your assigned clinics')
     }
 
+    const { data: service, error: serviceError } = await admin
+      .from('services')
+      .select('id')
+      .eq('id', v.service_id)
+      .maybeSingle()
+
+    if (serviceError) throw serviceError
+    if (!service) throw new ValidationError('Selected treatment / service was not found')
+    const serviceId = Number(service.id)
+
     const phoneStored = normalizePhoneForStorage(v.phone) ?? emptyToNull(v.phone)
     const phoneDigits = phoneMatchDigits(v.phone)
     const dob = emptyToNull(v.date_of_birth)
@@ -101,19 +111,6 @@ export async function POST(request: Request) {
     if (insertError) throw insertError
 
     const patientId = Number(patient.id)
-
-    let serviceId = v.service_id
-    {
-      const { data: serviceRow } = await admin
-        .from('services')
-        .select('id')
-        .eq('id', serviceId)
-        .maybeSingle()
-      if (!serviceRow?.id) {
-        throw new ValidationError('Selected treatment / service was not found')
-      }
-      serviceId = Number(serviceRow.id)
-    }
 
     if (v.pharmacy_id != null) {
       const { data: pharmacy } = await admin

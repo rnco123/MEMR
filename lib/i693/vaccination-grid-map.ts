@@ -47,6 +47,12 @@ type ParsedVaxWidget = {
 
 const LINE_PREFIX = /^Pt10Line(\d+)/
 
+/**
+ * The USCIS template reuses one field name for non-contiguous Complete Series
+ * rows. Dedicated fields cover DT, Td, Hepatitis B, and COVID-19.
+ */
+const COMPLETE_SERIES_LINE_BY_WIDGET_INDEX = [3, 4, 5, 7, 8, 9, 11, 12] as const
+
 /** Parse vaccination-table widget short names (not barcode / Part 14 remarks). */
 export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   if (
@@ -65,7 +71,7 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   if (short === 'Pt10Line1_DTDateGiven') {
     return { vaccineCode: 'dt', field: 'dateGiven', doseIndex: 0 }
   }
-  if (short === 'Pt10Line1_DTCompleteSeries' || short === 'Pt10Line1_CompleteSeries') {
+  if (short === 'Pt10Line1_DTCompleteSeries') {
     return { vaccineCode: 'dt', field: 'completeSeries', doseIndex: 0 }
   }
 
@@ -89,6 +95,9 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   }
   if (short === 'Pt10Line1_HBCompleteSeries') {
     return { vaccineCode: 'hep_b', field: 'completeSeries', doseIndex: 0 }
+  }
+  if (short === 'Pt7Line1_CompleteSeries') {
+    return { vaccineCode: 'hep_a', field: 'completeSeries', doseIndex: 0 }
   }
 
   const lineDose = /^Pt10Line(\d+)([a-d])_DateReceived_(\d)$/.exec(short)
@@ -175,6 +184,19 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   return null
 }
 
+/** Parse a widget whose vaccine row also depends on its repeated-field index. */
+export function parseVaccinationWidgetAtIndex(
+  short: string,
+  widgetIndex = 0
+): ParsedVaxWidget | null {
+  if (short === 'Pt10Line1_CompleteSeries') {
+    const line = COMPLETE_SERIES_LINE_BY_WIDGET_INDEX[widgetIndex]
+    const vaccineCode = line == null ? undefined : VACCINE_LINE_TO_CODE[line]
+    return vaccineCode ? { vaccineCode, field: 'completeSeries', doseIndex: 0 } : null
+  }
+  return parseVaccinationWidget(short)
+}
+
 export function isVaccinationTableWidget(short: string): boolean {
   return parseVaccinationWidget(short) != null || short === 'Pt10Line1_CompleteSeries'
 }
@@ -237,12 +259,7 @@ export function vaccinationWidgetValue(
   const selector = vaccineGivenSelectorValue(data, short, widgetIndex)
   if (selector !== null) return selector
 
-  let parsed = parseVaccinationWidget(short)
-  if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
-    const line = widgetIndex + 3
-    const code = VACCINE_LINE_TO_CODE[line]
-    if (code) parsed = { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
-  }
+  const parsed = parseVaccinationWidgetAtIndex(short, widgetIndex)
   if (!parsed) return null
 
   const row = getVaccinationGridRow(data, parsed.vaccineCode)
@@ -301,12 +318,7 @@ export function applyVaccinationWidgetToGrid(
     return
   }
 
-  let parsed = parseVaccinationWidget(short)
-  if (!parsed && short === 'Pt10Line1_CompleteSeries' && widgetIndex >= 0 && widgetIndex < 8) {
-    const line = widgetIndex + 3
-    const code = VACCINE_LINE_TO_CODE[line]
-    if (code) parsed = { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
-  }
+  const parsed = parseVaccinationWidgetAtIndex(short, widgetIndex)
   if (!parsed) return
 
   const row = getVaccinationGridRow(data, parsed.vaccineCode)
@@ -314,13 +326,12 @@ export function applyVaccinationWidgetToGrid(
 
   switch (parsed.field) {
     case 'dateGiven':
-      if (val) row.dateGiven = val
+      row.dateGiven = val
       break
     case 'dateReceived':
-      if (val) row.dateReceived = val
+      row.dateReceived = val
       break
     case 'datesReceived': {
-      if (!val) break
       if (!row.datesReceived) row.datesReceived = []
       const idx = Math.max(0, parsed.doseIndex - 1)
       while (row.datesReceived.length <= idx) row.datesReceived.push('')

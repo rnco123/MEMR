@@ -377,6 +377,9 @@ function ReviewDrawer({ review, readOnly = false, patientFileHref, onClose, onSa
           encounterDate: data.encounterDate ?? prev.encounterDate,
           encounterId: data.encounterCode ?? prev.encounterId,
           soap: data.soap ?? prev.soap,
+          diagnoses: data.diagnoses ?? prev.diagnoses,
+          medications: data.medications ?? prev.medications,
+          orders: data.orders ?? prev.orders,
         } : prev)
       })
       .finally(() => setLoadingDetail(false))
@@ -496,9 +499,15 @@ function ReviewDrawer({ review, readOnly = false, patientFileHref, onClose, onSa
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">{t('compliance.drawer_diagnoses')}</p>
                 <div className="space-y-1.5">
-                  {active.diagnoses.map((d, i) => (
-                    <div key={i} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-700">
-                      <span className="mt-0.5 text-[#2E6EF3] font-bold">Dx</span>{d}
+                  {active.diagnoses.map(d => (
+                    <div key={d.id} className="flex items-start gap-2 bg-slate-50 rounded-lg px-3 py-2 text-xs text-slate-700">
+                      <span className="mt-0.5 text-[#2E6EF3] font-bold">Dx</span>
+                      <span>
+                        <span className="font-semibold">{d.icdCode} - {d.description}</span>
+                        <span className="ml-1.5 text-[10px] font-semibold text-emerald-700">
+                          {t('compliance.drawer_added_by')} {d.addedBy}
+                        </span>
+                      </span>
                     </div>
                   ))}
                   {active.diagnoses.length === 0 && <p className="text-xs text-slate-400 italic">{t('compliance.drawer_no_diagnoses')}</p>}
@@ -511,9 +520,12 @@ function ReviewDrawer({ review, readOnly = false, patientFileHref, onClose, onSa
                 {active.medications.length ? (
                   <div className="flex flex-wrap gap-2">
                     {active.medications.map((m, i) => (
-                      <span key={i} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
+                      <span key={`${m.product}-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-violet-50 text-violet-700 border border-violet-200">
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
-                        {m}
+                        {m.product} × {m.qty}
+                        <span className="text-[10px] font-semibold text-emerald-700">
+                          + {t('compliance.drawer_added_by')} {m.addedBy}
+                        </span>
                       </span>
                     ))}
                   </div>
@@ -526,7 +538,12 @@ function ReviewDrawer({ review, readOnly = false, patientFileHref, onClose, onSa
                 {active.orders.length ? (
                   <div className="flex flex-wrap gap-2">
                     {active.orders.map((o, i) => (
-                      <span key={i} className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-teal-50 text-teal-700 border border-teal-200">{o}</span>
+                      <span key={`${o.product}-${i}`} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                        {o.product} × {o.qty}
+                        <span className="text-[10px] font-semibold text-emerald-700">
+                          + {t('compliance.drawer_added_by')} {o.addedBy}
+                        </span>
+                      </span>
                     ))}
                   </div>
                 ) : <p className="text-xs text-slate-400 italic">{t('compliance.drawer_no_orders')}</p>}
