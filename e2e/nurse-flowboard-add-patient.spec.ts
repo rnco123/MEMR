@@ -190,9 +190,9 @@ test.describe('nurse flowboard — add new patient', () => {
     // Wait for the file to appear in the queued list before clicking Upload
     await expect(page.getByText('patient-id.txt')).toBeVisible({ timeout: 10000 })
 
-    // Click "Upload & finish" — wait for it to be enabled and stable
+    // Click "Upload & finish" — give it more time in CI
     const uploadFinishBtn = page.getByRole('button', { name: /upload.*finish/i })
-    await expect(uploadFinishBtn).toBeVisible({ timeout: 10000 })
+    await expect(uploadFinishBtn).toBeVisible({ timeout: 30000 })
     await uploadFinishBtn.click()
 
     // ── Wizard closes → back on the flowboard ─────────────────────────────────

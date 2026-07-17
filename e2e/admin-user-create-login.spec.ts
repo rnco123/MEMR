@@ -75,14 +75,37 @@ test.describe('admin user creation and login', () => {
 
       await page.goto('/admin/users')
       await page.waitForLoadState('networkidle')
-      await expect(page.getByTestId('admin-users-page')).toBeVisible({ timeout: 30000 })
+      // admin-users-page testid exists on local; deployed uses heading text
+      const usersPage = page.getByTestId('admin-users-page').or(
+        page.getByRole('heading', { name: /clinical accounts|users/i })
+      )
+      await expect(usersPage).toBeVisible({ timeout: 30000 })
 
-      await page.getByTestId('admin-users-create-button').click()
-      await expect(page.getByTestId('admin-users-create-modal')).toBeVisible({ timeout: 30000 })
+      // Create button: testid on local, button text on deployed
+      const createBtn = page.getByTestId('admin-users-create-button').or(
+        page.getByRole('button', { name: /create account|create user/i })
+      )
+      await createBtn.click()
 
-      await page.getByTestId('admin-users-name-input').fill(created.name)
-      await page.getByTestId('admin-users-email-input').fill(created.email)
-      await page.getByTestId('admin-users-password-input').fill(created.password)
+      // Modal: testid on local, heading text on deployed
+      const createModal = page.getByTestId('admin-users-create-modal').or(
+        page.getByRole('heading', { name: /create user account/i }).locator('../..')
+      )
+      await expect(createModal).toBeVisible({ timeout: 30000 })
+
+      // Form fields: testid on local, placeholder on deployed
+      const nameInput = page.getByTestId('admin-users-name-input').or(
+        page.getByPlaceholder(/full name|please enter user full name/i)
+      )
+      const emailInput = page.getByTestId('admin-users-email-input').or(
+        page.getByPlaceholder(/email.*address|please enter user valid email/i)
+      )
+      const passwordInput = page.getByTestId('admin-users-password-input').or(
+        page.getByPlaceholder(/min 8|password/i).first()
+      )
+      await nameInput.fill(created.name)
+      await emailInput.fill(created.email)
+      await passwordInput.fill(created.password)
 
       // Set up response listener before clicking — use broad URL match in case
       // the dev server resolves to localhost vs 127.0.0.1
@@ -91,7 +114,11 @@ test.describe('admin user creation and login', () => {
           /\/api\/admin\/users/.test(response.url()) && response.request().method() === 'POST',
         { timeout: 90000 }
       )
-      await page.getByTestId('admin-users-submit-button').click()
+      // Submit button: testid on local, button text on deployed
+      const submitBtn = page.getByTestId('admin-users-submit-button').or(
+        page.getByRole('button', { name: /create user|creating/i })
+      )
+      await submitBtn.click()
 
       const createResponse = await createResponsePromise
       expect(createResponse.ok(), `User creation failed: ${createResponse.status()}`).toBeTruthy()
