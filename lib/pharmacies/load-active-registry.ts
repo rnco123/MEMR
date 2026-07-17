@@ -1,6 +1,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { normalizePharmacyRow } from '@/lib/pharmacies/normalize'
 import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
+import {
+  extractPharmacyZip,
+  normalizeZip,
+  sortPharmaciesByDistance,
+  zipDistanceMiles,
+} from '@/lib/pharmacies/distance'
 
 const PHARMACY_REGISTRY_SELECT =
   'id, name, address, city, state, zip_code, phone, phone_number, email, is_active'
@@ -16,6 +22,11 @@ export type PharmacyRegistryOptions = {
   search?: string | null
   /** Row cap. Defaults to 500 (default list) or 50 (search results). */
   limit?: number
+  /**
+   * Patient ZIP. When set, each result gets an approximate distance and the
+   * list is sorted nearest-first (used so a chain search surfaces close stores).
+   */
+  anchorZip?: string | null
 }
 
 export async function loadActivePharmacyRegistry(
@@ -51,7 +62,16 @@ export async function loadActivePharmacyRegistry(
   const { data, error } = await query.order('name').limit(limit)
 
   if (error) throw error
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => normalizePharmacyRow(row))
+
+  const anchorZip = normalizeZip(options.anchorZip)
+  const rows = (data ?? []) as Record<string, unknown>[]
+  const records = rows.map((row) =>
+    normalizePharmacyRow(row, anchorZip ? zipDistanceMiles(anchorZip, extractPharmacyZip(row)) : null)
+  )
+
+  // Only reorder when we have a patient anchor; otherwise keep the alphabetical
+  // order the query already applied.
+  return anchorZip ? sortPharmaciesByDistance(records) : records
 }
 
 export async function loadPharmacyById(admin: SupabaseClient, pharmacyId: number) {

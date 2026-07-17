@@ -116,16 +116,65 @@ export function EncounterPhysicalExamPanel({
 
   useEffect(() => { void loadExam() }, [loadExam, encounterStatus])
 
+  const clearFindings = (
+    map: Record<string, string[]> | undefined,
+    key: string
+  ): Record<string, string[]> | undefined => {
+    if (!map || !(key in map)) return map
+    const next = { ...map }
+    delete next[key]
+    return Object.keys(next).length ? next : undefined
+  }
+
   const setRosStatus = (key: keyof RosData, value: SystemStatus) => {
-    setRosExam(prev => ({ ...prev, ros: { ...prev.ros, [key]: value } }))
+    setRosExam(prev => {
+      const ros = { ...prev.ros, [key]: value }
+      const ros_findings =
+        value === 'N' || value === null ? clearFindings(prev.ros_findings, key as string) : prev.ros_findings
+      return { ...prev, ros, ros_findings }
+    })
+  }
+
+  const setExamStatus = (key: keyof ExamData, value: SystemStatus) => {
+    setRosExam(prev => {
+      const exam = { ...prev.exam, [key]: value }
+      const exam_findings =
+        value === 'N' || value === null ? clearFindings(prev.exam_findings, key as string) : prev.exam_findings
+      return { ...prev, exam, exam_findings }
+    })
+  }
+
+  const toggleFinding = (section: 'ros' | 'exam', rowKey: string, label: string) => {
+    setRosExam(prev => {
+      const mapKey = section === 'ros' ? 'ros_findings' : 'exam_findings'
+      const current = { ...(prev[mapKey] ?? {}) }
+      const selected = current[rowKey] ?? []
+      const next = selected.includes(label)
+        ? selected.filter(l => l !== label)
+        : [...selected, label]
+
+      if (next.length === 0) delete current[rowKey]
+      else current[rowKey] = next
+
+      const nextMap = Object.keys(current).length ? current : undefined
+      const anyAbnormal = next.length > 0
+
+      if (section === 'ros') {
+        const ros = { ...prev.ros }
+        if (anyAbnormal) ros[rowKey as keyof RosData] = 'A' as never
+        else if (ros[rowKey as keyof RosData] === 'A') ros[rowKey as keyof RosData] = null as never
+        return { ...prev, ros, ros_findings: nextMap }
+      }
+
+      const exam = { ...prev.exam }
+      if (anyAbnormal) exam[rowKey as keyof ExamData] = 'A' as never
+      else if (exam[rowKey as keyof ExamData] === 'A') exam[rowKey as keyof ExamData] = null as never
+      return { ...prev, exam, exam_findings: nextMap }
+    })
   }
 
   const setRosText = (key: keyof RosData, value: string) => {
     setRosExam(prev => ({ ...prev, ros: { ...prev.ros, [key]: value || null } }))
-  }
-
-  const setExamStatus = (key: keyof ExamData, value: SystemStatus) => {
-    setRosExam(prev => ({ ...prev, exam: { ...prev.exam, [key]: value } }))
   }
 
   const setExamText = (key: keyof ExamData, value: string) => {
@@ -136,7 +185,8 @@ export function EncounterPhysicalExamPanel({
     setRosExam(prev => {
       const ros = { ...prev.ros }
       for (const row of ROS_ROWS) ros[row.key] = value
-      return { ...prev, ros }
+      const ros_findings = value === 'N' || value === null ? undefined : prev.ros_findings
+      return { ...prev, ros, ros_findings }
     })
   }
 
@@ -144,7 +194,8 @@ export function EncounterPhysicalExamPanel({
     setRosExam(prev => {
       const exam = { ...prev.exam }
       for (const row of EXAM_ROWS) exam[row.key] = value
-      return { ...prev, exam }
+      const exam_findings = value === 'N' || value === null ? undefined : prev.exam_findings
+      return { ...prev, exam, exam_findings }
     })
   }
 
@@ -238,19 +289,52 @@ export function EncounterPhysicalExamPanel({
 
   // ── Row renderers ────────────────────────────────────────────────────────
 
+  const renderFindingsCapsules = (
+    section: 'ros' | 'exam',
+    rowKey: string,
+    findings: RosRowDef['findings']
+  ) => {
+    if (!findings.length) return null
+    const selected =
+      (section === 'ros' ? rosExam.ros_findings?.[rowKey] : rosExam.exam_findings?.[rowKey]) ?? []
+
+    return (
+      <div className="flex flex-wrap gap-1">
+        {findings.map(finding => {
+          const active = selected.includes(finding.label)
+          return (
+            <button
+              key={finding.label}
+              type="button"
+              disabled={locked || saving}
+              onClick={() => toggleFinding(section, rowKey, finding.label)}
+              className={`px-2 py-0.5 rounded-full border text-[10px] font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                active
+                  ? 'bg-red-100 text-red-800 border-red-400 ring-1 ring-red-400'
+                  : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
+              }`}
+            >
+              {finding.label}
+            </button>
+          )
+        })}
+      </div>
+    )
+  }
+
   const renderRosRow = (row: RosRowDef) => {
     const status = (rosExam.ros?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px]">{row.label}</td>
-        <td className="py-1.5 pr-1 w-9 text-center">
+        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px] align-top">{row.label}</td>
+        <td className="py-1.5 pr-1 w-9 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setRosStatus(row.key, v)} />
         </td>
-        <td className="py-1.5 pr-2 w-9 text-center">
+        <td className="py-1.5 pr-2 w-9 text-center align-top">
           <StatusBtn value="A" current={status} disabled={locked || saving} onChange={v => setRosStatus(row.key, v)} />
         </td>
         <td className="py-1.5">
-          <p className="text-[11px] text-slate-500 leading-snug">{row.notes}</p>
+          {renderFindingsCapsules('ros', row.key, row.findings)}
           {row.extras?.map(ex => (
             <input
               key={String(ex.key)}
@@ -271,15 +355,15 @@ export function EncounterPhysicalExamPanel({
     const status = (rosExam.exam?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px]">{row.label}</td>
-        <td className="py-1.5 pr-1 w-9 text-center">
+        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px] align-top">{row.label}</td>
+        <td className="py-1.5 pr-1 w-9 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setExamStatus(row.key, v)} />
         </td>
-        <td className="py-1.5 pr-2 w-9 text-center">
+        <td className="py-1.5 pr-2 w-9 text-center align-top">
           <StatusBtn value="A" current={status} disabled={locked || saving} onChange={v => setExamStatus(row.key, v)} />
         </td>
         <td className="py-1.5">
-          <p className="text-[11px] text-slate-500 leading-snug">{row.notes}</p>
+          {renderFindingsCapsules('exam', row.key, row.findings)}
           {row.extras?.map(ex => (
             <input
               key={String(ex.key)}
@@ -336,7 +420,7 @@ export function EncounterPhysicalExamPanel({
       ) : (
         <>
           {/* Legend */}
-          <div className="flex items-center gap-4 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
             <span className="flex items-center gap-1">
               <span className="inline-flex items-center justify-center w-6 h-5 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-bold text-[10px]">N</span>
               Normal
@@ -344,6 +428,10 @@ export function EncounterPhysicalExamPanel({
             <span className="flex items-center gap-1">
               <span className="inline-flex items-center justify-center w-6 h-5 rounded border border-red-400 bg-red-100 text-red-800 font-bold text-[10px]">A</span>
               Abnormal
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-red-400 bg-red-100 text-red-800 font-medium text-[10px]">Finding</span>
+              Click a finding to mark it abnormal
             </span>
             <span className="text-slate-400">(click again to deselect)</span>
           </div>

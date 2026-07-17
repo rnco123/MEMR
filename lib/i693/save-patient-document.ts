@@ -8,8 +8,6 @@ export type PersistI693PdfOptions = {
   preserveSubmissionStatus?: boolean
 }
 
-import { findPatientI693Submission } from '@/lib/i693/patient-form'
-
 /** Store generated I-693 PDF in patient-documents bucket and link on submission row. */
 export async function persistI693PdfToPatientFile(
   admin: SupabaseClient,
@@ -23,7 +21,10 @@ export async function persistI693PdfToPatientFile(
   const fileName = `Form I-693 (Encounter ${encounterId})`
 
   const { error: uploadErr } = await admin.storage.from('patient-documents').upload(filePath, pdfBytes, {
-    cacheControl: '3600',
+    // This object is overwritten after every form save. A long browser/CDN
+    // cache can otherwise keep serving the previous PDF after a successful
+    // upsert, making newly saved edits appear missing from the export.
+    cacheControl: '0',
     upsert: true,
     contentType: 'application/pdf',
   })
@@ -40,14 +41,16 @@ export async function persistI693PdfToPatientFile(
     submissionPatch.status = 'exported'
   }
 
-  await admin.from('i693_submissions').update(submissionPatch).eq('patient_id', patientId)
-
-  const { data: existing } = await admin
+  const { data: existing, error: lookupError } = await admin
     .from('patient_documents')
     .select('id')
     .eq('patient_id', patientId)
     .eq('file_path', filePath)
     .maybeSingle()
+  if (lookupError) {
+    console.error('[i693] patient document lookup:', lookupError.message)
+    throw lookupError
+  }
 
   const row = {
     patient_id: patientId,
@@ -60,9 +63,31 @@ export async function persistI693PdfToPatientFile(
   }
 
   if (existing?.id) {
-    await admin.from('patient_documents').update(row).eq('id', existing.id)
+    const { error: updateError } = await admin
+      .from('patient_documents')
+      .update(row)
+      .eq('id', existing.id)
+    if (updateError) {
+      console.error('[i693] patient document update:', updateError.message)
+      throw updateError
+    }
   } else {
-    await admin.from('patient_documents').insert(row)
+    const { error: insertError } = await admin.from('patient_documents').insert(row)
+    if (insertError) {
+      console.error('[i693] patient document insert:', insertError.message)
+      throw insertError
+    }
+  }
+
+  // Link the submission only after the patient_documents row is durable. This
+  // prevents a storage path from suppressing the virtual chart fallback.
+  const { error: submissionError } = await admin
+    .from('i693_submissions')
+    .update(submissionPatch)
+    .eq('patient_id', patientId)
+  if (submissionError) {
+    console.error('[i693] submission PDF link:', submissionError.message)
+    throw submissionError
   }
 
   return filePath

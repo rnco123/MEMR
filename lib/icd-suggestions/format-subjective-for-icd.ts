@@ -16,6 +16,18 @@ function str(v: unknown): string {
 function arr(v: unknown): string {
   if (v == null) return ''
   if (Array.isArray(v)) return v.map((x) => str(x)).filter(Boolean).join(', ')
+  if (typeof v === 'string') {
+    const trimmed = v.trim()
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed) as unknown
+        if (Array.isArray(parsed)) return parsed.map((x) => str(x)).filter(Boolean).join(', ')
+      } catch {
+        /* plain text */
+      }
+    }
+    return trimmed
+  }
   return str(v)
 }
 

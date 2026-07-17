@@ -21,6 +21,8 @@ import {
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
 import { EncounterSoapPanel } from './EncounterSoapPanel'
 import { EncounterPatientInfoPanel } from './EncounterPatientInfoPanel'
+import { EncounterMedicationOrdersPanel } from './EncounterMedicationOrdersPanel'
+import { EncounterDiagnosesPanel } from './EncounterDiagnosesPanel'
 import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-doctor-soap'
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import {
@@ -375,15 +377,15 @@ export function EncounterDetailModal({
     )
   }, [encounterId])
 
-  const canEditClinicalEncounter = canEditWorkflow
   const encounterLocked = encounter?.status === 'completed'
+  const canEditClinicalEncounter = canEditWorkflow && !encounterLocked
   const intakeEditable = canEditIntake && !encounterLocked
   const vitalsEditable = canEditVitals && !encounterLocked
-  const canManagePharmacy = canManageEncounterPharmacy(role) && canEditWorkflow
+  const canManagePharmacy = canManageEncounterPharmacy(role) && canEditClinicalEncounter
   const isAdminViewer = role === UserRole.ADMIN
-  const canEditEncounterRx = canEditWorkflow
+  const canEditEncounterRx = canEditClinicalEncounter
   const canSendPrescriptionsToAdmin =
-    isPhysicianRole(role) && canEditWorkflow && encounter?.status !== 'completed'
+    isPhysicianRole(role) && canEditClinicalEncounter
 
   const canEditSoap = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
@@ -393,8 +395,11 @@ export function EncounterDetailModal({
 
   const canCompleteEncounter = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
-    return isPhysicianRole(role) && canDoctorCompleteEncounter(encounter.status)
-  }, [encounter, role, canEditClinicalEncounter])
+    return (
+      isPhysicianRole(role) &&
+      canDoctorCompleteEncounter(encounter.status, { isI693: showI693Form })
+    )
+  }, [encounter, role, canEditClinicalEncounter, showI693Form])
 
   const handleCompleteEncounter = useCallback(async () => {
     if (!canCompleteEncounter || completingEncounter) return
@@ -786,46 +791,6 @@ export function EncounterDetailModal({
                 )}
               </div>
 
-              {/* ICD-10-CM suggestions (AI-assisted, from intake + SOAP subjective) */}
-              <div
-                id="encounter-icd-suggestions"
-                className="rounded-xl border border-sky-200 bg-sky-50/90 p-6 shadow-sm ring-1 ring-sky-100"
-              >
-                <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2 flex-wrap">
-                  <svg className="w-5 h-5 text-sky-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  {t('encounter_modal.icd_title')}
-                  <span className="text-xs font-normal text-sky-800/90">{t('encounter_modal.icd_disclaimer')}</span>
-                </h3>
-                {icdLoading && (
-                  <p className="text-sky-900/80 text-sm mt-3">{t('encounter_modal.loading_suggestions')}</p>
-                )}
-                {!icdLoading && icdMessage && !icdSuggestions?.length && (
-                  <p className="text-amber-900 text-sm mt-3">{icdMessage}</p>
-                )}
-                {!icdLoading && icdSuggestions && icdSuggestions.length > 0 && (
-                  <ul className="mt-4 space-y-4">
-                    {icdSuggestions.map((row, idx) => (
-                      <li
-                        key={`${row.code}-${idx}`}
-                        className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
-                      >
-                        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-                          <span className="font-mono text-lg font-semibold text-[#2E6EF3]">{row.code}</span>
-                          <span className="text-xs text-slate-500">
-                            {t('encounter_modal.icd_confidence')}{' '}
-                            <span className="text-sky-800 font-medium">{row.confidence}%</span>
-                          </span>
-                        </div>
-                        <p className="text-slate-900 font-medium text-sm mb-1">{row.description}</p>
-                        <p className="text-slate-600 text-xs leading-relaxed">{row.reasoning}</p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
               {/* Appointment Details */}
               {appointment && (
                 <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -953,6 +918,23 @@ export function EncounterDetailModal({
                 canEdit={canEditSoap}
                 encounterStatus={encounter?.status ?? null}
                 onDownloadDoctorPdf={(soap) => void handleDownloadDoctorSoapPdf(soap)}
+                afterSoapContent={
+                  <>
+                    <EncounterDiagnosesPanel
+                      encounterId={encounterId}
+                      canEdit={canEditClinicalEncounter && !isAdminViewer}
+                      aiSuggestions={icdSuggestions ?? []}
+                      aiLoading={icdLoading}
+                      aiMessage={icdMessage}
+                    />
+                    {encounter && !isAdminViewer && (
+                      <EncounterMedicationOrdersPanel
+                        encounterId={encounterId}
+                        canEdit={canEditWorkflow && encounter.status !== 'completed'}
+                      />
+                    )}
+                  </>
+                }
               />
 
             </div>

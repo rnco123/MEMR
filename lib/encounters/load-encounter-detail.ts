@@ -9,7 +9,6 @@ import {
   ENCOUNTER_DETAIL_SELECT,
   PATIENT_DETAIL_SELECT,
   PATIENT_FILE_SELECT,
-  PRE_SALES_SELECT,
   PRESCRIPTION_LIST_SELECT,
 } from '@/lib/encounters/encounter-detail-selects'
 import { loadAiSoapForEncounter } from '@/lib/encounters/load-ai-soap-for-encounter'
@@ -25,13 +24,12 @@ export type EncounterDetailPayload = {
   pharmacy: Record<string, unknown> | null
   pharmacy_registry: Record<string, unknown>[]
   prescriptions: Record<string, unknown>[]
-  pre_sales: Record<string, unknown>[]
 }
 
 export async function loadEncounterDetail(
   admin: SupabaseClient,
   encounterId: number,
-  options?: { includePharmacyRegistry?: boolean; includePrescriptions?: boolean; includePreSales?: boolean }
+  options?: { includePharmacyRegistry?: boolean; includePrescriptions?: boolean }
 ): Promise<EncounterDetailPayload> {
   const { data: encounter, error: encErr } = await admin
     .from('encounters')
@@ -97,16 +95,6 @@ export async function loadEncounterDetail(
     prescriptions = (rxRows ?? []) as Record<string, unknown>[]
   }
 
-  let pre_sales: Record<string, unknown>[] = []
-  if (options?.includePreSales === true) {
-    const { data: psRows, error: psErr } = await admin
-      .from('pre_sales')
-      .select(PRE_SALES_SELECT)
-      .eq('encounter_id', encounterId)
-    if (psErr) throw psErr
-    pre_sales = (psRows ?? []) as Record<string, unknown>[]
-  }
-
   return {
     encounter: encounter as Record<string, unknown>,
     appointment,
@@ -117,7 +105,6 @@ export async function loadEncounterDetail(
     pharmacy: (pharmacy as Record<string, unknown> | null) ?? null,
     pharmacy_registry,
     prescriptions,
-    pre_sales,
   }
 }
 

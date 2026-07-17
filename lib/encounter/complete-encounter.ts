@@ -3,13 +3,21 @@ import { ValidationError } from '@/lib/api-error-handler'
 import { ensureEncounterPhysicianReview } from '@/lib/compliance/ensure-physician-review'
 import type { EncounterStatus } from '@/lib/encounter-status'
 import { fetchUserRole } from '@/lib/fetch-user-role'
+import {
+  ENCOUNTER_I693_ELIGIBILITY_SELECT,
+  isImmigrationEncounterForI693,
+} from '@/lib/i693/immigration-eligibility'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 
 /** Statuses from which a doctor may mark the encounter completed (nurse final review skipped). */
 const DOCTOR_COMPLETE_FROM: EncounterStatus[] = ['in_consultation', 'consultation_concluded', 'final_review']
 
-export function canDoctorCompleteEncounter(status: string | null | undefined): boolean {
+export function canDoctorCompleteEncounter(
+  status: string | null | undefined,
+  options: { isI693?: boolean } = {}
+): boolean {
   if (!status) return false
+  if (options.isI693 && status === 'vitals_assessed') return true
   return DOCTOR_COMPLETE_FROM.includes(status as EncounterStatus)
 }
 
@@ -19,15 +27,18 @@ export async function completeEncounter(
 ): Promise<{ status: 'completed' }> {
   const { data: encounter, error } = await admin
     .from('encounters')
-    .select('id, status')
+    .select(`status, ${ENCOUNTER_I693_ELIGIBILITY_SELECT}`)
     .eq('id', args.encounterId)
     .maybeSingle()
 
   if (error) throw error
   if (!encounter) throw new ValidationError('Encounter not found')
 
-  if (!canDoctorCompleteEncounter(encounter.status as string)) {
-    throw new ValidationError('Encounter must be in final review before it can be completed')
+  const isI693 = isImmigrationEncounterForI693(encounter)
+  if (!canDoctorCompleteEncounter(encounter.status as string, { isI693 })) {
+    throw new ValidationError(
+      'Encounter must be in final review, or be an I-693 encounter with vitals assessed, before it can be completed'
+    )
   }
 
   const { error: updateError } = await admin

@@ -13,7 +13,7 @@ export async function GET(_req: NextRequest) {
 
     const { data: patientsData, error: patientsError } = await admin
       .from('patients')
-      .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at')
+      .select('id, first_name, last_name, email, phone, date_of_birth, gender, created_at, created_by_source')
       .order('created_at', { ascending: false })
 
     if (patientsError) throw patientsError

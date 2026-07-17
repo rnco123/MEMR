@@ -44,12 +44,10 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
     const includePharmacyRegistry = request.nextUrl.searchParams.get('pharmacy_registry') === '1'
     const includePrescriptions = request.nextUrl.searchParams.get('prescriptions') === '1'
-    const includePreSales = request.nextUrl.searchParams.get('pre_sales') === '1'
 
     const data = await loadEncounterDetail(admin, encounterId, {
       includePharmacyRegistry,
       includePrescriptions,
-      includePreSales,
     })
 
     auditPhi({

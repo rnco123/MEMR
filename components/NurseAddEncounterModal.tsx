@@ -8,6 +8,7 @@ import { useT } from '@/lib/i18n'
 import { calculateAgeFromDob } from '@/lib/nurse/walk-in-intake'
 import { emptyIntakeFormInput, intakeRowToFormInput } from '@/lib/intake/intake-form-mappers'
 import { IntakeFormFields } from '@/components/IntakeFormFields'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
@@ -26,6 +27,7 @@ type PatientRow = {
   zip_code: string | null
   location_id: number | null
   location_title: string | null
+  created_by_source?: string | null
 }
 
 type ServiceRow = { id: number; title_en: string; title_es?: string | null }
@@ -405,8 +407,11 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                       onClick={() => selectPatient(p)}
                       className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
                     >
-                      <p className="font-semibold text-slate-900">
-                        {p.first_name} {p.last_name}
+                      <p className="font-semibold text-slate-900 inline-flex items-center gap-2 flex-wrap">
+                        <span>
+                          {p.first_name} {p.last_name}
+                        </span>
+                        <PatientSourceBadge source={p.created_by_source} />
                       </p>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {formatDobShort(p.date_of_birth) ?? '—'}

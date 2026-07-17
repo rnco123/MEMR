@@ -16,14 +16,18 @@ export type PatientChartDocumentRef = {
   file_type?: string
 }
 
+function normalizedMime(value?: string): string {
+  return value?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+}
+
 export function isSplitViewPdf(item: I693SplitViewItem): boolean {
-  const mime = item.mimeType?.toLowerCase() ?? item.file?.type?.toLowerCase() ?? ''
+  const mime = normalizedMime(item.mimeType || item.file?.type)
   const name = item.name.toLowerCase()
   return mime === 'application/pdf' || name.endsWith('.pdf')
 }
 
 export function isSplitViewImage(item: I693SplitViewItem): boolean {
-  const mime = item.mimeType?.toLowerCase() ?? item.file?.type?.toLowerCase() ?? ''
+  const mime = normalizedMime(item.mimeType || item.file?.type)
   const name = item.name.toLowerCase()
   return mime.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(name)
 }
@@ -35,7 +39,7 @@ export function isPreviewablePatientChartDocument(doc: {
   document_name?: string
 }): boolean {
   if (!doc.file_url?.trim()) return false
-  const mime = doc.file_type?.toLowerCase() ?? ''
+  const mime = normalizedMime(doc.file_type)
   const name = (doc.file_name ?? doc.document_name ?? '').toLowerCase()
   return (
     mime.startsWith('image/') ||

@@ -3,7 +3,6 @@ import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getUserFromRequest, getSupabaseForRequest } from '@/lib/encounters/auth-from-request'
-import { fetchMcmProducts } from '@/lib/mcm/catalog'
 import {
   buildFinalReviewSystemPrompt,
   buildFinalReviewUserContent,
@@ -94,7 +93,6 @@ export async function POST(
     }
 
     const admin = createAdminClient()
-    const catalogProducts = await fetchMcmProducts(admin, null)
     const visitDate = encounter.created_at
       ? new Date(encounter.created_at as string).toISOString().slice(0, 10)
       : new Date().toISOString().slice(0, 10)
@@ -117,7 +115,7 @@ export async function POST(
         messages: [
           {
             role: 'system',
-            content: buildFinalReviewSystemPrompt(catalogProducts, visitDate),
+            content: buildFinalReviewSystemPrompt(visitDate),
           },
           {
             role: 'user',
@@ -150,7 +148,7 @@ export async function POST(
       )
     }
 
-    const suggestions = validateFinalReviewSuggestions(parsed, catalogProducts)
+    const suggestions = validateFinalReviewSuggestions(parsed)
     const generatedAt = new Date().toISOString()
 
     await guardEncounterAccess(user.id, encounterId, ENCOUNTER_WRITE_ACCESS)

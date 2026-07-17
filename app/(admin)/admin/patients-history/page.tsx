@@ -8,6 +8,7 @@ import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { patientMatchesParsedSearch } from '@/lib/nurse/patient-search-apply'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
 type Patient = {
   id: number
@@ -20,6 +21,7 @@ type Patient = {
   created_at: string
   encounter_count?: number
   last_visit?: string | null
+  created_by_source?: string | null
 }
 
 const PAGE_SIZE = 10
@@ -185,9 +187,12 @@ export default function AdminPatientsHistoryPage() {
                       {patient.first_name.charAt(0)}{patient.last_name.charAt(0)}
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-slate-900 font-semibold text-sm truncate">
-                        {patient.first_name} {patient.last_name}
-                      </h3>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-slate-900 font-semibold text-sm truncate">
+                          {patient.first_name} {patient.last_name}
+                        </h3>
+                        <PatientSourceBadge source={patient.created_by_source} />
+                      </div>
                       <p className="text-slate-400 text-xs font-mono">ID: {patient.id}</p>
                     </div>
                   </div>

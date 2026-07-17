@@ -32,7 +32,11 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024
 /** Patient chart documents (PDF / images) */
 export const PATIENT_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
 
-const PATIENT_DOCUMENT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf'] as const
+export const PATIENT_DOCUMENT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf'] as const
+
+/** Native file-picker filter kept in sync with patient document validation. */
+export const PATIENT_DOCUMENT_ACCEPT =
+  '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg'
 
 const PATIENT_DOCUMENT_MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',

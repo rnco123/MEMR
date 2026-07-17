@@ -45,6 +45,20 @@ function openPrintWindow(html: string): Window | null {
   return printWindow
 }
 
+function writePrintWindow(printWindow: Window, html: string): void {
+  printWindow.document.open()
+  printWindow.document.write(html)
+  printWindow.document.close()
+}
+
+function showPreparingDocument(printWindow: Window, title: string): void {
+  writePrintWindow(
+    printWindow,
+    `<!DOCTYPE html><html><head><title>${escapeHtml(title)}</title></head>` +
+      '<body style="font-family:sans-serif;color:#444;padding:24px">Preparing document for print…</body></html>'
+  )
+}
+
 function buildPdfPrintHtml(blobUrl: string, title: string): string {
   const safeTitle = escapeHtml(title)
   const safeSrc = escapeAttr(blobUrl)
@@ -117,44 +131,56 @@ export function printPdfBlob(
 }
 
 /** Opens the browser print dialog for a patient document (PDF or image). */
-export async function printPatientDocument(doc: PrintablePatientDocument): Promise<boolean> {
+export async function printPatientDocument(
+  doc: PrintablePatientDocument,
+  targetWindow?: Window | null
+): Promise<boolean> {
   const url = doc.file_url?.trim()
   if (!url) return false
+
+  // Open synchronously while the click still has browser user activation. Opening
+  // only after fetch() is a common reason print windows are blocked.
+  const printWindow = targetWindow ?? window.open('', '_blank')
+  if (!printWindow) return false
+  showPreparingDocument(printWindow, doc.document_name)
 
   const fileType = doc.file_type || ''
 
   try {
     const response = await fetchDocumentBlob(url)
     if (!response.ok) {
-      return openDirectUrl(url)
+      printWindow.location.replace(url)
+      return true
     }
 
     const blob = await response.blob()
     const blobUrl = URL.createObjectURL(blob)
     scheduleRevokeObjectUrl(blobUrl)
 
-    const resolvedType = fileType || blob.type || ''
-    const isPdf = resolvedType === 'application/pdf' || blob.type === 'application/pdf'
+    const resolvedType = (fileType || blob.type || '').toLowerCase()
+    const isPdf =
+      resolvedType.split(';', 1)[0]?.trim() === 'application/pdf' ||
+      blob.type.toLowerCase().split(';', 1)[0]?.trim() === 'application/pdf' ||
+      /\.pdf(?:$|[?#])/i.test(url)
     const isImage = resolvedType.startsWith('image/') || blob.type.startsWith('image/')
 
     if (isPdf) {
-      const win = openPrintWindow(buildPdfPrintHtml(blobUrl, doc.document_name))
-      return win != null
+      writePrintWindow(printWindow, buildPdfPrintHtml(blobUrl, doc.document_name))
+      return true
     }
 
     if (isImage) {
-      const win = openPrintWindow(buildImagePrintHtml(blobUrl, doc.document_name))
-      return win != null
+      writePrintWindow(printWindow, buildImagePrintHtml(blobUrl, doc.document_name))
+      return true
     }
 
-    const win = window.open(blobUrl, '_blank')
-    return win != null
+    printWindow.location.replace(blobUrl)
+    return true
   } catch {
-    return openDirectUrl(url)
+    if (!printWindow.closed) {
+      printWindow.location.replace(url)
+      return true
+    }
+    return false
   }
-}
-
-function openDirectUrl(url: string): boolean {
-  const win = window.open(url, '_blank', 'noopener,noreferrer')
-  return win != null
 }

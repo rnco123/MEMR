@@ -5,6 +5,9 @@ import type { EncounterStatus } from '@/lib/encounter-status'
 /** Per-system status for ROS or physical exam rows. */
 export type SystemStatus = 'N' | 'A' | 'NA' | null
 
+/** Map of row key → list of finding labels marked abnormal for that row. */
+export type FindingSelectionMap = Record<string, string[]>
+
 /** Review of Systems (left column of the PE form). */
 export type RosData = {
   cons?: SystemStatus          // Constitutional
@@ -51,6 +54,10 @@ export type ExamData = {
 export type RosExamData = {
   ros?: RosData
   exam?: ExamData
+  /** Abnormal findings selected per ROS row (row key → finding labels). */
+  ros_findings?: FindingSelectionMap
+  /** Abnormal findings selected per EXAM row (row key → finding labels). */
+  exam_findings?: FindingSelectionMap
   remarks?: string | null
 }
 
@@ -78,6 +85,8 @@ export function normalizeRosExamData(raw: unknown): RosExamData {
       record.exam && typeof record.exam === 'object' && !Array.isArray(record.exam)
         ? (record.exam as ExamData)
         : undefined,
+    ros_findings: normalizeFindingSelectionMap(record.ros_findings),
+    exam_findings: normalizeFindingSelectionMap(record.exam_findings),
     remarks: typeof record.remarks === 'string' ? record.remarks : record.remarks == null ? null : String(record.remarks),
   }
 }
@@ -85,6 +94,22 @@ export function normalizeRosExamData(raw: unknown): RosExamData {
 export function coerceSystemStatus(value: unknown): SystemStatus | undefined {
   if (value === 'N' || value === 'A' || value === 'NA') return value
   return undefined
+}
+
+export function normalizeFindingSelectionMap(value: unknown): FindingSelectionMap | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const out: FindingSelectionMap = {}
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(raw)) continue
+    const labels = raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    if (labels.length) out[key] = labels
+  }
+  return Object.keys(out).length ? out : undefined
+}
+
+export function formatFindingLabels(labels: string[] | null | undefined): string | null {
+  if (!labels?.length) return null
+  return labels.join(', ')
 }
 
 export function getRosSystemStatus(data: RosExamData | null | undefined, key: keyof RosData): SystemStatus | undefined {
@@ -98,49 +123,57 @@ export function getExamSystemStatus(data: RosExamData | null | undefined, key: k
 export function formatRosExamForContext(data: RosExamData | null | undefined): string | null {
   if (!data) return null
   const lines: string[] = []
-  const rosRows: Array<[string, SystemStatus | undefined]> = [
-    ['Constitutional', data.ros?.cons],
-    ['Skin (ROS)', data.ros?.skin],
-    ['Eyes (ROS)', data.ros?.eyes],
-    ['Ears (ROS)', data.ros?.ears],
-    ['Nose (ROS)', data.ros?.nose],
-    ['Throat (ROS)', data.ros?.throat],
-    ['CV/Resp (ROS)', data.ros?.cv_resp],
-    ['GI', data.ros?.gi],
-    ['GU', data.ros?.gu],
-    ['GYN', data.ros?.gyn],
-    ['Male (ROS)', data.ros?.male],
-    ['MS (ROS)', data.ros?.ms],
-    ['Neurologic (ROS)', data.ros?.neu],
-    ['Psychiatric (ROS)', data.ros?.psych],
-    ['Hemat/Lymph', data.ros?.hemat_lymph],
+  const rosFindings = data.ros_findings ?? {}
+  const examFindings = data.exam_findings ?? {}
+  const rosRows: Array<[keyof RosData, string, SystemStatus | undefined]> = [
+    ['cons', 'Constitutional', data.ros?.cons],
+    ['skin', 'Skin (ROS)', data.ros?.skin],
+    ['eyes', 'Eyes (ROS)', data.ros?.eyes],
+    ['ears', 'Ears (ROS)', data.ros?.ears],
+    ['nose', 'Nose (ROS)', data.ros?.nose],
+    ['throat', 'Throat (ROS)', data.ros?.throat],
+    ['cv_resp', 'CV/Resp (ROS)', data.ros?.cv_resp],
+    ['gi', 'GI', data.ros?.gi],
+    ['gu', 'GU', data.ros?.gu],
+    ['gyn', 'GYN', data.ros?.gyn],
+    ['male', 'Male (ROS)', data.ros?.male],
+    ['ms', 'MS (ROS)', data.ros?.ms],
+    ['neu', 'Neurologic (ROS)', data.ros?.neu],
+    ['psych', 'Psychiatric (ROS)', data.ros?.psych],
+    ['hemat_lymph', 'Hemat/Lymph', data.ros?.hemat_lymph],
   ]
-  for (const [label, status] of rosRows) {
-    if (status) lines.push(`${label}: ${status}`)
+  for (const [key, label, status] of rosRows) {
+    const findings = formatFindingLabels(rosFindings[key as string])
+    if (status || findings) {
+      lines.push(`${label}: ${status ?? ''}${findings ? ` — Abnormal: ${findings}` : ''}`.trim())
+    }
   }
   if (data.ros?.gyn_lmp) lines.push(`  LMP: ${data.ros.gyn_lmp}`)
   if (data.ros?.neu_numbness) lines.push(`  Numbness: ${data.ros.neu_numbness}`)
   if (data.ros?.neu_tingling) lines.push(`  Tingling: ${data.ros.neu_tingling}`)
 
-  const examRows: Array<[string, SystemStatus | undefined]> = [
-    ['General', data.exam?.general],
-    ['Skin (Exam)', data.exam?.skin],
-    ['Head', data.exam?.head],
-    ['Eyes (Exam)', data.exam?.eyes],
-    ['Ears (Exam)', data.exam?.ears],
-    ['Nose (Exam)', data.exam?.nose],
-    ['Throat (Exam)', data.exam?.throat],
-    ['Neck', data.exam?.neck],
-    ['CV (Exam)', data.exam?.cv],
-    ['Respiratoy', data.exam?.respir],
-    ['Abdomen', data.exam?.abdomen],
-    ['GU (Exam)', data.exam?.gu],
-    ['Rectal', data.exam?.rectal],
-    ['MS (Exam)', data.exam?.ms],
-    ['Neuro', data.exam?.neuro],
+  const examRows: Array<[keyof ExamData, string, SystemStatus | undefined]> = [
+    ['general', 'General', data.exam?.general],
+    ['skin', 'Skin (Exam)', data.exam?.skin],
+    ['head', 'Head', data.exam?.head],
+    ['eyes', 'Eyes (Exam)', data.exam?.eyes],
+    ['ears', 'Ears (Exam)', data.exam?.ears],
+    ['nose', 'Nose (Exam)', data.exam?.nose],
+    ['throat', 'Throat (Exam)', data.exam?.throat],
+    ['neck', 'Neck', data.exam?.neck],
+    ['cv', 'CV (Exam)', data.exam?.cv],
+    ['respir', 'Respiratoy', data.exam?.respir],
+    ['abdomen', 'Abdomen', data.exam?.abdomen],
+    ['gu', 'GU (Exam)', data.exam?.gu],
+    ['rectal', 'Rectal', data.exam?.rectal],
+    ['ms', 'MS (Exam)', data.exam?.ms],
+    ['neuro', 'Neuro', data.exam?.neuro],
   ]
-  for (const [label, status] of examRows) {
-    if (status) lines.push(`${label}: ${status}`)
+  for (const [key, label, status] of examRows) {
+    const findings = formatFindingLabels(examFindings[key as string])
+    if (status || findings) {
+      lines.push(`${label}: ${status ?? ''}${findings ? ` — Abnormal: ${findings}` : ''}`.trim())
+    }
   }
   if (data.exam?.ms_sites) lines.push(`  MS Exam sites: ${data.exam.ms_sites}`)
   if (data.remarks) lines.push(`Remarks: ${data.remarks}`)

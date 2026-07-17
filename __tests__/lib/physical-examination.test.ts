@@ -42,4 +42,19 @@ describe('physical examination edit rules', () => {
     expect(getRosSystemStatus(normalized, 'cons')).toBe('N')
     expect(getExamSystemStatus(normalized, 'cv')).toBe('NA')
   })
+
+  it('normalizes per-row abnormal finding selections', () => {
+    const normalized = normalizeRosExamData({
+      ros: { cons: 'A' },
+      ros_findings: {
+        cons: ['Chili', 'Weight Loss', 42, ''],
+        skin: [],
+      },
+      exam_findings: {
+        general: ['Obese'],
+      },
+    })
+    expect(normalized.ros_findings).toEqual({ cons: ['Chili', 'Weight Loss'] })
+    expect(normalized.exam_findings).toEqual({ general: ['Obese'] })
+  })
 })

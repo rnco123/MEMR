@@ -79,6 +79,7 @@ export function AddressLookupFields({
   const [suggestions, setSuggestions] = useState<string[]>([])
   const [loadingSuggestions, setLoadingSuggestions] = useState(false)
   const lastSelectedRef = useRef('')
+  const suppressLookupRef = useRef(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const requestSeqRef = useRef(0)
   const streetFieldRef = useRef<HTMLDivElement>(null)
@@ -94,7 +95,10 @@ export function AddressLookupFields({
     if (debounceRef.current) clearTimeout(debounceRef.current)
 
     const query = streetAddress.trim()
-    if (lastSelectedRef.current === query) {
+
+    // Skip lookup after a suggestion was applied until the user types again.
+    if (suppressLookupRef.current || lastSelectedRef.current === query) {
+      setSuggestions([])
       setLoadingSuggestions(false)
       return
     }
@@ -136,20 +140,27 @@ export function AddressLookupFields({
   }, [streetAddress, lookupEnabled, disabled])
 
   const applySuggestion = (suggestion: string) => {
-    lastSelectedRef.current = suggestion
     requestSeqRef.current++
     const split = splitAddressForPatientRecord(suggestion)
+    const nextStreet = split.street_address.trim()
+    // Remember the value written into the street field (not the full place label),
+    // otherwise the lookup effect treats it as new typing and reopens the list.
+    suppressLookupRef.current = true
+    lastSelectedRef.current = nextStreet
+    setSuggestions([])
+    setLoadingSuggestions(false)
     onStreetAddressChange(split.street_address)
     onStateChange(normalizeStateAbbrev(split.state).toUpperCase().slice(0, 2))
     onZipCodeChange(split.zip_code)
-    setSuggestions([])
-    setLoadingSuggestions(false)
-    setTimeout(() => {
-      lastSelectedRef.current = ''
-    }, 500)
   }
 
-  const showSuggestions = suggestions.length > 0 && !disabled
+  const onStreetTyped = (value: string) => {
+    suppressLookupRef.current = false
+    lastSelectedRef.current = ''
+    onStreetAddressChange(value)
+  }
+
+  const showSuggestions = suggestions.length > 0 && !disabled && !suppressLookupRef.current
   const dropdownStyle = useDropdownPosition(streetFieldRef, showSuggestions)
 
   return (
@@ -158,7 +169,7 @@ export function AddressLookupFields({
         <label className="text-slate-500 text-sm mb-1 font-semibold block">{streetLabel}</label>
         <input
           value={streetAddress}
-          onChange={(e) => onStreetAddressChange(e.target.value)}
+          onChange={(e) => onStreetTyped(e.target.value)}
           className={inputClassName}
           placeholder={streetPlaceholder}
           disabled={disabled}

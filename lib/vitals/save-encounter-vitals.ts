@@ -125,20 +125,21 @@ export async function saveEncounterVitals(
   const currentStatus = encounter.status as string | null
 
   const now = new Date().toISOString()
+  const safe = sanitizeVitalsForDb(vitals)
   const rowPayload = {
-    bp_systolic: vitals.bp_systolic ?? null,
-    bp_diastolic: vitals.bp_diastolic ?? null,
-    heart_rate: vitals.heart_rate ?? null,
-    respiratory_rate: vitals.respiratory_rate ?? null,
-    temperature: vitals.temperature ?? null,
-    temperature_unit: vitals.temperature_unit ?? null,
-    spo2: vitals.spo2 ?? null,
-    weight: vitals.weight ?? null,
-    weight_unit: vitals.weight_unit ?? null,
-    height: vitals.height ?? null,
-    height_unit: vitals.height_unit ?? null,
-    bmi: vitals.bmi ?? null,
-    notes: vitals.notes ?? null,
+    bp_systolic: safe.bp_systolic ?? null,
+    bp_diastolic: safe.bp_diastolic ?? null,
+    heart_rate: safe.heart_rate ?? null,
+    respiratory_rate: safe.respiratory_rate ?? null,
+    temperature: safe.temperature ?? null,
+    temperature_unit: safe.temperature_unit ?? null,
+    spo2: safe.spo2 ?? null,
+    weight: safe.weight ?? null,
+    weight_unit: safe.weight_unit ?? null,
+    height: safe.height ?? null,
+    height_unit: safe.height_unit ?? null,
+    bmi: safe.bmi ?? null,
+    notes: safe.notes ?? null,
     edited_by: editor.userId,
     editor_role: editor.role,
     editor_name: editor.editorName,
@@ -250,5 +251,27 @@ export function calculateVitalsBmi(args: {
       ? parseFloat(args.height) * 0.0254
       : parseFloat(args.height) / 100
   if (!Number.isFinite(weightKg) || !Number.isFinite(heightM) || heightM <= 0) return null
-  return parseFloat((weightKg / (heightM * heightM)).toFixed(1))
+  const bmi = weightKg / (heightM * heightM)
+  if (!Number.isFinite(bmi) || bmi <= 0) return null
+  // Keep within DB numeric(6,2) and reject nonsense calculation noise.
+  if (bmi > 9999.99) return 9999.99
+  return parseFloat(bmi.toFixed(1))
+}
+
+/** Round/clamp numeric vitals so inserts never overflow Postgres column precision. */
+export function sanitizeVitalsForDb(vitals: VitalsRecordInput): VitalsRecordInput {
+  const clamp = (value: number | null | undefined, maxAbs: number, decimals: number) => {
+    if (value == null || !Number.isFinite(value)) return null
+    const capped = Math.min(Math.max(value, -maxAbs), maxAbs)
+    const factor = 10 ** decimals
+    return Math.round(capped * factor) / factor
+  }
+
+  return {
+    ...vitals,
+    temperature: clamp(vitals.temperature ?? null, 9999.99, 2),
+    weight: clamp(vitals.weight ?? null, 9999.99, 2),
+    height: clamp(vitals.height ?? null, 9999.99, 2),
+    bmi: clamp(vitals.bmi ?? null, 9999.99, 2),
+  }
 }

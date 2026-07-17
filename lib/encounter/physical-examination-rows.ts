@@ -1,5 +1,19 @@
 import type { ExamData, RosData } from '@/lib/encounter/physical-examination'
 
+export type FindingOption = {
+  /** Stable identifier used to persist the selection (the finding label itself). */
+  label: string
+}
+
+/** Split a comma-separated findings hint into individual clickable options. */
+export function toFindingOptions(notes: string): FindingOption[] {
+  return notes
+    .split(',')
+    .map(part => part.trim())
+    .filter(Boolean)
+    .map(label => ({ label }))
+}
+
 export type RosRowDef = {
   key: keyof Pick<
     RosData,
@@ -21,6 +35,7 @@ export type RosRowDef = {
   >
   label: string
   notes: string
+  findings: FindingOption[]
   extras?: Array<{ key: keyof RosData; placeholder: string }>
 }
 
@@ -45,10 +60,17 @@ export type ExamRowDef = {
   >
   label: string
   notes: string
+  findings: FindingOption[]
   extras?: Array<{ key: keyof ExamData; placeholder: string }>
 }
 
-export const ROS_ROWS: RosRowDef[] = [
+type RosRowSeed = Omit<RosRowDef, 'findings'>
+type ExamRowSeed = Omit<ExamRowDef, 'findings'>
+
+const withRosFindings = (row: RosRowSeed): RosRowDef => ({ ...row, findings: toFindingOptions(row.notes) })
+const withExamFindings = (row: ExamRowSeed): ExamRowDef => ({ ...row, findings: toFindingOptions(row.notes) })
+
+const ROS_ROW_SEEDS: RosRowSeed[] = [
   { key: 'cons', label: 'Cons:', notes: 'Chili, Muscle Aches, Poor Appetite/sleep, Weight Change, Weight Loss' },
   { key: 'skin', label: 'Skin:', notes: 'Rash, Lesions, Pallor, Hair loss, Jaundice, Itching' },
   { key: 'eyes', label: 'Eyes:', notes: 'Redness, Itchiness, Discharge, Visual changes' },
@@ -83,7 +105,9 @@ export const ROS_ROWS: RosRowDef[] = [
   { key: 'hemat_lymph', label: 'Hemat/Lymph:', notes: 'Bruising, Fatigue, Anemia, Heat/Cold intolerance' },
 ]
 
-export const EXAM_ROWS: ExamRowDef[] = [
+export const ROS_ROWS: RosRowDef[] = ROS_ROW_SEEDS.map(withRosFindings)
+
+const EXAM_ROW_SEEDS: ExamRowSeed[] = [
   { key: 'general', label: 'General:', notes: 'Lethargic, Cachectic, Obese, Uncomfortable, Pallor, Acute Distress, Appears Stated Age' },
   { key: 'skin', label: 'Skin:', notes: 'Warm, Dry, skin tone, Rash, Bruises, Lesions, Nails' },
   { key: 'head', label: 'Head:', notes: 'Normocephalic, Atraumatic' },
@@ -105,3 +129,5 @@ export const EXAM_ROWS: ExamRowDef[] = [
   },
   { key: 'neuro', label: 'Neuro:', notes: 'Affect, Alert/Orientedx3, Cranial Nerves 2-12, int Motor, Tone, Sensory, Reflex, Gait' },
 ]
+
+export const EXAM_ROWS: ExamRowDef[] = EXAM_ROW_SEEDS.map(withExamFindings)

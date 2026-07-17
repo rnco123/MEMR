@@ -54,11 +54,10 @@ export async function GET(request: Request, { params }: { params: { id: string }
     const patientId = sub.patient_id
     const ownerEncounterId = sub.encounter_id
     if (!isPreviewOnly && Number.isFinite(patientId)) {
-      void (async () => {
-        const ctx = await loadEncounterImmigrationContext(admin, encounterId)
-        if (!ctx?.isImmigration) return
+      const ctx = await loadEncounterImmigrationContext(admin, encounterId)
+      if (ctx?.isImmigration) {
         await persistI693PdfToPatientFile(admin, patientId, ownerEncounterId, bytes, user.id)
-      })().catch((err) => console.error('[i693/pdf] persist to patient file:', err))
+      }
     }
 
     await logI693Audit('pdf_exported', encounterId, {
@@ -73,6 +72,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="I-693-encounter-${encounterId}.pdf"`,
+        'Cache-Control': 'private, no-store, max-age=0',
         'X-I693-Pdf-Mode': mode,
         ...(filledFields?.length ? { 'X-I693-Filled-Fields': String(filledFields.length) } : {}),
         ...(missingFields?.length ? { 'X-I693-Missing-Fields': String(missingFields.length) } : {}),

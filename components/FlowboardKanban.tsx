@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from 'react'
 import { ENCOUNTER_STATUSES, getStatusVisualStyle } from '@/lib/encounter-status'
 import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { useT } from '@/lib/i18n'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
 export type FlowboardKanbanAppointment = {
   id: number
@@ -20,6 +21,7 @@ export type FlowboardKanbanAppointment = {
     email?: string | null
     phone?: string | null
     date_of_birth?: string | null
+    created_by_source?: string | null
   } | null
 }
 
@@ -303,7 +305,10 @@ function KanbanCard({
               ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
               : unknownPatientLabel}
           </p>
-          <p className="text-[10px] text-slate-400 font-mono">ID {appointment.patient_id}</p>
+          <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+            <p className="text-[10px] text-slate-400 font-mono">ID {appointment.patient_id}</p>
+            <PatientSourceBadge source={appointment.patient?.created_by_source} />
+          </div>
         </div>
       </div>
 

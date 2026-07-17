@@ -22,6 +22,7 @@ import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
+import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import {
   FlowboardFilterField,
   FlowboardFilterToolbar,
@@ -40,6 +41,7 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { NurseAddEncounterModal } from '@/components/NurseAddEncounterModal'
+import { NurseRegisterPatientModal } from '@/components/NurseRegisterPatientModal'
 import { formatDobShort } from '@/lib/datetime/date-input'
 
 interface Appointment {
@@ -67,6 +69,7 @@ interface Appointment {
     email: string | null
     phone: string | null
     date_of_birth: string | null
+    created_by_source?: string | null
   }
 }
 
@@ -134,6 +137,7 @@ function NurseFlowboardPage() {
   const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
+  const [showRegisterPatientModal, setShowRegisterPatientModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const [selectedAppointmentIds, setSelectedAppointmentIds] = useState<Set<number>>(new Set())
@@ -415,13 +419,22 @@ function NurseFlowboardPage() {
             <p className="text-slate-500 text-sm">{t('flow.subtitle_nurse')}</p>
           </div>
           {role === UserRole.NURSE && (
-            <button
-              type="button"
-              onClick={() => setShowAddVisitModal(true)}
-              className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
-            >
-              + {t('flow.add_encounter')}
-            </button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowRegisterPatientModal(true)}
+                className="h-11 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              >
+                + {t('flow.add_patient')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddVisitModal(true)}
+                className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors"
+              >
+                + {t('flow.add_encounter')}
+              </button>
+            </div>
           )}
         </div>
 
@@ -754,7 +767,12 @@ function NurseFlowboardPage() {
                           ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
                           : t('flow.unknown_patient')}
                       </h3>
-                      <p className="text-slate-400 text-xs font-mono">{t('common.id')}: {appointment.patient_id}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                        <p className="text-slate-400 text-xs font-mono">
+                          {t('common.id')}: {appointment.patient_id}
+                        </p>
+                        <PatientSourceBadge source={appointment.patient?.created_by_source} />
+                      </div>
                     </div>
                   </div>
 
@@ -978,6 +996,27 @@ function NurseFlowboardPage() {
                 patientId,
                 encounterStatus: 'appointment_initiated',
               })
+            }}
+          />
+        )}
+        {role === UserRole.NURSE && (
+          <NurseRegisterPatientModal
+            isOpen={showRegisterPatientModal}
+            onClose={() => setShowRegisterPatientModal(false)}
+            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
+            onCreated={async ({ patientId, encounterId, appointmentId }) => {
+              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+              await fetchAllAppointments(true)
+              if (encounterId && appointmentId) {
+                setSelectedEncounter({
+                  encounterId,
+                  appointmentId,
+                  patientId,
+                  encounterStatus: 'appointment_initiated',
+                })
+              } else {
+                router.push(`/patient-file/${patientId}`)
+              }
             }}
           />
         )}

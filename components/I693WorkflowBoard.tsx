@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
+import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -60,6 +61,8 @@ export function I693WorkflowBoard({
   const [patientSearch, setPatientSearch] = useState('')
   const [movingEncounterId, setMovingEncounterId] = useState<number | null>(null)
   const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([])
+  const [selectedDeliveredIds, setSelectedDeliveredIds] = useState<Set<number>>(new Set())
+  const [closingForms, setClosingForms] = useState(false)
 
   const load = useCallback(
     async (silent = false) => {
@@ -126,6 +129,19 @@ export function I693WorkflowBoard({
     }
     return map
   }, [filtered])
+
+  const visibleDeliveredRows = useMemo(
+    () => filtered.filter((row) => row.case?.status === 'delivered'),
+    [filtered]
+  )
+
+  useEffect(() => {
+    const availableIds = new Set(visibleDeliveredRows.map((row) => row.encounter_id))
+    setSelectedDeliveredIds((current) => {
+      const next = new Set([...current].filter((id) => availableIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [visibleDeliveredRows])
 
   const selectedRow = useMemo(
     () => rows.find((r) => r.encounter_id === selectedEncounterId) ?? null,
@@ -199,6 +215,43 @@ export function I693WorkflowBoard({
     [moveCase, rows]
   )
 
+  const toggleDeliveredSelection = (encounterId: number) => {
+    setSelectedDeliveredIds((current) => {
+      const next = new Set(current)
+      if (next.has(encounterId)) next.delete(encounterId)
+      else next.add(encounterId)
+      return next
+    })
+  }
+
+  const closeSelectedForms = async () => {
+    const encounterIds = [...selectedDeliveredIds]
+    if (encounterIds.length === 0) return
+    if (!window.confirm(t('i693.wf_close_confirm', { count: encounterIds.length }))) return
+
+    setClosingForms(true)
+    try {
+      const res = await fetch('/api/i693/cases', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ encounter_ids: encounterIds }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || t('i693.wf_close_failed'))
+
+      const closedIds = new Set<number>(json.data?.closed_encounter_ids ?? [])
+      setRows((current) => current.filter((row) => !closedIds.has(row.encounter_id)))
+      setSelectedDeliveredIds(new Set())
+      toast.success(t('i693.wf_close_success', { count: closedIds.size }))
+    } catch (e) {
+      console.error(e)
+      toast.error(e instanceof Error ? e.message : t('i693.wf_close_failed'))
+    } finally {
+      setClosingForms(false)
+    }
+  }
+
   const renderCard = (row: ApiRow) => {
     const c = row.case!
     const appt =
@@ -216,6 +269,19 @@ export function I693WorkflowBoard({
             : 'border-slate-200 hover:border-slate-300'
         } ${movingEncounterId === row.encounter_id ? 'opacity-60' : 'cursor-move'}`}
       >
+        {c.status === 'delivered' && (
+          <label className="mb-2 inline-flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={selectedDeliveredIds.has(row.encounter_id)}
+              onChange={() => toggleDeliveredSelection(row.encounter_id)}
+              onClick={(event) => event.stopPropagation()}
+              className="h-4 w-4 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+              aria-label={t('i693.wf_select_form', { name: row.patient_name })}
+            />
+            {t('i693.wf_select')}
+          </label>
+        )}
         <button
           type="button"
           onClick={() => onSelectEncounter(row.encounter_id, row.patient_name)}
@@ -331,6 +397,19 @@ export function I693WorkflowBoard({
         </div>
       </div>
 
+      <FlowboardBatchActionBar
+        selectedCount={selectedDeliveredIds.size}
+        totalSelectableOnPage={visibleDeliveredRows.length}
+        onSelectAllPage={() =>
+          setSelectedDeliveredIds(new Set(visibleDeliveredRows.map((row) => row.encounter_id)))
+        }
+        onClear={() => setSelectedDeliveredIds(new Set())}
+        actionLabel={t('i693.wf_close_selected')}
+        actionLoadingLabel={t('i693.wf_closing')}
+        isLoading={closingForms}
+        onAction={() => void closeSelectedForms()}
+      />
+
       {selectedRow && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#2E6EF3]/25 bg-[#eef3ff] px-4 py-3">
           <p className="text-sm text-slate-800 min-w-0 flex-1">
@@ -389,6 +468,15 @@ export function I693WorkflowBoard({
                     selectedEncounterId === row.encounter_id ? 'bg-[#eef3ff]' : ''
                   }`}
                 >
+                  {c.status === 'delivered' && (
+                    <input
+                      type="checkbox"
+                      checked={selectedDeliveredIds.has(row.encounter_id)}
+                      onChange={() => toggleDeliveredSelection(row.encounter_id)}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+                      aria-label={t('i693.wf_select_form', { name: row.patient_name })}
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => onSelectEncounter(row.encounter_id, row.patient_name)}

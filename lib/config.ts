@@ -46,9 +46,6 @@ export const config = {
   sentry: {
     dsn: getEnvVar('NEXT_PUBLIC_SENTRY_DSN', false), // Optional
   },
-  soapNotes: {
-    apiUrl: getEnvVar('NEXT_PUBLIC_SOAP_NOTES_API_URL', false), // Optional - Complete SOAP Notes API
-  },
   /** Server-only: nurse risk alerts (OpenAI). */
   openai: {
     apiKey: getEnvVar('OPENAI_API_KEY', false),

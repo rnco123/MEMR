@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     let query = admin
       .from('patients')
       .select(
-        'id, first_name, last_name, email, phone, date_of_birth, gender, street_address, state, zip_code, location_id, locations(title)'
+        'id, first_name, last_name, email, phone, date_of_birth, gender, street_address, state, zip_code, location_id, created_by_source, locations(title)'
       )
       .limit(MAX_RESULTS)
 
@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
           zip_code: p.zip_code,
           location_id: p.location_id,
           location_title: loc?.title ?? null,
+          created_by_source: (p as { created_by_source?: string | null }).created_by_source ?? 'QR',
         }
       })
 

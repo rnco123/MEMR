@@ -35,16 +35,20 @@ export function DobDateInput({ value, onChange, className, id, disabled }: Props
         max={todayLocalIsoDate()}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value || null)}
-        className={className ? `${className} pr-10` : 'w-full pr-10'}
+        // Hide the browser’s built-in calendar glyph; we render one custom control.
+        className={`[&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:opacity-0 [&::-webkit-calendar-picker-indicator]:cursor-pointer ${
+          className ? `${className} pr-10` : 'w-full pr-10'
+        }`}
       />
       <button
         type="button"
         onClick={openCalendar}
         disabled={disabled}
-        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
-        aria-label="Open calendar"
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-500"
+        aria-hidden
+        tabIndex={-1}
       >
-        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
             strokeLinecap="round"
             strokeLinejoin="round"

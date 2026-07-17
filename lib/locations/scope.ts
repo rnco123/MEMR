@@ -6,6 +6,7 @@ import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
 export type LocationRow = {
   id: number
   title: string
+  tenant_id?: number | null
   address?: string | null
   location_code?: string | null
   phone?: string | null
@@ -96,7 +97,7 @@ export async function getAssignedLocations(
 
   const { data } = await admin
     .from('locations')
-    .select('id, title, address, location_code, phone, email, opening_hours, google_map_url, is_active')
+    .select('id, title, tenant_id, address, location_code, phone, email, opening_hours, google_map_url, is_active')
     .in('id', scope.locationIds)
     .eq('is_active', true)
     .order('title')

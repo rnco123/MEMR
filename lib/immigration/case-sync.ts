@@ -562,6 +562,9 @@ async function listImmigrationCasesInner(
     status_updated_by: null,
     status_updated_by_name: null,
     status_updated_at: null,
+    closed_at: null,
+    closed_by: null,
+    closed_by_name: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })
@@ -613,6 +616,8 @@ async function listImmigrationCasesInner(
     }
 
     const storedCase = caseByEncounter.get(encounterId)
+    if (storedCase?.closed_at) continue
+
     const caseRow = storedCase ?? defaultCaseRow(patientId, encounterId)
     if (!storedCase) missingCaseEncounterIds.push(encounterId)
 

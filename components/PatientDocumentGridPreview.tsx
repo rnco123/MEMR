@@ -15,8 +15,9 @@ function pdfEmbedSrc(url: string): string {
 }
 
 function iconForType(fileType: string): { d: string; color: string } {
-  if (fileType.startsWith('image/')) return { d: ICON_IMAGE, color: 'text-blue-400' }
-  if (fileType === 'application/pdf') return { d: ICON_PDF, color: 'text-red-400' }
+  const mime = fileType.split(';', 1)[0]?.trim().toLowerCase() ?? ''
+  if (mime.startsWith('image/')) return { d: ICON_IMAGE, color: 'text-blue-400' }
+  if (mime === 'application/pdf') return { d: ICON_PDF, color: 'text-red-400' }
   return { d: ICON_GENERIC, color: 'text-gray-400' }
 }
 
@@ -36,8 +37,11 @@ export function PatientDocumentGridPreview({
   documentName,
 }: PatientDocumentGridPreviewProps) {
   const [imgFailed, setImgFailed] = useState(false)
-  const ft = fileType || ''
+  const ft = fileType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
   const url = (fileUrl || '').trim()
+  const lowerName = documentName.toLowerCase()
+  const isImage = ft.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(lowerName)
+  const isPdf = ft === 'application/pdf' || lowerName.endsWith('.pdf')
 
   const fallback = (
     <div className="flex h-full min-h-[148px] w-full flex-col items-center justify-center gap-2 bg-slate-800/95 px-4">
@@ -57,7 +61,7 @@ export function PatientDocumentGridPreview({
     return fallback
   }
 
-  if (ft.startsWith('image/')) {
+  if (isImage) {
     if (imgFailed) return fallback
     return (
       // Signed storage URLs; next/image would need every host in next.config
@@ -73,7 +77,7 @@ export function PatientDocumentGridPreview({
     )
   }
 
-  if (ft === 'application/pdf') {
+  if (isPdf) {
     return (
       <iframe
         title={documentName}

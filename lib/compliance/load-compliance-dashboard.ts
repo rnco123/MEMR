@@ -11,6 +11,8 @@ import {
 } from './physician-review'
 import type {
   ComplianceDashboardResponse,
+  ComplianceCatalogOrder,
+  ComplianceDiagnosis,
   CompliancePendingReview,
   ComplianceProviderSummary,
   ComplianceQueryParams,
@@ -215,6 +217,189 @@ async function loadChiefComplaints(
     if (cc?.trim()) map.set(Number(row.id), cc.trim())
   }
   return map
+}
+
+type CatalogOrderJoinRow = {
+  id: number
+  qty: number
+  product:
+    | { product?: string | null }
+    | { product?: string | null }[]
+    | null
+}
+
+type CatalogOrderAuditRow = {
+  user_id: string | null
+  user_name: string | null
+  metadata: Record<string, unknown> | null
+}
+
+type DiagnosisJoinRow = {
+  id: number
+  diagnosis:
+    | { icd_code?: string | null; description?: string | null }
+    | { icd_code?: string | null; description?: string | null }[]
+    | null
+}
+
+type DiagnosisAuditRow = {
+  user_id: string | null
+  user_name: string | null
+  user_email: string | null
+  metadata: Record<string, unknown> | null
+}
+
+function joinedProductName(row: CatalogOrderJoinRow): string {
+  const product = Array.isArray(row.product) ? row.product[0] : row.product
+  return product?.product?.trim() || 'Unknown product'
+}
+
+export async function loadDiagnosesForCompliance(
+  admin: SupabaseClient,
+  encounterId: number
+): Promise<ComplianceDiagnosis[]> {
+  const [diagnosesResult, auditResult] = await Promise.all([
+    admin
+      .from('encounter_diagnoses')
+      .select('id, diagnosis:diagnosis_id(icd_code, description)')
+      .eq('encounter_id', encounterId)
+      .order('created_at', { ascending: true }),
+    admin
+      .from('audit_logs')
+      .select('user_id, user_name, user_email, metadata')
+      .eq('resource_type', 'encounter')
+      .eq('resource_id', String(encounterId))
+      .eq('action', 'encounter_updated')
+      .contains('metadata', { section: 'diagnoses', operation: 'create' })
+      .order('created_at', { ascending: true }),
+  ])
+
+  if (diagnosesResult.error) throw diagnosesResult.error
+  if (auditResult.error) throw auditResult.error
+
+  const audits = (auditResult.data ?? []) as DiagnosisAuditRow[]
+  const auditUserIds = [
+    ...new Set(
+      audits
+        .map((audit) => audit.user_id)
+        .filter((userId): userId is string => Boolean(userId))
+    ),
+  ]
+  const [profiles, doctorNames] = await Promise.all([
+    loadProfiles(admin, auditUserIds),
+    loadDoctorNames(admin, auditUserIds),
+  ])
+  const creators = new Map<number, string>()
+
+  for (const audit of audits) {
+    const encounterDiagnosisId = Number(audit.metadata?.encounter_diagnosis_id)
+    if (!Number.isInteger(encounterDiagnosisId) || encounterDiagnosisId <= 0) continue
+
+    const profile = audit.user_id ? profileForUser(profiles, audit.user_id) : null
+    const addedBy =
+      audit.user_name?.trim() ||
+      (audit.user_id ? doctorNames.get(audit.user_id) : null) ||
+      profile?.full_name?.trim() ||
+      audit.user_email?.trim() ||
+      'Unknown user'
+
+    // A diagnosis has one creator. Keep the earliest matching creation event if
+    // historical retries produced duplicate audit rows.
+    if (!creators.has(encounterDiagnosisId)) {
+      creators.set(encounterDiagnosisId, addedBy)
+    }
+  }
+
+  return ((diagnosesResult.data ?? []) as DiagnosisJoinRow[]).map((row) => {
+    const diagnosis = first(row.diagnosis)
+    return {
+      id: Number(row.id),
+      icdCode: diagnosis?.icd_code?.trim() || '—',
+      description: diagnosis?.description?.trim() || 'Unknown diagnosis',
+      addedBy: creators.get(Number(row.id)) ?? 'Unknown user',
+    }
+  })
+}
+
+async function loadCatalogOrdersForCompliance(
+  admin: SupabaseClient,
+  encounterId: number
+): Promise<{ medications: ComplianceCatalogOrder[]; orders: ComplianceCatalogOrder[] }> {
+  const [labsResult, medicationsResult, auditResult] = await Promise.all([
+    admin
+      .from('lab_orders')
+      .select('id, qty, product:lab_product_id(product)')
+      .eq('encounter_id', encounterId)
+      .order('created_at', { ascending: true }),
+    admin
+      .from('medication_orders')
+      .select('id, qty, product:medication_product_id(product)')
+      .eq('encounter_id', encounterId)
+      .order('created_at', { ascending: true }),
+    admin
+      .from('audit_logs')
+      .select('user_id, user_name, metadata')
+      .eq('resource_type', 'encounter')
+      .eq('resource_id', String(encounterId))
+      .eq('action', 'encounter_updated')
+      .contains('metadata', { section: 'catalog_orders', operation: 'create' }),
+  ])
+
+  if (labsResult.error) throw labsResult.error
+  if (medicationsResult.error) throw medicationsResult.error
+  if (auditResult.error) throw auditResult.error
+
+  const audits = (auditResult.data ?? []) as CatalogOrderAuditRow[]
+  const auditUserIds = [
+    ...new Set(
+      audits
+        .map((audit) => audit.user_id)
+        .filter((userId): userId is string => Boolean(userId))
+    ),
+  ]
+  const [profiles, doctorNames] = await Promise.all([
+    loadProfiles(admin, auditUserIds),
+    loadDoctorNames(admin, auditUserIds),
+  ])
+  const creators = new Map<string, string>()
+
+  for (const audit of audits) {
+    const metadata = audit.metadata
+    const kind = metadata?.kind
+    const ids = Array.isArray(metadata?.order_ids) ? metadata.order_ids : []
+    if (kind !== 'lab' && kind !== 'medication') continue
+
+    const addedBy =
+      audit.user_name?.trim() ||
+      (audit.user_id
+        ? providerName(profiles, doctorNames, audit.user_id)
+        : 'Unknown provider')
+
+    for (const rawId of ids) {
+      const orderId = Number(rawId)
+      if (Number.isInteger(orderId) && orderId > 0) {
+        creators.set(`${kind}:${orderId}`, addedBy)
+      }
+    }
+  }
+
+  const mapRows = (
+    rows: CatalogOrderJoinRow[],
+    kind: 'lab' | 'medication'
+  ): ComplianceCatalogOrder[] =>
+    rows.map((row) => ({
+      product: joinedProductName(row),
+      qty: Number(row.qty),
+      addedBy: creators.get(`${kind}:${row.id}`) ?? 'Unknown provider',
+    }))
+
+  return {
+    medications: mapRows(
+      (medicationsResult.data ?? []) as CatalogOrderJoinRow[],
+      'medication'
+    ),
+    orders: mapRows((labsResult.data ?? []) as CatalogOrderJoinRow[], 'lab'),
+  }
 }
 
 function filterRowsInRange(rows: ReviewRow[], start: Date, end: Date): ReviewRow[] {
@@ -579,6 +764,10 @@ export async function loadComplianceReviewDetail(
     assessment_text?: string | null
     plan_text?: string | null
   } | null
+  const [diagnoses, catalogOrders] = await Promise.all([
+    loadDiagnosesForCompliance(admin, encounterId),
+    loadCatalogOrdersForCompliance(admin, encounterId),
+  ])
 
   return {
     reviewId: row.id,
@@ -602,6 +791,9 @@ export async function loadComplianceReviewDetail(
       assessment: soap?.assessment_text?.trim() ?? '',
       plan: soap?.plan_text?.trim() ?? '',
     },
+    diagnoses,
+    medications: catalogOrders.medications,
+    orders: catalogOrders.orders,
   }
 }
 

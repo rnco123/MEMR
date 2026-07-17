@@ -275,17 +275,17 @@ Create a Daily.co video room.
 
 ### Pharmacy Integration
 
-#### Fetch Prescriptions (Pharmacy Pull API)
+#### Fetch Prescriptions for a Pharmacy
 
 **GET** `/api/pharmacy/prescriptions`
 
-Pharmacy-facing endpoint. External pharmacy systems call this endpoint to fetch prescriptions assigned to that pharmacy.
+Admin endpoint for retrieving prescriptions assigned to a selected pharmacy.
 
 **Authentication:**
-- `Authorization: Bearer <pharmacy_api_key>`
-- or `x-api-key: <pharmacy_api_key>`
+- Authenticated admin session
 
 **Query Params:**
+- `pharmacy_id` (required, positive integer): pharmacy whose prescriptions should be returned
 - `since` (optional, ISO datetime): return rows created at/after this time
 - `limit` (optional, default `100`, max `200`)
 - `include_cancelled` (optional, `true|false`, default `false`)
@@ -319,7 +319,7 @@ Pharmacy-facing endpoint. External pharmacy systems call this endpoint to fetch 
 ```
 
 **Behavior notes:**
-- Returns only prescriptions where `prescriptions.pharmacy_id` matches the API key's pharmacy.
+- Returns only prescriptions associated with the requested `pharmacy_id`.
 - On successful fetch, first pull timestamp is recorded in `pharmacy_pulled_at`.
 - Prescriptions with `status='recorded'` are promoted to `status='sent'` after they are fetched.
 
