@@ -71,11 +71,11 @@ test.describe('nurse flowboard add encounter', () => {
     await showAllButton.click()
     await patientSearchPromise
 
-    // First patient button — testid pattern on local, any button in results on deployed
+    // First patient button — testid pattern on local, patient buttons in results on deployed
+    // The deployed app shows patient buttons with data-testid="nurse-add-encounter-patient-{id}"
+    // Fall back to buttons inside the patient list container
     const firstPatientButton = page.locator('[data-testid^="nurse-add-encounter-patient-"]').first().or(
-      page.locator('[role="dialog"] button, [data-testid="nurse-add-encounter-modal"] button')
-        .filter({ hasText: /\w+ \w+/ })
-        .first()
+      page.locator('[role="dialog"] .divide-y button, [data-testid="nurse-add-encounter-modal"] .divide-y button').first()
     )
     await expect(firstPatientButton).toBeVisible({ timeout: 30000 })
 

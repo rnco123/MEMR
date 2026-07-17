@@ -230,7 +230,10 @@ test.describe('nurse flowboard — add new patient', () => {
     )
     await expect(encounterModal).toBeVisible({ timeout: 20000 })
     await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 10000 })
-    await expect(page.getByText(/appointment initiated/i).first()).toBeVisible({ timeout: 10000 })
+    // Use a visible status badge/text, excluding hidden <option> elements
+    await expect(
+      page.locator('p, span, div, h1, h2, h3, h4').filter({ hasText: /^Appointment Initiated$/i }).first()
+    ).toBeVisible({ timeout: 10000 })
     console.log('✓ Part A — Encounter detail modal verified on flowboard')
 
     // Close the encounter modal
