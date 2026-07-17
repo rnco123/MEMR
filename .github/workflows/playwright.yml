@@ -1,0 +1,56 @@
+name: Playwright E2E Tests
+
+on:
+  push:
+    branches:
+      - qa
+  # pull_request:
+  #   branches:
+  #     - qa
+
+jobs:
+  playwright:
+    name: Playwright Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      # All tests run against the deployed testing URL — no local server needed
+      PLAYWRIGHT_BASE_URL: https://mcm-testing.up.railway.app
+
+      # Test credentials stored as GitHub secrets
+      PLAYWRIGHT_ADMIN_EMAIL: ${{ secrets.PLAYWRIGHT_ADMIN_EMAIL }}
+      PLAYWRIGHT_ADMIN_PASSWORD: ${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}
+      PLAYWRIGHT_NURSE_EMAIL: ${{ secrets.PLAYWRIGHT_NURSE_EMAIL }}
+      PLAYWRIGHT_NURSE_PASSWORD: ${{ secrets.PLAYWRIGHT_NURSE_PASSWORD }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: npx playwright test e2e/nurse-flowboard-add-encounter.spec.ts e2e/nurse-flowboard-add-patient.spec.ts e2e/admin-user-create-login.spec.ts
+        env:
+          CI: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-results-${{ github.run_number }}
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14

@@ -77,7 +77,12 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [pharmacyId, setPharmacyId] = useState('')
   const [pharmacyQuery, setPharmacyQuery] = useState('')
   const [showManualPharmacy, setShowManualPharmacy] = useState(false)
-  const [manualPharmacy, setManualPharmacy] = useState({ name: '', address: '', phone: '', email: '' })
+  const [manualPharmacy, setManualPharmacy] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    email: '',
+  })
   const [submitting, setSubmitting] = useState(false)
   const [intakeForm, setIntakeForm] = useState<NurseWalkInIntakeInput>(emptyIntakeFormInput())
 
@@ -107,8 +112,8 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     }
     setOptionsLoading(true)
     fetch('/api/nurse/walk-in', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((json) => {
+      .then(r => r.json())
+      .then(json => {
         setServices(json.services ?? [])
         setPharmacies(
           (json.pharmacies ?? []).map((row: Record<string, unknown>) => normalizePharmacyRow(row))
@@ -129,8 +134,8 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     const preloadParams = new URLSearchParams()
     if (defaultLocationId != null) preloadParams.set('location_id', String(defaultLocationId))
     fetch(`/api/nurse/patient-search?${preloadParams}`, { credentials: 'include' })
-      .then((r) => r.json().catch(() => ({})))
-      .then((json) => {
+      .then(r => r.json().catch(() => ({})))
+      .then(json => {
         if (cancelled) return
         const patients = (json.patients ?? []) as PatientRow[]
         setResults(patients)
@@ -178,7 +183,11 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
         const patients = (json.patients ?? []) as PatientRow[]
         setResults(patients)
         if (patients.length === 0) {
-          toast.message(effectiveShowAll ? t('nurse_walkin.no_patients_location') : t('nurse_walkin.no_patients'))
+          toast.message(
+            effectiveShowAll
+              ? t('nurse_walkin.no_patients_location')
+              : t('nurse_walkin.no_patients')
+          )
           setStep('search')
         } else if (!effectiveShowAll && patients.length === 1) {
           setSelectedPatient(patients[0]!)
@@ -212,7 +221,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
         const json = await res.json().catch(() => ({}))
         if (cancelled || !res.ok || !json.latest_intake) return
         const prefill = intakeRowToFormInput(json.latest_intake as Record<string, unknown>)
-        setIntakeForm((prev) => (Object.keys(prev).length > 0 ? prev : prefill))
+        setIntakeForm(prev => (Object.keys(prev).length > 0 ? prev : prefill))
       } catch {
         // Prefill is optional.
       }
@@ -225,7 +234,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const filteredPharmacies = useMemo(() => {
     const q = pharmacyQuery.trim().toLowerCase()
     if (!q) return pharmacies
-    return pharmacies.filter((p) => {
+    return pharmacies.filter(p => {
       const blob = [p.name, p.address, p.phone, p.email, String(p.id)]
         .filter(Boolean)
         .join(' ')
@@ -261,7 +270,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || 'Failed')
       const created = normalizePharmacyRow(json.data as Record<string, unknown>)
-      setPharmacies((prev) => [...prev, created])
+      setPharmacies(prev => [...prev, created])
       setPharmacyId(String(created.id))
       setShowManualPharmacy(false)
       setManualPharmacy({ name: '', address: '', phone: '', email: '' })
@@ -320,11 +329,12 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] p-4"
       role="dialog"
       aria-modal="true"
+      data-testid="nurse-add-encounter-modal"
       onClick={() => !submitting && onClose()}
     >
       <div
         className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-x-hidden"
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
           <div>
@@ -352,13 +362,15 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           {(step === 'search' || step === 'select') && !optionsLoading && (
             <div className="space-y-4">
               <div>
-                <label className="text-xs font-semibold text-slate-600">{t('nurse_walkin.search_label')}</label>
+                <label className="text-xs font-semibold text-slate-600">
+                  {t('nurse_walkin.search_label')}
+                </label>
                 <input
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={e => setSearchQuery(e.target.value)}
                   placeholder={t('nurse_walkin.search_placeholder')}
                   className={`${INPUT} mt-1`}
-                  onKeyDown={(e) => e.key === 'Enter' && void runSearch()}
+                  onKeyDown={e => e.key === 'Enter' && void runSearch()}
                 />
               </div>
               <SearchByDobDropdowns
@@ -400,11 +412,12 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                   <p className="px-4 py-2 text-xs font-semibold text-slate-500 bg-slate-50">
                     {t('nurse_walkin.select_patient', { count: results.length })}
                   </p>
-                  {results.map((p) => (
+                  {results.map(p => (
                     <button
                       key={p.id}
                       type="button"
                       onClick={() => selectPatient(p)}
+                      data-testid={`nurse-add-encounter-patient-${p.id}`}
                       className="w-full text-left px-4 py-3 hover:bg-blue-50 transition-colors"
                     >
                       <p className="font-semibold text-slate-900 inline-flex items-center gap-2 flex-wrap">
@@ -444,19 +457,35 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.first_name')}</label>
-                    <input readOnly value={selectedPatient.first_name} className={`${READONLY} mt-1`} />
+                    <input
+                      readOnly
+                      value={selectedPatient.first_name}
+                      className={`${READONLY} mt-1`}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.last_name')}</label>
-                    <input readOnly value={selectedPatient.last_name} className={`${READONLY} mt-1`} />
+                    <input
+                      readOnly
+                      value={selectedPatient.last_name}
+                      className={`${READONLY} mt-1`}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('pharmacies.email')}</label>
-                    <input readOnly value={selectedPatient.email ?? ''} className={`${READONLY} mt-1`} />
+                    <input
+                      readOnly
+                      value={selectedPatient.email ?? ''}
+                      className={`${READONLY} mt-1`}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.mobile')}</label>
-                    <input readOnly value={selectedPatient.phone ?? ''} className={`${READONLY} mt-1`} />
+                    <input
+                      readOnly
+                      value={selectedPatient.phone ?? ''}
+                      className={`${READONLY} mt-1`}
+                    />
                   </div>
                   <div className="md:col-span-2">
                     <label className="text-xs text-slate-500">{t('pharmacies.address')}</label>
@@ -464,11 +493,19 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.gender')}</label>
-                    <input readOnly value={selectedPatient.gender ?? '—'} className={`${READONLY} mt-1 capitalize`} />
+                    <input
+                      readOnly
+                      value={selectedPatient.gender ?? '—'}
+                      className={`${READONLY} mt-1 capitalize`}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.dob')}</label>
-                    <input readOnly value={formatDobShort(selectedPatient.date_of_birth) ?? '—'} className={`${READONLY} mt-1`} />
+                    <input
+                      readOnly
+                      value={formatDobShort(selectedPatient.date_of_birth) ?? '—'}
+                      className={`${READONLY} mt-1`}
+                    />
                   </div>
                   <div>
                     <label className="text-xs text-slate-500">{t('nurse_walkin.age')}</label>
@@ -489,28 +526,36 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 <h3 className={SECTION}>{t('nurse_walkin.visit_details')}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-slate-600">{t('nurse_walkin.appointment_date')} *</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {t('nurse_walkin.appointment_date')} *
+                    </label>
                     <input
                       type="date"
                       required
                       value={appointmentDate}
-                      onChange={(e) => setAppointmentDate(e.target.value)}
+                      onChange={e => setAppointmentDate(e.target.value)}
                       className={`${INPUT} mt-1`}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-slate-600">{t('nurse_walkin.appointment_time')}</label>
+                    <label className="text-xs font-semibold text-slate-600">
+                      {t('nurse_walkin.appointment_time')}
+                    </label>
                     <input
                       type="time"
                       value={appointmentTime}
-                      onChange={(e) => setAppointmentTime(e.target.value)}
+                      onChange={e => setAppointmentTime(e.target.value)}
                       className={`${INPUT} mt-1`}
                     />
                   </div>
                   <div>
                     <label className="text-xs text-slate-600">{t('nurse_walkin.service')}</label>
-                    <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className={`${INPUT} mt-1`}>
-                      {services.map((s) => (
+                    <select
+                      value={serviceId}
+                      onChange={e => setServiceId(e.target.value)}
+                      className={`${INPUT} mt-1`}
+                    >
+                      {services.map(s => (
                         <option key={s.id} value={s.id}>
                           {serviceTitle(s)}
                         </option>
@@ -521,7 +566,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                     <label className="text-xs text-slate-600">{t('nurse_walkin.visit_type')}</label>
                     <select
                       value={onsiteType}
-                      onChange={(e) => setOnsiteType(e.target.value as 'onsite' | 'telemedicine')}
+                      onChange={e => setOnsiteType(e.target.value as 'onsite' | 'telemedicine')}
                       className={`${INPUT} mt-1`}
                     >
                       <option value="onsite">{t('nurse_walkin.onsite')}</option>
@@ -544,13 +589,17 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 <h3 className={SECTION}>{t('nurse_walkin.pharmacy')}</h3>
                 <input
                   value={pharmacyQuery}
-                  onChange={(e) => setPharmacyQuery(e.target.value)}
+                  onChange={e => setPharmacyQuery(e.target.value)}
                   placeholder={t('nurse_walkin.pharmacy_search')}
                   className={`${INPUT} mb-2`}
                 />
-                <select value={pharmacyId} onChange={(e) => setPharmacyId(e.target.value)} className={INPUT}>
+                <select
+                  value={pharmacyId}
+                  onChange={e => setPharmacyId(e.target.value)}
+                  className={INPUT}
+                >
                   <option value="">{t('nurse_walkin.pharmacy_none')}</option>
-                  {filteredPharmacies.map((p) => (
+                  {filteredPharmacies.map(p => (
                     <option key={p.id} value={p.id}>
                       {p.name || `#${p.id}`}
                       {p.address ? ` — ${p.address}` : ''}
@@ -559,18 +608,44 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 </select>
                 <button
                   type="button"
-                  onClick={() => setShowManualPharmacy((v) => !v)}
+                  onClick={() => setShowManualPharmacy(v => !v)}
                   className="mt-2 text-sm text-[#2E6EF3] font-medium hover:underline"
                 >
                   + {t('nurse_walkin.pharmacy_manual')}
                 </button>
                 {showManualPharmacy && (
                   <div className="mt-3 p-3 border border-slate-200 rounded-xl space-y-2">
-                    <input value={manualPharmacy.name} onChange={(e) => setManualPharmacy((f) => ({ ...f, name: e.target.value }))} placeholder={t('pharmacies.name_req')} className={INPUT} />
-                    <input value={manualPharmacy.address} onChange={(e) => setManualPharmacy((f) => ({ ...f, address: e.target.value }))} placeholder={t('pharmacies.address')} className={INPUT} />
-                    <input value={manualPharmacy.phone} onChange={(e) => setManualPharmacy((f) => ({ ...f, phone: phoneDigitsOnly(e.target.value) }))} placeholder={t('pharmacies.phone')} className={INPUT} />
-                    <input value={manualPharmacy.email} onChange={(e) => setManualPharmacy((f) => ({ ...f, email: e.target.value }))} placeholder={t('pharmacies.email')} className={INPUT} />
-                    <button type="button" onClick={() => void addManualPharmacy()} className="text-sm font-semibold text-[#2E6EF3]">
+                    <input
+                      value={manualPharmacy.name}
+                      onChange={e => setManualPharmacy(f => ({ ...f, name: e.target.value }))}
+                      placeholder={t('pharmacies.name_req')}
+                      className={INPUT}
+                    />
+                    <input
+                      value={manualPharmacy.address}
+                      onChange={e => setManualPharmacy(f => ({ ...f, address: e.target.value }))}
+                      placeholder={t('pharmacies.address')}
+                      className={INPUT}
+                    />
+                    <input
+                      value={manualPharmacy.phone}
+                      onChange={e =>
+                        setManualPharmacy(f => ({ ...f, phone: phoneDigitsOnly(e.target.value) }))
+                      }
+                      placeholder={t('pharmacies.phone')}
+                      className={INPUT}
+                    />
+                    <input
+                      value={manualPharmacy.email}
+                      onChange={e => setManualPharmacy(f => ({ ...f, email: e.target.value }))}
+                      placeholder={t('pharmacies.email')}
+                      className={INPUT}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void addManualPharmacy()}
+                      className="text-sm font-semibold text-[#2E6EF3]"
+                    >
                       {t('nurse_walkin.pharmacy_add')}
                     </button>
                   </div>
@@ -598,6 +673,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
               type="button"
               onClick={() => void submitWalkIn()}
               disabled={submitting}
+              data-testid="nurse-add-encounter-submit-button"
               className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
             >
               {submitting ? t('common.saving') : t('nurse_walkin.create_encounter')}

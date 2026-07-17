@@ -22,7 +22,6 @@ import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
-import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import {
   FlowboardFilterField,
   FlowboardFilterToolbar,
@@ -41,7 +40,6 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { NurseAddEncounterModal } from '@/components/NurseAddEncounterModal'
-import { NurseRegisterPatientModal } from '@/components/NurseRegisterPatientModal'
 import { formatDobShort } from '@/lib/datetime/date-input'
 
 interface Appointment {
@@ -69,7 +67,6 @@ interface Appointment {
     email: string | null
     phone: string | null
     date_of_birth: string | null
-    created_by_source?: string | null
   }
 }
 
@@ -122,8 +119,11 @@ function NurseFlowboardPage() {
   })
   const [assigningDoctor, setAssigningDoctor] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery, { includeProvider: true })
+  const {
+    parsed: parsedSearch,
+    isPending: searchPending,
+    debouncedQuery,
+  } = useAiPatientSearchParse(searchQuery, { includeProvider: true })
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [pageSize, setPageSize] = useState(25)
@@ -134,10 +134,12 @@ function NurseFlowboardPage() {
     patientId: number
     encounterStatus?: string
   } | null>(null)
-  const [showAssignModal, setShowAssignModal] = useState<{ appointmentId: number; appointment: Appointment } | null>(null)
+  const [showAssignModal, setShowAssignModal] = useState<{
+    appointmentId: number
+    appointment: Appointment
+  } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
-  const [showRegisterPatientModal, setShowRegisterPatientModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const [selectedAppointmentIds, setSelectedAppointmentIds] = useState<Set<number>>(new Set())
@@ -177,37 +179,40 @@ function NurseFlowboardPage() {
     }
   }, [])
 
-  const fetchAllAppointments = useCallback(async (showLoading = true) => {
-    try {
-      if (showLoading) setLoading(true)
-      else setIsRefreshing(true)
-
-      const params = new URLSearchParams({ mode: 'nurse' })
-      if (selectedLocationId !== 'all') {
-        params.set('location_id', String(selectedLocationId))
-      }
-      const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        console.error('Error fetching flowboard:', json)
-        setAppointments([])
-        return
-      }
-
-      const appointmentsWithDetails = (json.data ?? []) as Appointment[]
-      setAppointments(appointmentsWithDetails)
+  const fetchAllAppointments = useCallback(
+    async (showLoading = true) => {
       try {
-        sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
-      } catch {
-        // ignore storage errors
+        if (showLoading) setLoading(true)
+        else setIsRefreshing(true)
+
+        const params = new URLSearchParams({ mode: 'nurse' })
+        if (selectedLocationId !== 'all') {
+          params.set('location_id', String(selectedLocationId))
+        }
+        const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          console.error('Error fetching flowboard:', json)
+          setAppointments([])
+          return
+        }
+
+        const appointmentsWithDetails = (json.data ?? []) as Appointment[]
+        setAppointments(appointmentsWithDetails)
+        try {
+          sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+        } catch {
+          // ignore storage errors
+        }
+      } catch (error) {
+        console.error('Error in fetchAllAppointments:', error)
+      } finally {
+        setLoading(false)
+        setIsRefreshing(false)
       }
-    } catch (error) {
-      console.error('Error in fetchAllAppointments:', error)
-    } finally {
-      setLoading(false)
-      setIsRefreshing(false)
-    }
-  }, [selectedLocationId])
+    },
+    [selectedLocationId]
+  )
 
   useEffect(() => {
     if (user && role === UserRole.NURSE && !initialLoadDone.current) {
@@ -241,14 +246,14 @@ function NurseFlowboardPage() {
     const activeParsed =
       parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
     if (activeParsed) {
-      result = result.filter((a) =>
+      result = result.filter(a =>
         appointmentMatchesParsedPatientSearch(a, activeParsed, { includeProvider: true })
       )
     }
 
     // Encounter status filter (no encounter yet counts as appointment_initiated)
     if (filterStatus !== 'all') {
-      result = result.filter((a) => {
+      result = result.filter(a => {
         if (filterStatus === 'appointment_initiated') {
           return !a.encounter_status || a.encounter_status === 'appointment_initiated'
         }
@@ -273,7 +278,9 @@ function NurseFlowboardPage() {
         })
         break
       case 'treatment':
-        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
+        result = [...result].sort((a, b) =>
+          (a.onsite_type || '').localeCompare(b.onsite_type || '')
+        )
         break
     }
 
@@ -288,9 +295,12 @@ function NurseFlowboardPage() {
 
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
 
-  const isAppointmentAssignable = useCallback((appointment: Appointment) => {
-    return !appointment.assigned_doctor && availableDoctors.length > 0
-  }, [availableDoctors.length])
+  const isAppointmentAssignable = useCallback(
+    (appointment: Appointment) => {
+      return !appointment.assigned_doctor && availableDoctors.length > 0
+    },
+    [availableDoctors.length]
+  )
 
   const selectableOnPage = useMemo(
     () => paginatedAppointments.filter(isAppointmentAssignable),
@@ -298,7 +308,7 @@ function NurseFlowboardPage() {
   )
 
   const toggleAppointmentSelection = useCallback((appointmentId: number, checked: boolean) => {
-    setSelectedAppointmentIds((prev) => {
+    setSelectedAppointmentIds(prev => {
       const next = new Set(prev)
       if (checked) next.add(appointmentId)
       else next.delete(appointmentId)
@@ -307,14 +317,18 @@ function NurseFlowboardPage() {
   }, [])
 
   const selectAllAssignableOnPage = useCallback(() => {
-    setSelectedAppointmentIds(new Set(selectableOnPage.map((a) => a.id)))
+    setSelectedAppointmentIds(new Set(selectableOnPage.map(a => a.id)))
   }, [selectableOnPage])
 
   const clearAppointmentSelection = useCallback(() => {
     setSelectedAppointmentIds(new Set())
   }, [])
 
-  const batchAssignProvider = async (doctorId: string, appointmentDate: string, appointmentTime: string) => {
+  const batchAssignProvider = async (
+    doctorId: string,
+    appointmentDate: string,
+    appointmentTime: string
+  ) => {
     const ids = [...selectedAppointmentIds]
     if (ids.length === 0 || batchAssigning) return
 
@@ -354,7 +368,12 @@ function NurseFlowboardPage() {
     }
   }
 
-  const assignDoctorToAppointment = async (appointmentId: number, doctorId: string, appointmentDate?: string, appointmentTime?: string) => {
+  const assignDoctorToAppointment = async (
+    appointmentId: number,
+    doctorId: string,
+    appointmentDate?: string,
+    appointmentTime?: string
+  ) => {
     setAssigningDoctor(appointmentId.toString())
     try {
       const doctorIdNum = parseInt(doctorId)
@@ -379,7 +398,9 @@ function NurseFlowboardPage() {
         throw new Error(json.error || 'Failed to assign provider')
       }
       if (json.failed > 0) {
-        const firstError = json.results?.find((r: { success?: boolean; error?: string }) => !r.success)
+        const firstError = json.results?.find(
+          (r: { success?: boolean; error?: string }) => !r.success
+        )
         alert(firstError?.error || 'Failed to assign doctor. Please try again.')
         return
       }
@@ -419,22 +440,14 @@ function NurseFlowboardPage() {
             <p className="text-slate-500 text-sm">{t('flow.subtitle_nurse')}</p>
           </div>
           {role === UserRole.NURSE && (
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowRegisterPatientModal(true)}
-                className="h-11 px-4 rounded-xl border border-slate-200 bg-white text-slate-800 text-sm font-semibold hover:bg-slate-50 transition-colors"
-              >
-                + {t('flow.add_patient')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowAddVisitModal(true)}
-                className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors"
-              >
-                + {t('flow.add_encounter')}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddVisitModal(true)}
+              data-testid="nurse-flowboard-add-encounter-button"
+              className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
+            >
+              + {t('flow.add_encounter')}
+            </button>
           )}
         </div>
 
@@ -442,23 +455,31 @@ function NurseFlowboardPage() {
         {role === 'nurse' && !loading && appointments.length > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_total')}</p>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                {t('flow.stat_total')}
+              </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">{appointments.length}</p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_assigned')}</p>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                {t('flow.stat_assigned')}
+              </p>
               <p className="text-2xl font-bold text-emerald-600 mt-1">
                 {appointments.filter(a => a.assigned_doctor).length}
               </p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_unassigned')}</p>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                {t('flow.stat_unassigned')}
+              </p>
               <p className="text-2xl font-bold text-amber-600 mt-1">
                 {appointments.filter(a => !a.assigned_doctor).length}
               </p>
             </div>
             <div className="bg-white border border-slate-200 rounded-xl p-4">
-              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">{t('flow.stat_available')}</p>
+              <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
+                {t('flow.stat_available')}
+              </p>
               <p className="text-2xl font-bold text-slate-900 mt-1">{availableDoctors.length}</p>
             </div>
           </div>
@@ -470,7 +491,7 @@ function NurseFlowboardPage() {
             <SmartPatientSearchInput
               size="sm"
               value={searchQuery}
-              onChange={(value) => {
+              onChange={value => {
                 setSearchQuery(value)
                 setPage(1)
               }}
@@ -486,8 +507,18 @@ function NurseFlowboardPage() {
               className="h-9 w-9 shrink-0 inline-flex items-center justify-center self-end sm:self-auto bg-white border border-slate-200 rounded-lg text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-50"
               title={t('common.refresh')}
             >
-              <svg className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              <svg
+                className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
               </svg>
             </button>
           }
@@ -497,7 +528,7 @@ function NurseFlowboardPage() {
                 <LocationFilterSelect
                   locations={userLocations}
                   value={selectedLocationId}
-                  onChange={(v) => {
+                  onChange={v => {
                     setSelectedLocationId(v)
                     setPage(1)
                   }}
@@ -508,7 +539,7 @@ function NurseFlowboardPage() {
               <FlowboardFilterField label={t('flow.sort')}>
                 <select
                   value={sortBy}
-                  onChange={(e) => {
+                  onChange={e => {
                     setSortBy(e.target.value as typeof sortBy)
                     setPage(1)
                   }}
@@ -522,14 +553,14 @@ function NurseFlowboardPage() {
               <FlowboardFilterField label={t('flow.status')}>
                 <select
                   value={filterStatus}
-                  onChange={(e) => {
+                  onChange={e => {
                     setFilterStatus(e.target.value)
                     setPage(1)
                   }}
                   className={FLOWBOARD_SELECT_CLASS}
                 >
                   <option value="all">{t('common.all')}</option>
-                  {ENCOUNTER_STATUSES.map((status) => (
+                  {ENCOUNTER_STATUSES.map(status => (
                     <option key={status.value} value={status.value}>
                       {translateEncounterStatus(t, status.value)}
                     </option>
@@ -569,13 +600,13 @@ function NurseFlowboardPage() {
                     {t('flow.per_page')}
                     <select
                       value={pageSize}
-                      onChange={(e) => {
+                      onChange={e => {
                         setPageSize(Number(e.target.value))
                         setPage(1)
                       }}
                       className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 text-xs focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer"
                     >
-                      {PAGE_SIZE_OPTIONS.map((n) => (
+                      {PAGE_SIZE_OPTIONS.map(n => (
                         <option key={n} value={n}>
                           {n}
                         </option>
@@ -609,12 +640,24 @@ function NurseFlowboardPage() {
         ) : filteredAppointments.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center">
             <div className="w-16 h-16 bg-[#2E6EF3]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-[#2E6EF3]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              <svg
+                className="w-8 h-8 text-[#2E6EF3]"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
               </svg>
             </div>
             <h3 className="text-lg font-semibold text-slate-900 mb-1">
-              {debouncedQuery.trim() || filterStatus !== 'all' ? t('common.no_results') : t('flow.no_appointments')}
+              {debouncedQuery.trim() || filterStatus !== 'all'
+                ? t('common.no_results')
+                : t('flow.no_appointments')}
             </h3>
             <p className="text-slate-500 text-sm">
               {debouncedQuery.trim() || filterStatus !== 'all'
@@ -634,7 +677,7 @@ function NurseFlowboardPage() {
             readonlyHint={t('flow.kanban_readonly_hint')}
             notStartedLabel={t('flow.not_started')}
             pendingEncounterLabel={t('flow.awaiting_encounter')}
-            onCardClick={(appointment) => {
+            onCardClick={appointment => {
               if (appointment.encounter_id) {
                 setSelectedEncounter({
                   encounterId: appointment.encounter_id,
@@ -655,12 +698,12 @@ function NurseFlowboardPage() {
                 })
               }
             }}
-            renderCardFooter={(appointment) => (
+            renderCardFooter={appointment => (
               <>
                 {!appointment.assigned_doctor && availableDoctors.length > 0 && (
                   <button
                     type="button"
-                    onClick={(e) => {
+                    onClick={e => {
                       e.stopPropagation()
                       setShowAssignModal({
                         appointmentId: appointment.id,
@@ -677,17 +720,17 @@ function NurseFlowboardPage() {
                   appointment.encounter_id &&
                   (!appointment.encounter_status ||
                     appointment.encounter_status === 'provider_assigned') && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      setShowVitalsModal(appointment.encounter_id!)
-                    }}
-                    className="px-2 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-semibold hover:bg-purple-700 transition-colors"
-                  >
-                    {t('flow.vitals')}
-                  </button>
-                )}
+                    <button
+                      type="button"
+                      onClick={e => {
+                        e.stopPropagation()
+                        setShowVitalsModal(appointment.encounter_id!)
+                      }}
+                      className="px-2 py-1 bg-purple-600 text-white rounded-lg text-[10px] font-semibold hover:bg-purple-700 transition-colors"
+                    >
+                      {t('flow.vitals')}
+                    </button>
+                  )}
               </>
             )}
           />
@@ -717,7 +760,7 @@ function NurseFlowboardPage() {
             </div>
 
             <div className="divide-y divide-slate-100">
-              {paginatedAppointments.map((appointment) => (
+              {paginatedAppointments.map(appointment => (
                 <div
                   key={appointment.id}
                   onClick={() => {
@@ -742,149 +785,165 @@ function NurseFlowboardPage() {
                     aria-hidden
                   />
                   <div className="grid flex-1 grid-cols-1 lg:grid-cols-12 gap-4 px-6 py-4 min-w-0">
-                  <div className="lg:col-span-3 flex items-center gap-3">
-                    {isAppointmentAssignable(appointment) ? (
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
-                        checked={selectedAppointmentIds.has(appointment.id)}
-                        onChange={(e) => toggleAppointmentSelection(appointment.id, e.target.checked)}
-                        onClick={(e) => e.stopPropagation()}
-                        aria-label={t('flow.batch_select_page')}
-                      />
-                    ) : (
-                      <span className="hidden lg:block w-4 shrink-0" aria-hidden />
-                    )}
-                    <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 text-sm">
-                      {appointment.patient?.first_name?.charAt(0) || '?'}{appointment.patient?.last_name?.charAt(0) || ''}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-slate-400 text-xs mb-0.5">
-                        {t('common.dob')}: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
-                      </p>
-                      <h3 className="text-slate-900 font-semibold text-sm truncate">
-                        {appointment.patient
-                          ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
-                          : t('flow.unknown_patient')}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                    <div className="lg:col-span-3 flex items-center gap-3">
+                      {isAppointmentAssignable(appointment) ? (
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 shrink-0 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+                          checked={selectedAppointmentIds.has(appointment.id)}
+                          onChange={e =>
+                            toggleAppointmentSelection(appointment.id, e.target.checked)
+                          }
+                          onClick={e => e.stopPropagation()}
+                          aria-label={t('flow.batch_select_page')}
+                        />
+                      ) : (
+                        <span className="hidden lg:block w-4 shrink-0" aria-hidden />
+                      )}
+                      <div className="w-10 h-10 bg-[#2E6EF3] rounded-full flex items-center justify-center text-white font-semibold flex-shrink-0 text-sm">
+                        {appointment.patient?.first_name?.charAt(0) || '?'}
+                        {appointment.patient?.last_name?.charAt(0) || ''}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-slate-400 text-xs mb-0.5">
+                          {t('common.dob')}: {formatDob(appointment.patient?.date_of_birth) ?? '—'}
+                        </p>
+                        <h3 className="text-slate-900 font-semibold text-sm truncate">
+                          {appointment.patient
+                            ? `${appointment.patient.first_name} ${appointment.patient.last_name}`
+                            : t('flow.unknown_patient')}
+                        </h3>
                         <p className="text-slate-400 text-xs font-mono">
                           {t('common.id')}: {appointment.patient_id}
                         </p>
-                        <PatientSourceBadge source={appointment.patient?.created_by_source} />
                       </div>
                     </div>
-                  </div>
 
-                  <div className="lg:col-span-2 flex items-center">
-                    {appointment.encounter_status ? (
-                      (() => {
-                        const info = getStatusInfo(appointment.encounter_status as EncounterStatus)
-                        const baseColor =
-                          info?.value === 'appointment_initiated'
-                            ? 'bg-fuchsia-50 text-fuchsia-900 border border-fuchsia-200'
-                            : info?.value === 'provider_assigned'
-                            ? 'bg-blue-50 text-blue-800 border border-blue-200'
-                            : info?.value === 'vitals_assessed'
-                            ? 'bg-lime-50 text-lime-900 border border-lime-200'
-                            : info?.value === 'in_consultation'
-                            ? 'bg-yellow-50 text-yellow-900 border border-yellow-200'
-                            : info?.value === 'consultation_concluded'
-                            ? 'bg-red-50 text-red-800 border border-red-200'
-                            : info?.value === 'final_review'
-                            ? 'bg-teal-50 text-teal-800 border border-teal-200'
-                            : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    <div className="lg:col-span-2 flex items-center">
+                      {appointment.encounter_status ? (
+                        (() => {
+                          const info = getStatusInfo(
+                            appointment.encounter_status as EncounterStatus
+                          )
+                          const baseColor =
+                            info?.value === 'appointment_initiated'
+                              ? 'bg-fuchsia-50 text-fuchsia-900 border border-fuchsia-200'
+                              : info?.value === 'provider_assigned'
+                                ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                : info?.value === 'vitals_assessed'
+                                  ? 'bg-lime-50 text-lime-900 border border-lime-200'
+                                  : info?.value === 'in_consultation'
+                                    ? 'bg-yellow-50 text-yellow-900 border border-yellow-200'
+                                    : info?.value === 'consultation_concluded'
+                                      ? 'bg-red-50 text-red-800 border border-red-200'
+                                      : info?.value === 'final_review'
+                                        ? 'bg-teal-50 text-teal-800 border border-teal-200'
+                                        : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
 
-                        return (
-                          <span className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${baseColor}`}>
-                            {translateEncounterStatus(t, appointment.encounter_status) || appointment.encounter_status}
+                          return (
+                            <span
+                              className={`px-2.5 py-1 rounded-lg text-xs font-semibold ${baseColor}`}
+                            >
+                              {translateEncounterStatus(t, appointment.encounter_status) ||
+                                appointment.encounter_status}
+                            </span>
+                          )
+                        })()
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-900 border border-purple-200">
+                          {t('flow.not_started')}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="lg:col-span-2 flex flex-col justify-center">
+                      <p className="text-slate-700 text-sm">
+                        {formatDate(appointment.appointment_date)}
+                      </p>
+                      <p className="text-slate-500 text-xs">
+                        {formatTime(appointment.appointment_time)}
+                      </p>
+                    </div>
+
+                    <div className="lg:col-span-2 flex items-center">
+                      {appointment.assigned_doctor ? (
+                        <div>
+                          <p className="text-slate-700 text-sm">
+                            {appointment.assigned_doctor.full_name}
+                          </p>
+                          <span className="text-xs text-emerald-600 font-medium">
+                            {t('common.assigned')}
                           </span>
-                        )
-                      })()
-                    ) : (
-                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-50 text-purple-900 border border-purple-200">
-                        {t('flow.not_started')}
-                      </span>
-                    )}
-                  </div>
+                        </div>
+                      ) : (
+                        <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold">
+                          {t('common.unassigned')}
+                        </span>
+                      )}
+                    </div>
 
-                  <div className="lg:col-span-2 flex flex-col justify-center">
-                    <p className="text-slate-700 text-sm">{formatDate(appointment.appointment_date)}</p>
-                    <p className="text-slate-500 text-xs">{formatTime(appointment.appointment_time)}</p>
-                  </div>
-
-                  <div className="lg:col-span-2 flex items-center">
-                    {appointment.assigned_doctor ? (
-                      <div>
-                        <p className="text-slate-700 text-sm">{appointment.assigned_doctor.full_name}</p>
-                        <span className="text-xs text-emerald-600 font-medium">{t('common.assigned')}</span>
-                      </div>
-                    ) : (
-                      <span className="px-2.5 py-1 bg-amber-50 text-amber-700 border border-amber-200 rounded-lg text-xs font-semibold">
-                        {t('common.unassigned')}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="lg:col-span-3 flex items-center justify-end gap-2 flex-wrap">
-                    {appointment.encounter_id && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedEncounter({
-                            encounterId: appointment.encounter_id!,
-                            appointmentId: appointment.id,
-                            patientId: appointment.patient_id,
-                            encounterStatus: appointment.encounter_status,
-                          })
-                        }}
-                        className="px-3 py-1.5 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors"
-                      >
-                        {t('common.view')}
-                      </button>
-                    )}
-                    {!appointment.assigned_doctor && availableDoctors.length > 0 && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setShowAssignModal({ appointmentId: appointment.id, appointment })
-                        }}
-                        disabled={assigningDoctor === appointment.id.toString()}
-                        className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                      >
-                        {t('flow.assign_provider')}
-                      </button>
-                    )}
-                    {appointment.assigned_doctor && appointment.encounter_status === 'provider_assigned' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setShowAssignModal({ appointmentId: appointment.id, appointment })
-                        }}
-                        disabled={assigningDoctor === appointment.id.toString()}
-                        className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50"
-                      >
-                        {t('common.edit')}
-                      </button>
-                    )}
-                    {appointment.assigned_doctor &&
-                      appointment.encounter_id &&
-                      (!appointment.encounter_status ||
-                        appointment.encounter_status === 'provider_assigned') && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setShowVitalsModal(appointment.encounter_id!)
-                        }}
-                        className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition-colors"
-                      >
-                        {t('flow.vitals')}
-                      </button>
-                    )}
-                    {availableDoctors.length === 0 && !appointment.assigned_doctor && (
-                      <span className="text-red-500 text-xs font-medium">{t('flow.no_providers')}</span>
-                    )}
-                  </div>
+                    <div className="lg:col-span-3 flex items-center justify-end gap-2 flex-wrap">
+                      {appointment.encounter_id && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            setSelectedEncounter({
+                              encounterId: appointment.encounter_id!,
+                              appointmentId: appointment.id,
+                              patientId: appointment.patient_id,
+                              encounterStatus: appointment.encounter_status,
+                            })
+                          }}
+                          className="px-3 py-1.5 bg-[#2E6EF3] text-white rounded-lg text-xs font-semibold hover:bg-[#1f5ad2] transition-colors"
+                        >
+                          {t('common.view')}
+                        </button>
+                      )}
+                      {!appointment.assigned_doctor && availableDoctors.length > 0 && (
+                        <button
+                          onClick={e => {
+                            e.stopPropagation()
+                            setShowAssignModal({ appointmentId: appointment.id, appointment })
+                          }}
+                          disabled={assigningDoctor === appointment.id.toString()}
+                          className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                        >
+                          {t('flow.assign_provider')}
+                        </button>
+                      )}
+                      {appointment.assigned_doctor &&
+                        appointment.encounter_status === 'provider_assigned' && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation()
+                              setShowAssignModal({ appointmentId: appointment.id, appointment })
+                            }}
+                            disabled={assigningDoctor === appointment.id.toString()}
+                            className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-semibold hover:bg-amber-600 transition-colors disabled:opacity-50"
+                          >
+                            {t('common.edit')}
+                          </button>
+                        )}
+                      {appointment.assigned_doctor &&
+                        appointment.encounter_id &&
+                        (!appointment.encounter_status ||
+                          appointment.encounter_status === 'provider_assigned') && (
+                          <button
+                            onClick={e => {
+                              e.stopPropagation()
+                              setShowVitalsModal(appointment.encounter_id!)
+                            }}
+                            className="px-3 py-1.5 bg-purple-600 text-white rounded-lg text-xs font-semibold hover:bg-purple-700 transition-colors"
+                          >
+                            {t('flow.vitals')}
+                          </button>
+                        )}
+                      {availableDoctors.length === 0 && !appointment.assigned_doctor && (
+                        <span className="text-red-500 text-xs font-medium">
+                          {t('flow.no_providers')}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -896,12 +955,17 @@ function NurseFlowboardPage() {
         {!loading && displayMode === 'list' && filteredAppointments.length > 0 && (
           <div className="mt-5 flex items-center justify-center gap-3">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page <= 1}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M15 19l-7-7 7-7"
+                />
               </svg>
               {t('common.previous')}
             </button>
@@ -909,18 +973,22 @@ function NurseFlowboardPage() {
               {t('common.page_x_of_y', { page, total: totalPages })}
             </span>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
               className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-white border border-slate-200 text-slate-600 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-50 transition-colors"
             >
               {t('common.next')}
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 5l7 7-7 7"
+                />
               </svg>
             </button>
           </div>
         )}
-
       </div>
 
       {/* Vitals Form Modal */}
@@ -933,10 +1001,10 @@ function NurseFlowboardPage() {
             fetchAllAppointments()
           }}
         />
-        )}
+      )}
 
-        {/* Assign Provider Modal */}
-        {showAssignModal && (
+      {/* Assign Provider Modal */}
+      {showAssignModal && (
         <AssignProviderModal
           appointment={showAssignModal.appointment}
           availableDoctors={availableDoctors}
@@ -952,24 +1020,24 @@ function NurseFlowboardPage() {
           }}
           onClose={() => setShowAssignModal(null)}
         />
-        )}
+      )}
 
-        {showBatchAssignModal && (
-          <BatchAssignProviderModal
-            appointmentIds={[...selectedAppointmentIds]}
-            availableDoctors={availableDoctors}
-            isSubmitting={batchAssigning}
-            onAssign={(doctorId, appointmentDate, appointmentTime) => {
-              void batchAssignProvider(doctorId, appointmentDate, appointmentTime)
-            }}
-            onClose={() => {
-              if (!batchAssigning) setShowBatchAssignModal(false)
-            }}
-          />
-        )}
+      {showBatchAssignModal && (
+        <BatchAssignProviderModal
+          appointmentIds={[...selectedAppointmentIds]}
+          availableDoctors={availableDoctors}
+          isSubmitting={batchAssigning}
+          onAssign={(doctorId, appointmentDate, appointmentTime) => {
+            void batchAssignProvider(doctorId, appointmentDate, appointmentTime)
+          }}
+          onClose={() => {
+            if (!batchAssigning) setShowBatchAssignModal(false)
+          }}
+        />
+      )}
 
-        {/* Encounter Detail Modal */}
-        {selectedEncounter && (
+      {/* Encounter Detail Modal */}
+      {selectedEncounter && (
         <EncounterDetailModal
           encounterId={selectedEncounter.encounterId}
           appointmentId={selectedEncounter.appointmentId}
@@ -981,45 +1049,24 @@ function NurseFlowboardPage() {
           }}
           canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
-        )}
-        {role === UserRole.NURSE && (
-          <NurseAddEncounterModal
-            isOpen={showAddVisitModal}
-            onClose={() => setShowAddVisitModal(false)}
-            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
-            onCreated={async ({ encounterId, appointmentId, patientId }) => {
-              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
-              await fetchAllAppointments(true)
-              setSelectedEncounter({
-                encounterId,
-                appointmentId,
-                patientId,
-                encounterStatus: 'appointment_initiated',
-              })
-            }}
-          />
-        )}
-        {role === UserRole.NURSE && (
-          <NurseRegisterPatientModal
-            isOpen={showRegisterPatientModal}
-            onClose={() => setShowRegisterPatientModal(false)}
-            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
-            onCreated={async ({ patientId, encounterId, appointmentId }) => {
-              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
-              await fetchAllAppointments(true)
-              if (encounterId && appointmentId) {
-                setSelectedEncounter({
-                  encounterId,
-                  appointmentId,
-                  patientId,
-                  encounterStatus: 'appointment_initiated',
-                })
-              } else {
-                router.push(`/patient-file/${patientId}`)
-              }
-            }}
-          />
-        )}
+      )}
+      {role === UserRole.NURSE && (
+        <NurseAddEncounterModal
+          isOpen={showAddVisitModal}
+          onClose={() => setShowAddVisitModal(false)}
+          defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
+          onCreated={async ({ encounterId, appointmentId, patientId }) => {
+            sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+            await fetchAllAppointments(true)
+            setSelectedEncounter({
+              encounterId,
+              appointmentId,
+              patientId,
+              encounterStatus: 'appointment_initiated',
+            })
+          }}
+        />
+      )}
     </div>
   )
 }

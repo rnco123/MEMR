@@ -4,6 +4,9 @@ node_modules/
 # next.js
 .next/
 out/
+playwright-report/
+test-results/
+blob-report/
 
 # typescript build cache
 *.tsbuildinfo

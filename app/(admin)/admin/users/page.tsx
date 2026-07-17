@@ -69,7 +69,7 @@ function LocationCell({ assigned, t }: { assigned: Location[]; t: (key: string) 
     return <span className="text-slate-400">{t('common.em_dash')}</span>
   }
   if (assigned.length > 1) {
-    const allTitles = assigned.map((l) => l.title).join(', ')
+    const allTitles = assigned.map(l => l.title).join(', ')
     return (
       <span
         className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100"
@@ -126,13 +126,19 @@ function UserRow({
         <div className="min-w-0">
           <span className="text-sm font-medium text-slate-900 truncate block">{displayName}</span>
           {!user.active ? (
-            <span className="text-[10px] font-semibold text-rose-600 uppercase">{t('admin.users.inactive')}</span>
+            <span className="text-[10px] font-semibold text-rose-600 uppercase">
+              {t('admin.users.inactive')}
+            </span>
           ) : user.role === 'staff' ? (
-            <span className="text-[10px] font-semibold text-amber-600">{t('admin.users.needs_role_fix')}</span>
+            <span className="text-[10px] font-semibold text-amber-600">
+              {t('admin.users.needs_role_fix')}
+            </span>
           ) : null}
         </div>
       </div>
-      <div className="col-span-2 text-sm text-slate-500 truncate">{user.email || t('common.em_dash')}</div>
+      <div className="col-span-2 text-sm text-slate-500 truncate">
+        {user.email || t('common.em_dash')}
+      </div>
       <div className="col-span-2">
         <span
           className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${ROLE_COLORS[user.role] ?? 'bg-slate-50 text-slate-600'}`}
@@ -278,7 +284,7 @@ export default function AdminUsersPage() {
   const openChangeLocations = (u: StaffUser) => {
     setModalError(null)
     setLocationsUser(u)
-    setEditLocationIds((u.assigned_locations ?? []).map((l) => l.id))
+    setEditLocationIds((u.assigned_locations ?? []).map(l => l.id))
   }
 
   const handleEditSave = async (e: FormEvent) => {
@@ -293,7 +299,9 @@ export default function AdminUsersPage() {
         email: editEmail.trim().toLowerCase(),
         role: editRole,
         active: editActive,
-        ...(editRole === 'doctor' ? { compliance_access: editComplianceAccess } : { compliance_access: false }),
+        ...(editRole === 'doctor'
+          ? { compliance_access: editComplianceAccess }
+          : { compliance_access: false }),
         ...(isPhysicianRole(editRole) ? { npi: editNpi.trim() || null } : {}),
       })
       toast.success(t('admin.users.updated', { name: userLabel(editUser) }))
@@ -392,11 +400,13 @@ export default function AdminUsersPage() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
-    return users.filter((u) => {
+    return users.filter(u => {
       if (!showInactive && !u.active) return false
       if (roleFilter && u.role !== roleFilter) return false
       if (q) {
-        return (u.full_name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
+        return (
+          (u.full_name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
+        )
       }
       return true
     })
@@ -442,7 +452,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto w-full">
+    <div className="max-w-7xl mx-auto w-full" data-testid="admin-users-page">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">{t('admin.users.title')}</h1>
@@ -453,6 +463,7 @@ export default function AdminUsersPage() {
             setShowForm(true)
             resetForm()
           }}
+          data-testid="admin-users-create-button"
           className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 transition-colors"
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -463,59 +474,81 @@ export default function AdminUsersPage() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          data-testid="admin-users-create-modal"
+        >
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900">{t('admin.users.create_modal')}</h2>
               <button onClick={closeForm} className="text-slate-400 hover:text-slate-600">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M6 18L18 6M6 6l12 12"
+                  />
                 </svg>
               </button>
             </div>
 
             <form onSubmit={handleCreate} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.full_name')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.full_name')}
+                </label>
                 <input
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={e => setName(e.target.value)}
                   required
                   placeholder={t('admin.users.placeholder_name')}
+                  data-testid="admin-users-name-input"
                   className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('common.email')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('common.email')}
+                </label>
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                   required
                   placeholder={t('admin.users.placeholder_email')}
+                  data-testid="admin-users-email-input"
                   className={INPUT_CLASS}
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.password')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.password')}
+                </label>
                 <div className="relative">
                   <input
                     type={showPw ? 'text' : 'password'}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={e => setPassword(e.target.value)}
                     required
                     placeholder={t('admin.users.placeholder_password')}
+                    data-testid="admin-users-password-input"
                     className={`${INPUT_CLASS} pr-10`}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowPw((v) => !v)}
+                    onClick={() => setShowPw(v => !v)}
                     className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600"
                   >
                     {showPw ? (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -524,8 +557,18 @@ export default function AdminUsersPage() {
                         />
                       </svg>
                     ) : (
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                        />
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -540,9 +583,11 @@ export default function AdminUsersPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.role')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.role')}
+                </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {ROLE_OPTIONS.map((opt) => (
+                  {ROLE_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
@@ -563,7 +608,9 @@ export default function AdminUsersPage() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.locations')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.locations')}
+                </label>
                 <LocationAssignmentChecklist
                   locations={locations}
                   selectedIds={selectedLocations}
@@ -577,12 +624,14 @@ export default function AdminUsersPage() {
                   <input
                     type="checkbox"
                     checked={complianceAccess}
-                    onChange={(e) => setComplianceAccess(e.target.checked)}
+                    onChange={e => setComplianceAccess(e.target.checked)}
                     className="w-4 h-4 mt-0.5 accent-purple-600"
                   />
                   <span>
                     <span className="font-medium">{t('admin.users.compliance_access')}</span>
-                    <span className="block text-xs text-slate-500 mt-0.5">{t('admin.users.compliance_access_hint')}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      {t('admin.users.compliance_access_hint')}
+                    </span>
                   </span>
                 </label>
               )}
@@ -593,7 +642,10 @@ export default function AdminUsersPage() {
                 </div>
               )}
               {formSuccess && (
-                <div className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                <div
+                  className="text-sm text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2"
+                  data-testid="admin-users-create-success"
+                >
                   {formSuccess}
                 </div>
               )}
@@ -609,6 +661,7 @@ export default function AdminUsersPage() {
                 <button
                   type="submit"
                   disabled={submitting}
+                  data-testid="admin-users-submit-button"
                   className="flex-1 h-10 bg-purple-600 text-white rounded-xl text-sm font-semibold hover:bg-purple-700 disabled:opacity-60 transition-colors"
                 >
                   {submitting ? t('admin.users.creating') : t('admin.create_user')}
@@ -622,17 +675,17 @@ export default function AdminUsersPage() {
       <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4 flex flex-wrap gap-3">
         <input
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={e => setSearch(e.target.value)}
           placeholder={t('admin.users.search')}
           className="flex-1 min-w-[180px] h-9 border border-slate-200 rounded-lg px-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
         />
         <select
           value={roleFilter}
-          onChange={(e) => setRoleFilter(e.target.value)}
+          onChange={e => setRoleFilter(e.target.value)}
           className="h-9 border border-slate-200 rounded-lg px-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
         >
           <option value="">{t('admin.users.all_roles')}</option>
-          {ROLE_OPTIONS.map((o) => (
+          {ROLE_OPTIONS.map(o => (
             <option key={o.value} value={o.value}>
               {t(o.labelKey)}
             </option>
@@ -642,7 +695,7 @@ export default function AdminUsersPage() {
           <input
             type="checkbox"
             checked={showInactive}
-            onChange={(e) => setShowInactive(e.target.checked)}
+            onChange={e => setShowInactive(e.target.checked)}
             className="w-4 h-4 accent-purple-600"
           />
           {t('admin.users.show_inactive')}
@@ -652,7 +705,7 @@ export default function AdminUsersPage() {
       <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
         {loading ? (
           <div className="divide-y divide-slate-100">
-            {[1, 2, 3].map((i) => (
+            {[1, 2, 3].map(i => (
               <div key={i} className="flex items-center gap-4 px-5 py-3.5">
                 <div className="w-9 h-9 bg-slate-100 rounded-full animate-pulse shrink-0" />
                 <div className="flex-1 space-y-1.5">
@@ -664,7 +717,12 @@ export default function AdminUsersPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-16">
-            <svg className="w-10 h-10 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg
+              className="w-10 h-10 text-slate-300 mx-auto mb-3"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -683,7 +741,7 @@ export default function AdminUsersPage() {
               <div className="col-span-2">{t('admin.users.locations')}</div>
               <div className="col-span-4 text-right">{t('common.actions')}</div>
             </div>
-            {paginated.map((u) => (
+            {paginated.map(u => (
               <UserRow
                 key={u.uid}
                 user={u}
@@ -704,29 +762,44 @@ export default function AdminUsersPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900">{t('admin.users.edit_modal')}</h2>
-              <button type="button" onClick={() => setEditUser(null)} className="text-slate-400 hover:text-slate-600">
+              <button
+                type="button"
+                onClick={() => setEditUser(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 ✕
               </button>
             </div>
             <form onSubmit={handleEditSave} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.full_name')}</label>
-                <input value={editName} onChange={(e) => setEditName(e.target.value)} required className={INPUT_CLASS} />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('common.email')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.full_name')}
+                </label>
                 <input
-                  type="email"
-                  value={editEmail}
-                  onChange={(e) => setEditEmail(e.target.value)}
+                  value={editName}
+                  onChange={e => setEditName(e.target.value)}
                   required
                   className={INPUT_CLASS}
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.role')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('common.email')}
+                </label>
+                <input
+                  type="email"
+                  value={editEmail}
+                  onChange={e => setEditEmail(e.target.value)}
+                  required
+                  className={INPUT_CLASS}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.role')}
+                </label>
                 <div className="grid grid-cols-2 gap-2">
-                  {ROLE_OPTIONS.map((opt) => (
+                  {ROLE_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
                       type="button"
@@ -749,11 +822,13 @@ export default function AdminUsersPage() {
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 mb-1">
                     {t('admin.users.npi')}
-                    <span className="font-normal text-slate-400 ml-1">({t('common.optional')})</span>
+                    <span className="font-normal text-slate-400 ml-1">
+                      ({t('common.optional')})
+                    </span>
                   </label>
                   <input
                     value={editNpi}
-                    onChange={(e) => setEditNpi(e.target.value)}
+                    onChange={e => setEditNpi(e.target.value)}
                     placeholder={t('profile.npi_placeholder')}
                     className={INPUT_CLASS}
                     inputMode="numeric"
@@ -763,7 +838,12 @@ export default function AdminUsersPage() {
                 </div>
               )}
               <label className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
-                <input type="checkbox" checked={editActive} onChange={(e) => setEditActive(e.target.checked)} className="w-4 h-4 accent-purple-600" />
+                <input
+                  type="checkbox"
+                  checked={editActive}
+                  onChange={e => setEditActive(e.target.checked)}
+                  className="w-4 h-4 accent-purple-600"
+                />
                 {t('admin.users.active_account')}
               </label>
               {editRole === 'doctor' && (
@@ -771,20 +851,28 @@ export default function AdminUsersPage() {
                   <input
                     type="checkbox"
                     checked={editComplianceAccess}
-                    onChange={(e) => setEditComplianceAccess(e.target.checked)}
+                    onChange={e => setEditComplianceAccess(e.target.checked)}
                     className="w-4 h-4 mt-0.5 accent-purple-600"
                   />
                   <span>
                     <span className="font-medium">{t('admin.users.compliance_access')}</span>
-                    <span className="block text-xs text-slate-500 mt-0.5">{t('admin.users.compliance_access_hint')}</span>
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      {t('admin.users.compliance_access_hint')}
+                    </span>
                   </span>
                 </label>
               )}
               {modalError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {modalError}
+                </div>
               )}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setEditUser(null)} className="flex-1 h-10 border border-slate-200 rounded-xl text-sm">
+                <button
+                  type="button"
+                  onClick={() => setEditUser(null)}
+                  className="flex-1 h-10 border border-slate-200 rounded-xl text-sm"
+                >
                   {t('common.cancel')}
                 </button>
                 <button
@@ -805,7 +893,11 @@ export default function AdminUsersPage() {
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
               <h2 className="text-lg font-bold text-slate-900">{t('admin.users.reset_modal')}</h2>
-              <button type="button" onClick={() => setResetUser(null)} className="text-slate-400 hover:text-slate-600">
+              <button
+                type="button"
+                onClick={() => setResetUser(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 ✕
               </button>
             </div>
@@ -814,30 +906,40 @@ export default function AdminUsersPage() {
                 {t('admin.users.set_password_for', { name: userLabel(resetUser) })}
               </p>
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">{t('admin.users.new_password')}</label>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                  {t('admin.users.new_password')}
+                </label>
                 <div className="relative">
                   <input
                     type={showResetPw ? 'text' : 'password'}
                     value={resetPassword}
-                    onChange={(e) => setResetPassword(e.target.value)}
+                    onChange={e => setResetPassword(e.target.value)}
                     required
                     className={`${INPUT_CLASS} pr-10`}
                   />
                   <button
                     type="button"
-                    onClick={() => setShowResetPw((v) => !v)}
+                    onClick={() => setShowResetPw(v => !v)}
                     className="absolute right-2 top-2.5 text-slate-400 hover:text-slate-600 text-xs"
                   >
                     {showResetPw ? t('admin.users.hide') : t('admin.users.show')}
                   </button>
                 </div>
-                {resetPassword && <PasswordStrengthMeter password={resetPassword} t={t} className="mt-1.5" />}
+                {resetPassword && (
+                  <PasswordStrengthMeter password={resetPassword} t={t} className="mt-1.5" />
+                )}
               </div>
               {modalError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {modalError}
+                </div>
               )}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setResetUser(null)} className="flex-1 h-10 border border-slate-200 rounded-xl text-sm">
+                <button
+                  type="button"
+                  onClick={() => setResetUser(null)}
+                  className="flex-1 h-10 border border-slate-200 rounded-xl text-sm"
+                >
                   {t('common.cancel')}
                 </button>
                 <button
@@ -857,8 +959,14 @@ export default function AdminUsersPage() {
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-900">{t('admin.users.change_locations_modal')}</h2>
-              <button type="button" onClick={() => setLocationsUser(null)} className="text-slate-400 hover:text-slate-600">
+              <h2 className="text-lg font-bold text-slate-900">
+                {t('admin.users.change_locations_modal')}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setLocationsUser(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
                 ✕
               </button>
             </div>
@@ -874,10 +982,16 @@ export default function AdminUsersPage() {
                 listClassName="max-h-72"
               />
               {modalError && (
-                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{modalError}</div>
+                <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                  {modalError}
+                </div>
               )}
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => setLocationsUser(null)} className="flex-1 h-10 border border-slate-200 rounded-xl text-sm">
+                <button
+                  type="button"
+                  onClick={() => setLocationsUser(null)}
+                  className="flex-1 h-10 border border-slate-200 rounded-xl text-sm"
+                >
                   {t('common.cancel')}
                 </button>
                 <button
@@ -904,7 +1018,7 @@ export default function AdminUsersPage() {
           </p>
           <div className="flex gap-2">
             <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page === 1}
               className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
             >
@@ -914,7 +1028,7 @@ export default function AdminUsersPage() {
               {t('admin.users.page', { page, total: totalPages })}
             </span>
             <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
               className="px-3 py-1.5 border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-40"
             >
