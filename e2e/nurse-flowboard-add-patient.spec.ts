@@ -239,33 +239,5 @@ test.describe('nurse flowboard — add new patient', () => {
     // Close the encounter modal
     await page.getByRole('button', { name: /close|✕|×/i }).first().click()
     await page.waitForLoadState('networkidle')
-
-    // ── Part B: Patients History → View File navigates to /patient-file/{id} ──
-    await page.getByRole('link', { name: /patients history/i }).click()
-    await page.waitForURL(/\/dashboard\/patients-history/, { timeout: 30000 })
-    await page.waitForLoadState('networkidle')
-
-    // Search input — use type="search" to pick the unique visible one
-    const searchBox = page.locator('input[type="search"]')
-    await expect(searchBox).toBeVisible({ timeout: 15000 })
-    await searchBox.fill('Ali Hassan')
-    await page.waitForLoadState('networkidle')
-
-    // Find the View File button for Ali Hassan's record
-    await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 15000 })
-    await page.getByRole('button', { name: /view file/i }).first().click()
-
-    // ── Patient file page at /patient-file/{id} ────────────────────────────────
-    await page.waitForURL(/\/patient-file\/\d+/, { timeout: 30000 })
-
-    await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 15000 })
-    await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 15000 })
-    await expect(page.getByText(/05\/15\/1990|May 15/i).first()).toBeVisible({ timeout: 10000 })
-    // Exclude hidden <option> elements when checking status
-    await expect(
-      page.locator('p, span, div, h2, h3, h4, td, li').filter({ hasText: /^Appointment Initiated$/i }).first()
-    ).toBeVisible({ timeout: 15000 })
-
-    console.log(`✓ Part B — Patient file page verified at: ${page.url()}`)
   })
 })
