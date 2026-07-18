@@ -245,8 +245,9 @@ test.describe('nurse flowboard — add new patient', () => {
     await page.waitForURL(/\/dashboard\/patients-history/, { timeout: 30000 })
     await page.waitForLoadState('networkidle')
 
-    // Search for Ali Hassan
-    const searchBox = page.getByPlaceholder(/search|patient/i).first()
+    // Search for Ali Hassan — use exact placeholder from the patients history page
+    // The generic /search|patient/ regex matches hidden inputs; use the exact placeholder text
+    const searchBox = page.getByPlaceholder('Search by name, email, phone, patient ID, or date of birth...')
     await expect(searchBox).toBeVisible({ timeout: 15000 })
     await searchBox.fill('Ali Hassan')
     await page.waitForLoadState('networkidle')
@@ -261,7 +262,10 @@ test.describe('nurse flowboard — add new patient', () => {
     await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 15000 })
     await expect(page.getByRole('tab').first()).toBeVisible({ timeout: 15000 })
     await expect(page.getByText(/05\/15\/1990|May 15/i).first()).toBeVisible({ timeout: 10000 })
-    await expect(page.getByText(/appointment initiated/i).first()).toBeVisible({ timeout: 15000 })
+    // Exclude hidden <option> elements when checking status
+    await expect(
+      page.locator('p, span, div, h2, h3, h4, td, li').filter({ hasText: /^Appointment Initiated$/i }).first()
+    ).toBeVisible({ timeout: 15000 })
 
     console.log(`✓ Part B — Patient file page verified at: ${page.url()}`)
   })

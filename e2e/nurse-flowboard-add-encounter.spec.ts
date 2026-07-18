@@ -121,7 +121,9 @@ test.describe('nurse flowboard add encounter', () => {
     expect(detailJson.patient?.id).toBe(patientId)
     expect(detailJson.encounter?.status).toBe('appointment_initiated')
 
-    // Encounter detail confirmation
-    await expect(page.getByText(/appointment initiated/i).first()).toBeVisible({ timeout: 30000 })
+    // Encounter detail confirmation — exclude hidden <option> elements
+    await expect(
+      page.locator('p, span, div, h2, h3, h4, td, li').filter({ hasText: /^Appointment Initiated$/i }).first()
+    ).toBeVisible({ timeout: 30000 })
   })
 })
