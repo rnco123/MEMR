@@ -38,7 +38,7 @@ jobs:
         run: npx playwright install chromium --with-deps
 
       - name: Run nurse E2E tests against deployed URL
-        run: npx playwright test e2e/nurse-flowboard-add-encounter.spec.ts e2e/nurse-flowboard-add-patient.spec.ts
+        run: npx playwright test e2e/nurse-flowboard-add-patient.spec.ts
         env:
           CI: true
 

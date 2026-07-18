@@ -245,9 +245,8 @@ test.describe('nurse flowboard — add new patient', () => {
     await page.waitForURL(/\/dashboard\/patients-history/, { timeout: 30000 })
     await page.waitForLoadState('networkidle')
 
-    // Search for Ali Hassan — use exact placeholder from the patients history page
-    // The generic /search|patient/ regex matches hidden inputs; use the exact placeholder text
-    const searchBox = page.getByPlaceholder('Search by name, email, phone, patient ID, or date of birth...')
+    // Search input — use type="search" to pick the unique visible one
+    const searchBox = page.locator('input[type="search"]')
     await expect(searchBox).toBeVisible({ timeout: 15000 })
     await searchBox.fill('Ali Hassan')
     await page.waitForLoadState('networkidle')
