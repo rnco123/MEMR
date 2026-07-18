@@ -1,7 +1,15 @@
 'use client'
 
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -42,6 +50,11 @@ import { useImmigrationWorkflowCase } from '@/lib/hooks/use-immigration-workflow
 
 const PDF_URL = '/forms/i-693-template.pdf'
 const DEFAULT_SCALE = 1.2
+/** Form pane share when split is open (rest is chart/doc pane). Either side can grow until the other hits the min. */
+const SPLIT_FORM_RATIO_DEFAULT = 0.64
+const SPLIT_FORM_RATIO_MIN = 0.28
+const SPLIT_FORM_RATIO_MAX = 0.82
+const SPLIT_RESIZE_HANDLE_PX = 10
 
 type Props = {
   encounterId: number
@@ -136,6 +149,10 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [splitViewOpen, setSplitViewOpen] = useState(false)
   const [splitDocIndex, setSplitDocIndex] = useState<number | null>(null)
+  const [splitFormRatio, setSplitFormRatio] = useState(SPLIT_FORM_RATIO_DEFAULT)
+  const splitRowRef = useRef<HTMLDivElement>(null)
+  const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(null)
+  const [splitResizing, setSplitResizing] = useState(false)
   const [patientId, setPatientId] = useState<number | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
@@ -570,6 +587,55 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     setSplitDocIndex(null)
   }, [])
 
+  const clampSplitFormRatio = useCallback((ratio: number) => {
+    return Math.min(SPLIT_FORM_RATIO_MAX, Math.max(SPLIT_FORM_RATIO_MIN, ratio))
+  }, [])
+
+  const onSplitResizePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      splitDragRef.current = { startX: event.clientX, startRatio: splitFormRatio }
+      setSplitResizing(true)
+      event.currentTarget.setPointerCapture(event.pointerId)
+      event.preventDefault()
+    },
+    [splitFormRatio]
+  )
+
+  const onSplitResizePointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const drag = splitDragRef.current
+      const row = splitRowRef.current
+      if (!drag || !row) return
+      const width = row.getBoundingClientRect().width
+      if (width <= SPLIT_RESIZE_HANDLE_PX) return
+      const deltaRatio = (event.clientX - drag.startX) / width
+      setSplitFormRatio(clampSplitFormRatio(drag.startRatio + deltaRatio))
+    },
+    [clampSplitFormRatio]
+  )
+
+  const endSplitResize = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!splitDragRef.current) return
+    splitDragRef.current = null
+    setSplitResizing(false)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!splitResizing) return
+    const prev = document.body.style.cursor
+    const prevSelect = document.body.style.userSelect
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    return () => {
+      document.body.style.cursor = prev
+      document.body.style.userSelect = prevSelect
+    }
+  }, [splitResizing])
+
   const loadPatientChartDocuments = useCallback(async (): Promise<PatientChartDocumentRef[]> => {
     if (patientId == null) return []
     setPatientChartDocsLoading(true)
@@ -818,13 +884,30 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       </div>
 
       <div
+        ref={splitRowRef}
         className={`w-full min-w-0 max-w-full overflow-hidden ${
-          splitViewOpen
-            ? 'grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,36%)]'
+          splitViewOpen && splitViewItems.length > 0
+            ? `flex flex-col gap-4 lg:flex-row lg:items-stretch lg:gap-0 ${
+                splitResizing ? 'select-none' : ''
+              }`
             : ''
         }`}
+        style={
+          splitViewOpen && splitViewItems.length > 0
+            ? ({
+                ['--i693-split-form' as string]: `${splitFormRatio * 100}%`,
+                ['--i693-split-doc-min' as string]: `${(1 - SPLIT_FORM_RATIO_MAX) * 100}%`,
+              } as CSSProperties)
+            : undefined
+        }
       >
-        <div className="min-w-0 space-y-3">
+        <div
+          className={`min-w-0 space-y-3 ${
+            splitViewOpen && splitViewItems.length > 0
+              ? 'w-full lg:w-[var(--i693-split-form)] lg:max-w-[var(--i693-split-form)] lg:shrink-0'
+              : ''
+          }`}
+        >
           <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-10rem)]">
             {!pdfReady ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
@@ -845,14 +928,53 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         </div>
 
         {splitViewOpen && splitViewItems.length > 0 ? (
-          <div className="flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-col overflow-hidden">
-            <I693SplitView
-              items={splitViewItems}
-              activeIndex={splitDocIndex}
-              onActiveIndexChange={setSplitDocIndex}
-              onClosePanel={hideSplitView}
-            />
-          </div>
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('i693.splitview_resize')}
+              aria-valuemin={Math.round(SPLIT_FORM_RATIO_MIN * 100)}
+              aria-valuemax={Math.round(SPLIT_FORM_RATIO_MAX * 100)}
+              aria-valuenow={Math.round(splitFormRatio * 100)}
+              tabIndex={0}
+              className="hidden shrink-0 cursor-col-resize touch-none items-stretch justify-center lg:flex"
+              style={{ width: SPLIT_RESIZE_HANDLE_PX }}
+              onPointerDown={onSplitResizePointerDown}
+              onPointerMove={onSplitResizePointerMove}
+              onPointerUp={endSplitResize}
+              onPointerCancel={endSplitResize}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault()
+                  setSplitFormRatio((r) => clampSplitFormRatio(r - 0.02))
+                } else if (event.key === 'ArrowRight') {
+                  event.preventDefault()
+                  setSplitFormRatio((r) => clampSplitFormRatio(r + 0.02))
+                } else if (event.key === 'Home') {
+                  event.preventDefault()
+                  setSplitFormRatio(SPLIT_FORM_RATIO_MIN)
+                } else if (event.key === 'End') {
+                  event.preventDefault()
+                  setSplitFormRatio(SPLIT_FORM_RATIO_MAX)
+                }
+              }}
+            >
+              <span
+                className={`my-6 w-1 rounded-full transition-colors ${
+                  splitResizing ? 'bg-violet-500' : 'bg-slate-300 hover:bg-violet-400'
+                }`}
+                aria-hidden
+              />
+            </div>
+            <div className="flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden lg:min-w-[var(--i693-split-doc-min)]">
+              <I693SplitView
+                items={splitViewItems}
+                activeIndex={splitDocIndex}
+                onActiveIndexChange={setSplitDocIndex}
+                onClosePanel={hideSplitView}
+              />
+            </div>
+          </>
         ) : null}
       </div>
     </div>

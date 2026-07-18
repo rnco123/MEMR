@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
@@ -28,6 +28,35 @@ type ApiRow = {
 
 type StatusFilter = 'all' | ImmigrationWorkflowStatus
 
+const I693_LOCATION_FILTER_STORAGE_KEY = 'memr.i693.workflow.locationIds'
+
+function readStoredLocationIds(): number[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const raw = sessionStorage.getItem(I693_LOCATION_FILTER_STORAGE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed)) return []
+    return parsed
+      .map((value) => Number(value))
+      .filter((id) => Number.isFinite(id) && id > 0)
+  } catch {
+    return []
+  }
+}
+
+function writeStoredLocationIds(ids: number[]) {
+  try {
+    if (ids.length === 0) {
+      sessionStorage.removeItem(I693_LOCATION_FILTER_STORAGE_KEY)
+    } else {
+      sessionStorage.setItem(I693_LOCATION_FILTER_STORAGE_KEY, JSON.stringify(ids))
+    }
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 const COLOR_DOT: Record<string, string> = {
   red: 'bg-red-500',
   yellow: 'bg-amber-400',
@@ -53,6 +82,7 @@ export function I693WorkflowBoard({
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
+    loading: locationsLoading,
   } = useUserLocations()
   const [rows, setRows] = useState<ApiRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -60,7 +90,7 @@ export function I693WorkflowBoard({
   const [view, setView] = useState<'list' | 'kanban'>('kanban')
   const [patientSearch, setPatientSearch] = useState('')
   const [movingEncounterId, setMovingEncounterId] = useState<number | null>(null)
-  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([])
+  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>(readStoredLocationIds)
   const [selectedDeliveredIds, setSelectedDeliveredIds] = useState<Set<number>>(new Set())
   const [closingForms, setClosingForms] = useState(false)
 
@@ -90,6 +120,12 @@ export function I693WorkflowBoard({
   }, [load])
 
   useEffect(() => {
+    writeStoredLocationIds(selectedLocationIds)
+  }, [selectedLocationIds])
+
+  useEffect(() => {
+    // Wait until locations load — otherwise a restored filter is wiped against [].
+    if (locationsLoading || userLocations.length === 0) return
     if (selectedLocationIds.length === 0) return
 
     const availableIds = new Set(userLocations.map((loc) => loc.id))
@@ -98,7 +134,7 @@ export function I693WorkflowBoard({
       if (next.length === current.length) return current
       return next.length === userLocations.length ? [] : next
     })
-  }, [selectedLocationIds.length, userLocations])
+  }, [locationsLoading, selectedLocationIds.length, userLocations])
 
   const filtered = useMemo(() => {
     const q = patientSearch.trim().toLowerCase()
@@ -215,6 +251,21 @@ export function I693WorkflowBoard({
     [moveCase, rows]
   )
 
+  const deliveredColumnRows = byColumn.delivered
+  const allDeliveredSelected =
+    deliveredColumnRows.length > 0 &&
+    deliveredColumnRows.every((row) => selectedDeliveredIds.has(row.encounter_id))
+  const someDeliveredSelected = deliveredColumnRows.some((row) =>
+    selectedDeliveredIds.has(row.encounter_id)
+  )
+  const selectAllDeliveredRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    const el = selectAllDeliveredRef.current
+    if (!el) return
+    el.indeterminate = someDeliveredSelected && !allDeliveredSelected
+  }, [someDeliveredSelected, allDeliveredSelected])
+
   const toggleDeliveredSelection = (encounterId: number) => {
     setSelectedDeliveredIds((current) => {
       const next = new Set(current)
@@ -222,6 +273,14 @@ export function I693WorkflowBoard({
       else next.add(encounterId)
       return next
     })
+  }
+
+  const toggleSelectAllDelivered = () => {
+    if (allDeliveredSelected) {
+      setSelectedDeliveredIds(new Set())
+      return
+    }
+    setSelectedDeliveredIds(new Set(deliveredColumnRows.map((row) => row.encounter_id)))
   }
 
   const closeSelectedForms = async () => {
@@ -258,34 +317,44 @@ export function I693WorkflowBoard({
       row.appointment_date &&
       `${row.appointment_date}${row.appointment_time ? ` ${row.appointment_time}` : ''}`
 
+    const isBatchSelected = c.status === 'delivered' && selectedDeliveredIds.has(row.encounter_id)
+
     return (
       <div
         key={row.encounter_id}
         draggable={movingEncounterId !== row.encounter_id}
         onDragStart={(event) => handleCardDragStart(event, row.encounter_id)}
-        className={`rounded-xl border bg-white p-3 shadow-sm transition-shadow ${
-          selectedEncounterId === row.encounter_id
-            ? 'border-[#2E6EF3] ring-2 ring-[#2E6EF3]/20'
-            : 'border-slate-200 hover:border-slate-300'
+        className={`relative rounded-xl border bg-white p-3 shadow-sm transition-all ${
+          isBatchSelected
+            ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/40'
+            : selectedEncounterId === row.encounter_id
+              ? 'border-[#2E6EF3] ring-2 ring-[#2E6EF3]/20'
+              : 'border-slate-200 hover:border-slate-300'
         } ${movingEncounterId === row.encounter_id ? 'opacity-60' : 'cursor-move'}`}
       >
         {c.status === 'delivered' && (
-          <label className="mb-2 inline-flex items-center gap-2 text-xs font-medium text-slate-600 cursor-pointer">
+          <label
+            className={`absolute top-2.5 right-2.5 z-10 flex h-7 w-7 items-center justify-center rounded-lg border bg-white shadow-sm cursor-pointer transition-colors ${
+              isBatchSelected
+                ? 'border-blue-500 text-blue-600'
+                : 'border-slate-200 text-slate-400 hover:border-slate-300 hover:text-slate-600'
+            }`}
+            onClick={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
             <input
               type="checkbox"
-              checked={selectedDeliveredIds.has(row.encounter_id)}
+              checked={isBatchSelected}
               onChange={() => toggleDeliveredSelection(row.encounter_id)}
-              onClick={(event) => event.stopPropagation()}
-              className="h-4 w-4 rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]"
+              className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
               aria-label={t('i693.wf_select_form', { name: row.patient_name })}
             />
-            {t('i693.wf_select')}
           </label>
         )}
         <button
           type="button"
           onClick={() => onSelectEncounter(row.encounter_id, row.patient_name)}
-          className="w-full text-left"
+          className={`w-full text-left ${c.status === 'delivered' ? 'pr-8' : ''}`}
         >
           <p className="font-semibold text-slate-900 text-sm">{row.patient_name}</p>
           {appt && (
@@ -397,18 +466,38 @@ export function I693WorkflowBoard({
         </div>
       </div>
 
-      <FlowboardBatchActionBar
-        selectedCount={selectedDeliveredIds.size}
-        totalSelectableOnPage={visibleDeliveredRows.length}
-        onSelectAllPage={() =>
-          setSelectedDeliveredIds(new Set(visibleDeliveredRows.map((row) => row.encounter_id)))
-        }
-        onClear={() => setSelectedDeliveredIds(new Set())}
-        actionLabel={t('i693.wf_close_selected')}
-        actionLoadingLabel={t('i693.wf_closing')}
-        isLoading={closingForms}
-        onAction={() => void closeSelectedForms()}
-      />
+      {selectedDeliveredIds.size > 0 ? (
+        <div className="sticky top-0 z-20">
+          <FlowboardBatchActionBar
+            selectedCount={selectedDeliveredIds.size}
+            totalSelectableOnPage={visibleDeliveredRows.length}
+            onSelectAllPage={toggleSelectAllDelivered}
+            onClear={() => setSelectedDeliveredIds(new Set())}
+            actionLabel={t('i693.wf_close_selected')}
+            actionLoadingLabel={t('i693.wf_closing')}
+            isLoading={closingForms}
+            onAction={() => void closeSelectedForms()}
+            selectAllLabel={t('i693.wf_select_all_delivered')}
+          />
+        </div>
+      ) : view === 'list' && visibleDeliveredRows.length > 0 ? (
+        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5">
+          <label className="inline-flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
+            <input
+              ref={selectAllDeliveredRef}
+              type="checkbox"
+              checked={allDeliveredSelected}
+              onChange={toggleSelectAllDelivered}
+              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              aria-label={t('i693.wf_select_all_delivered_aria')}
+            />
+            <span className="font-medium">{t('i693.wf_select_all_delivered')}</span>
+            <span className="text-xs text-slate-400">
+              ({visibleDeliveredRows.length})
+            </span>
+          </label>
+        </div>
+      ) : null}
 
       {selectedRow && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border border-[#2E6EF3]/25 bg-[#eef3ff] px-4 py-3">
@@ -522,9 +611,31 @@ export function I693WorkflowBoard({
               className="rounded-2xl border border-slate-200 bg-slate-50/80 flex flex-col min-h-[320px]"
             >
               <div className="px-3 py-2 border-b border-slate-200 flex items-center gap-2">
+                {col.status === 'delivered' && deliveredColumnRows.length > 0 ? (
+                  <label
+                    className="inline-flex items-center justify-center h-6 w-6 rounded-md hover:bg-white cursor-pointer shrink-0"
+                    title={t('i693.wf_select_all_delivered')}
+                  >
+                    <input
+                      ref={selectAllDeliveredRef}
+                      type="checkbox"
+                      checked={allDeliveredSelected}
+                      onChange={toggleSelectAllDelivered}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      aria-label={t('i693.wf_select_all_delivered_aria')}
+                    />
+                  </label>
+                ) : null}
                 <span>{col.emoji}</span>
-                <h3 className="text-sm font-semibold text-slate-800">{t(col.labelKey)}</h3>
-                <span className="ml-auto text-xs text-slate-500">{byColumn[col.status].length}</span>
+                <h3 className="text-sm font-semibold text-slate-800 truncate">{t(col.labelKey)}</h3>
+                {col.status === 'delivered' && someDeliveredSelected ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded-full shrink-0">
+                    {selectedDeliveredIds.size}
+                  </span>
+                ) : null}
+                <span className="ml-auto text-xs text-slate-500 tabular-nums shrink-0">
+                  {byColumn[col.status].length}
+                </span>
               </div>
               <div
                 onDragOver={(event) => event.preventDefault()}
