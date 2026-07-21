@@ -15,6 +15,7 @@ jobs:
     timeout-minutes: 60
 
     env:
+      PLAYWRIGHT_BASE_URL: https://mcm-testing.up.railway.app
       PLAYWRIGHT_ADMIN_EMAIL: ${{ secrets.PLAYWRIGHT_ADMIN_EMAIL }}
       PLAYWRIGHT_ADMIN_PASSWORD: ${{ secrets.PLAYWRIGHT_ADMIN_PASSWORD }}
       PLAYWRIGHT_NURSE_EMAIL: ${{ secrets.PLAYWRIGHT_NURSE_EMAIL }}
@@ -36,73 +37,10 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      # ── Get Railway deployment URL via Railway GraphQL API ──────────────────
-      # This only READS the deployment URL — nothing is changed or redeployed.
-      # Polls every 10s for up to 10 minutes waiting for Railway to finish deploying.
-      - name: Get Railway deployment URL
-        id: railway_url
-        run: |
-          echo "Polling Railway API for latest deployment URL..."
-
-          FALLBACK_URL="https://mcm-testing.up.railway.app"
-          DEPLOY_URL=""
-
-          for i in $(seq 1 60); do
-            RESPONSE=$(curl -s -X POST https://backboard.railway.app/graphql/v2 \
-              -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "query": "query { service(id: \"${{ secrets.RAILWAY_SERVICE_ID }}\") { deployments(first: 1) { edges { node { staticUrl status createdAt } } } } }"
-              }')
-
-            echo "Response: $RESPONSE"
-
-            STATUS=$(echo $RESPONSE | node -e "
-              let d=''; process.stdin.on('data',c=>d+=c);
-              process.stdin.on('end',()=>{
-                try {
-                  const r=JSON.parse(d);
-                  const node=r?.data?.service?.deployments?.edges?.[0]?.node;
-                  console.log(node?.status||'');
-                } catch(e){ console.log(''); }
-              });
-            ")
-
-            URL=$(echo $RESPONSE | node -e "
-              let d=''; process.stdin.on('data',c=>d+=c);
-              process.stdin.on('end',()=>{
-                try {
-                  const r=JSON.parse(d);
-                  const node=r?.data?.service?.deployments?.edges?.[0]?.node;
-                  const u=node?.staticUrl||'';
-                  console.log(u ? 'https://'+u : '');
-                } catch(e){ console.log(''); }
-              });
-            ")
-
-            echo "Attempt $i — Status: $STATUS — URL: $URL"
-
-            if [ "$STATUS" = "SUCCESS" ] && [ -n "$URL" ]; then
-              DEPLOY_URL=$URL
-              break
-            fi
-
-            sleep 10
-          done
-
-          if [ -z "$DEPLOY_URL" ]; then
-            echo "Could not get Railway URL — using fallback: $FALLBACK_URL"
-            DEPLOY_URL=$FALLBACK_URL
-          fi
-
-          echo "url=$DEPLOY_URL" >> $GITHUB_OUTPUT
-          echo "Final test URL: $DEPLOY_URL"
-
       - name: Run all E2E tests
         run: npx playwright test e2e/admin-user-create-login.spec.ts e2e/nurse-flowboard-add-patient.spec.ts e2e/nurse-flowboard-add-encounter.spec.ts
         env:
           CI: true
-          PLAYWRIGHT_BASE_URL: ${{ steps.railway_url.outputs.url }}
 
       - name: Upload screenshots, videos, traces and HTML report
         uses: actions/upload-artifact@v4
