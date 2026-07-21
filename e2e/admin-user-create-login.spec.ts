@@ -93,6 +93,27 @@ test.describe('admin user creation and login', () => {
       )
       await expect(createModal).toBeVisible({ timeout: 30000 })
 
+      // ── Role selection — must work without throwing an error ───────────────
+      // The default role is 'doctor'. Click 'nurse' to verify role switching works.
+      // Regression: test/playwright-admin-create-user-role-error broke onClick to
+      // throw instead of calling setRole(), so this click must NOT produce an error.
+      const nurseRoleBtn = page.getByTestId('admin-create-user-role-nurse').or(
+        page.getByRole('button', { name: /^nurse$/i })
+      )
+      await expect(nurseRoleBtn).toBeVisible({ timeout: 15000 })
+      await nurseRoleBtn.click()
+
+      // If the bug is present, a "Failed to select role" error message appears
+      await expect(
+        page.getByText('Failed to select role'),
+        'Role selection threw an error — intentional regression is present'
+      ).not.toBeVisible({ timeout: 3000 })
+
+      // Confirm the role button now appears selected (has the active class styling)
+      // and no JS error dialog appeared
+      await expect(nurseRoleBtn).toBeVisible({ timeout: 5000 })
+      // ──────────────────────────────────────────────────────────────────────
+
       // Form fields: testid on local, placeholder on deployed
       const nameInput = page.getByTestId('admin-users-name-input').or(
         page.getByPlaceholder(/full name|please enter user full name/i)
