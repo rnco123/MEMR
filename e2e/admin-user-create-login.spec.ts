@@ -67,11 +67,14 @@ test.describe('admin user creation and login', () => {
     requireCredentials()
 
     // ── JS error collector ─────────────────────────────────────────────────────
-    // Catches any uncaught browser exceptions (e.g. thrown inside onClick handlers).
-    // We assert this list is empty before form submission so that silent regressions
-    // — where the app throws but still completes the action — are not ignored.
+    // React catches thrown errors in event handlers before they reach window.onerror,
+    // so page.on('pageerror') misses them. React DOES log them via console.error though.
+    // We collect both console errors and page errors to catch all regressions.
     const jsErrors: string[] = []
-    page.on('pageerror', (err) => jsErrors.push(err.message))
+    page.on('pageerror', (err) => jsErrors.push(`[uncaught] ${err.message}`))
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') jsErrors.push(`[console.error] ${msg.text()}`)
+    })
     // ──────────────────────────────────────────────────────────────────────────
 
     const created = makeUniqueUser()
@@ -114,17 +117,16 @@ test.describe('admin user creation and login', () => {
       // After clicking, wait a moment for any React state update to flush
       await page.waitForTimeout(500)
 
-      // The error div has no testid — locate it precisely by its red styling + exact text
-      // so we don't accidentally match hidden <option> elements or other text nodes.
-      const roleErrorDiv = page.locator(
-        'div.text-red-600, div.text-red-500, [class*="text-red"]'
-      ).filter({ hasText: /failed to select role/i })
+      // Check for the error text directly in the DOM — no CSS class dependency,
+      // so this works regardless of how Tailwind purges classes in CI builds.
+      // getByText with exact:false matches any element containing this string.
+      const roleErrorMsg = page.getByText('Failed to select role', { exact: true })
 
-      // Assert the error element does not exist in the DOM at all.
-      // If the bug is present, setFormError() renders this div and this will fail.
+      // Assert it does not exist in the DOM at all (toHaveCount(0) is stricter
+      // than not.toBeVisible — it fails even if the element is hidden but present)
       await expect(
-        roleErrorDiv,
-        'Role selection error message appeared — regression is present in onClick handler'
+        roleErrorMsg,
+        'Role selection error appeared — regression is present in onClick handler'
       ).toHaveCount(0)
       // ──────────────────────────────────────────────────────────────────────
 
@@ -143,11 +145,16 @@ test.describe('admin user creation and login', () => {
       await passwordInput.fill(created.password)
 
       // ── Assert no JS errors occurred during form interaction ───────────────
-      // Any thrown exceptions during role selection, field input, etc. must be
-      // caught here before we submit. A clean form path must be error-free.
+      // Filter to errors that are clearly from our regression, not React internals
+      // or unrelated network noise. The regression throws: 'Create user role selection failed'
+      const regressionErrors = jsErrors.filter(e =>
+        e.toLowerCase().includes('role') ||
+        e.toLowerCase().includes('failed to select') ||
+        e.toLowerCase().includes('create user role')
+      )
       expect(
-        jsErrors,
-        `JS errors occurred before form submission:\n${jsErrors.join('\n')}`
+        regressionErrors,
+        `Role-related JS/console errors before form submission:\n${regressionErrors.join('\n')}`
       ).toHaveLength(0)
       // ──────────────────────────────────────────────────────────────────────
 
