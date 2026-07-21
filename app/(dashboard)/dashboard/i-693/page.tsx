@@ -113,25 +113,27 @@ function I693PageInner() {
           </div>
         ) : null}
 
-        {tab === 'workflow' ? (
+        <div className={tab === 'pdf' ? 'hidden' : undefined}>
           <I693WorkflowBoard
             selectedEncounterId={selectedId}
             onSelectEncounter={selectEncounter}
             onClearSelection={clearSelection}
             onOpenPdfEditor={openPdfEditor}
           />
-        ) : tab === 'pdf' && selectedId ? (
+        </div>
+
+        {tab === 'pdf' && selectedId ? (
           <I693PdfFormEditor
             key={`pdf-${selectedId}`}
             encounterId={selectedId}
             patientName={selectedPatientName ?? undefined}
             onBack={() => setTabAndUrl('workflow')}
           />
-        ) : (
+        ) : tab === 'pdf' ? (
           <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-500">
             {t('i693.select_encounter')}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )

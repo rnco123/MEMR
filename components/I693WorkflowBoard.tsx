@@ -90,7 +90,14 @@ export function I693WorkflowBoard({
   const [view, setView] = useState<'list' | 'kanban'>('kanban')
   const [patientSearch, setPatientSearch] = useState('')
   const [movingEncounterId, setMovingEncounterId] = useState<number | null>(null)
-  const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>(readStoredLocationIds)
+  const [selectedLocationIds, setSelectedLocationIdsState] = useState<number[]>(readStoredLocationIds)
+  const setSelectedLocationIds = useCallback((value: number[] | ((prev: number[]) => number[])) => {
+    setSelectedLocationIdsState((prev) => {
+      const next = typeof value === 'function' ? value(prev) : value
+      writeStoredLocationIds(next)
+      return next
+    })
+  }, [])
   const [selectedDeliveredIds, setSelectedDeliveredIds] = useState<Set<number>>(new Set())
   const [closingForms, setClosingForms] = useState(false)
 
@@ -118,10 +125,6 @@ export function I693WorkflowBoard({
   useEffect(() => {
     void load()
   }, [load])
-
-  useEffect(() => {
-    writeStoredLocationIds(selectedLocationIds)
-  }, [selectedLocationIds])
 
   useEffect(() => {
     // Wait until locations load — otherwise a restored filter is wiped against [].
