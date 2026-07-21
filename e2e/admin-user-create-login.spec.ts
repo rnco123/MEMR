@@ -154,6 +154,10 @@ test.describe('admin user creation and login', () => {
         if (lower.includes('act(') || lower.includes('hydrat') || lower.includes('warning:')) return false
         // Skip network errors unrelated to our flow
         if (lower.includes('neterr') || lower.includes('err_')) return false
+        // Skip Next.js RSC prefetch failures — these are background navigation
+        // prefetches that fail due to network conditions, not app bugs
+        if (lower.includes('failed to fetch rsc payload')) return false
+        if (lower.includes('falling back to browser navigation')) return false
         return true
       })
       expect(
