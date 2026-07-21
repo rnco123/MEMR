@@ -37,20 +37,8 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Run admin user creation test
-        run: npx playwright test e2e/admin-user-create-login.spec.ts
-        continue-on-error: true
-        env:
-          CI: true
-
-      - name: Run nurse flowboard add patient test
-        run: npx playwright test e2e/nurse-flowboard-add-patient.spec.ts
-        continue-on-error: true
-        env:
-          CI: true
-
-      - name: Run nurse flowboard add encounter test
-        run: npx playwright test e2e/nurse-flowboard-add-encounter.spec.ts
+      - name: Run all E2E tests
+        run: npx playwright test e2e/admin-user-create-login.spec.ts e2e/nurse-flowboard-add-patient.spec.ts e2e/nurse-flowboard-add-encounter.spec.ts
         continue-on-error: true
         env:
           CI: true
