@@ -13,6 +13,12 @@ import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
+import {
+  formatClinicDateOnly,
+  formatClinicTimeSlot,
+  getClinicCurrentTimeString,
+  getClinicTodayDateString,
+} from '@/lib/datetime/clinic-timezone'
 
 type PatientRow = {
   id: number
@@ -40,18 +46,26 @@ const READONLY = `${INPUT} bg-slate-50 text-slate-600 cursor-not-allowed`
 const SECTION = 'text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 mb-3'
 
 function getTodayDate() {
-  return new Date().toISOString().slice(0, 10)
+  return getClinicTodayDateString()
 }
 
 function getCurrentTime() {
-  const now = new Date()
-  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+  return getClinicCurrentTimeString()
+}
+
+function isFutureAppointmentDate(date: string) {
+  return date.trim().slice(0, 10) > getClinicTodayDateString()
 }
 
 type Props = {
   isOpen: boolean
   onClose: () => void
-  onCreated: (result: { appointmentId: number; encounterId: number; patientId: number }) => void
+  onCreated: (result: {
+    appointmentId: number
+    encounterId: number
+    patientId: number
+    isFuture: boolean
+  }) => void
   defaultLocationId?: number | null
 }
 
@@ -79,6 +93,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [showManualPharmacy, setShowManualPharmacy] = useState(false)
   const [manualPharmacy, setManualPharmacy] = useState({ name: '', address: '', phone: '', email: '' })
   const [submitting, setSubmitting] = useState(false)
+  const [showFutureConfirm, setShowFutureConfirm] = useState(false)
   const [intakeForm, setIntakeForm] = useState<NurseWalkInIntakeInput>(emptyIntakeFormInput())
 
   const resetForm = useCallback(() => {
@@ -98,6 +113,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     setShowManualPharmacy(false)
     setManualPharmacy({ name: '', address: '', phone: '', email: '' })
     setIntakeForm(emptyIntakeFormInput())
+    setShowFutureConfirm(false)
   }, [])
 
   useEffect(() => {
@@ -277,6 +293,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       toast.error(t('nurse_walkin.date_required'))
       return
     }
+    const isFuture = isFutureAppointmentDate(appointmentDate)
     setSubmitting(true)
     try {
       const res = await fetch('/api/nurse/walk-in', {
@@ -296,18 +313,32 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || json.message || 'Failed')
-      toast.success(t('nurse_walkin.created'))
+      toast.success(isFuture ? t('nurse_walkin.created_future') : t('nurse_walkin.created'))
       onCreated({
         appointmentId: json.data.appointment_id,
         encounterId: json.data.encounter_id,
         patientId: json.data.patient_id,
+        isFuture,
       })
       onClose()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('nurse_walkin.create_failed'))
     } finally {
       setSubmitting(false)
+      setShowFutureConfirm(false)
     }
+  }
+
+  const handleCreateClick = () => {
+    if (!appointmentDate) {
+      toast.error(t('nurse_walkin.date_required'))
+      return
+    }
+    if (isFutureAppointmentDate(appointmentDate)) {
+      setShowFutureConfirm(true)
+      return
+    }
+    void submitWalkIn()
   }
 
   if (!isOpen) return null
@@ -323,7 +354,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       onClick={() => !submitting && onClose()}
     >
       <div
-        className="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-x-hidden"
+        className="relative bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-x-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 shrink-0">
@@ -596,12 +627,47 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
             </button>
             <button
               type="button"
-              onClick={() => void submitWalkIn()}
+              onClick={handleCreateClick}
               disabled={submitting}
               className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
             >
               {submitting ? t('common.saving') : t('nurse_walkin.create_encounter')}
             </button>
+          </div>
+        )}
+
+        {showFutureConfirm && selectedPatient && (
+          <div
+            className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-slate-900/40 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full max-w-md rounded-2xl bg-white border border-slate-200 shadow-xl p-6">
+              <h3 className="text-lg font-bold text-slate-900">{t('nurse_walkin.future_appointment_title')}</h3>
+              <p className="mt-3 text-sm text-slate-600 leading-relaxed">
+                {t('nurse_walkin.future_appointment_body', {
+                  date: formatClinicDateOnly(appointmentDate, language, { weekday: 'long' }),
+                  time: formatClinicTimeSlot(appointmentTime) || appointmentTime,
+                })}
+              </p>
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFutureConfirm(false)}
+                  disabled={submitting}
+                  className="h-10 px-4 rounded-xl border border-slate-200 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitWalkIn()}
+                  disabled={submitting}
+                  className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
+                >
+                  {submitting ? t('common.saving') : t('nurse_walkin.future_appointment_confirm')}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

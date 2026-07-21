@@ -987,15 +987,17 @@ function NurseFlowboardPage() {
             isOpen={showAddVisitModal}
             onClose={() => setShowAddVisitModal(false)}
             defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
-            onCreated={async ({ encounterId, appointmentId, patientId }) => {
+            onCreated={async ({ encounterId, appointmentId, patientId, isFuture }) => {
               sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
               await fetchAllAppointments(true)
-              setSelectedEncounter({
-                encounterId,
-                appointmentId,
-                patientId,
-                encounterStatus: 'appointment_initiated',
-              })
+              if (!isFuture) {
+                setSelectedEncounter({
+                  encounterId,
+                  appointmentId,
+                  patientId,
+                  encounterStatus: 'appointment_initiated',
+                })
+              }
             }}
           />
         )}

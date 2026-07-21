@@ -1862,7 +1862,6 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <option value="imaging">{t('patient_file.doc_label_imaging')}</option>
                                 <option value="id_document">{t('patient_file.doc_label_id_document')}</option>
                                 <option value="previous_medical_records">{t('patient_file.doc_label_previous_medical_records')}</option>
-                                <option value="future_appointments">{t('patient_file.doc_label_future_appointments')}</option>
                                 <option value="immigration">{t('patient_file.doc_label_immigration')}</option>
                                 <option value="i693">{t('patient_file.doc_label_i693')}</option>
                                 <option value="other">{t('patient_file.doc_label_other')}</option>

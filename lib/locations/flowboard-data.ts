@@ -6,9 +6,18 @@ import {
   type LocationScope,
 } from '@/lib/locations/scope'
 
+/** Appointment date (YYYY-MM-DD) is after today in clinic (Central) time. */
+export function isFutureFlowboardRow(
+  appointmentDate: string | null | undefined,
+  todayDate = getClinicTodayDateString()
+): boolean {
+  const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
+  return Boolean(dateKey && dateKey > todayDate)
+}
+
 /**
- * Flowboard hides only past appointments that are completed.
- * Today/future and any non-completed row (including stale in-progress visits) stay visible.
+ * Flowboard: today + overdue non-completed visits only.
+ * Future-dated appointments appear on the Appointments tab until their clinic calendar day.
  */
 export function isActiveFlowboardRow(
   appointmentDate: string | null | undefined,
@@ -16,7 +25,9 @@ export function isActiveFlowboardRow(
   todayDate = getClinicTodayDateString()
 ): boolean {
   const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
-  if (!dateKey || dateKey >= todayDate) return true
+  if (!dateKey) return true
+  if (isFutureFlowboardRow(dateKey, todayDate)) return false
+  if (dateKey >= todayDate) return true
   return encounterStatus !== 'completed'
 }
 
@@ -52,6 +63,8 @@ type BuildFlowboardOptions = {
   mode: 'nurse' | 'doctor' | 'admin'
   doctorId?: number | null
   locationFilterId?: number
+  /** active = flowboard (today + overdue); future = Appointments tab only */
+  dateScope?: 'active' | 'future'
 }
 
 export async function buildFlowboardRows(
@@ -128,10 +141,15 @@ export async function buildFlowboardRows(
     }
 
     const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
+    const dateScope = options.dateScope ?? 'active'
 
-    if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) continue
+    if (dateScope === 'future') {
+      if (!isFutureFlowboardRow(appointment.appointment_date)) continue
+    } else if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) {
+      continue
+    }
 
-    if (options.mode === 'doctor') {
+    if (dateScope !== 'future' && options.mode === 'doctor') {
       if (options.doctorId == null) continue
       if (!encounter || encounter.doctor_id !== options.doctorId) continue
     }
