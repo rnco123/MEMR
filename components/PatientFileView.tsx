@@ -6,6 +6,7 @@ import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
+import { PatientPdfViewer } from '@/components/PatientPdfViewer'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
@@ -2030,9 +2031,8 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <p className="text-slate-500 text-sm">{t('patient_file.no_file_slot')}</p>
                               </div>
                             ) : isPdfDocument(viewingDocument) ? (
-                              <iframe
-                                src={viewingDocument.file_url}
-                                className="w-full h-full min-h-[600px] rounded-lg border border-white/10"
+                              <PatientPdfViewer
+                                url={viewingDocument.file_url}
                                 title={viewingDocument.document_name}
                               />
                             ) : isImageDocument(viewingDocument) ? (

@@ -8,13 +8,14 @@ import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
-import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { AppointmentDateRangeFilter } from '@/components/AppointmentDateRangeFilter'
 import {
   FlowboardFilterField,
   FlowboardFilterToolbar,
   FLOWBOARD_SELECT_CLASS,
 } from '@/components/FlowboardFilterToolbar'
+import { appointmentMatchesDobSearch } from '@/lib/flowboard/appointment-search-filter'
+import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import {
   formatClinicDateOnly,
   formatClinicTimeSlot,
@@ -29,6 +30,7 @@ import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
+import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
 
 type AppointmentRow = {
   id: number
@@ -40,6 +42,8 @@ type AppointmentRow = {
   encounter_id?: number | null
   location_id?: number | null
   location_title?: string | null
+  created_at?: string
+  activity_at?: string
   patient?: {
     id: number
     first_name: string
@@ -53,13 +57,6 @@ type AppointmentRow = {
 
 const CACHE_KEY = 'future_appointments_list'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
-
-function parseAppointmentDateTime(date: string | null, time: string | null): Date | null {
-  if (!date) return null
-  const normalizedTime = time && time.trim() ? time : '00:00:00'
-  const dt = new Date(`${date}T${normalizedTime}`)
-  return Number.isNaN(dt.getTime()) ? null : dt
-}
 
 function FutureAppointmentsPageInner() {
   const { user, role } = useAuth()
@@ -85,10 +82,11 @@ function FutureAppointmentsPageInner() {
     return !sessionStorage.getItem(CACHE_KEY)
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery)
-  const [sortBy, setSortBy] = useState<'time' | 'name'>('time')
+  const [dobSearchQuery, setDobSearchQuery] = useState('')
+  const { parsed: parsedDobSearch, isPending: dobSearchPending, debouncedQuery: debouncedDobQuery } =
+    useAiPatientSearchParse(dobSearchQuery)
+  const [appointmentFrom, setAppointmentFrom] = useState('')
+  const [appointmentTo, setAppointmentTo] = useState('')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
@@ -166,28 +164,40 @@ function FutureAppointmentsPageInner() {
 
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
-    const activeParsed =
-      parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
-    if (activeParsed) {
-      result = result.filter((a) => appointmentMatchesParsedPatientSearch(a, activeParsed))
+
+    const activeDobParsed =
+      parsedDobSearch && parsedDobSearch.raw === debouncedDobQuery.trim() ? parsedDobSearch : null
+    if (debouncedDobQuery.trim()) {
+      result = result.filter((a) =>
+        appointmentMatchesDobSearch(a, activeDobParsed, debouncedDobQuery)
+      )
     }
 
-    if (sortBy === 'time') {
-      result.sort((a, b) => {
-        const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
-        const dateB = parseAppointmentDateTime(b.appointment_date, b.appointment_time)
-        return (dateA?.getTime() ?? 0) - (dateB?.getTime() ?? 0)
-      })
-    } else {
-      result.sort((a, b) => {
-        const nameA = `${a.patient?.last_name ?? ''} ${a.patient?.first_name ?? ''}`.trim()
-        const nameB = `${b.patient?.last_name ?? ''} ${b.patient?.first_name ?? ''}`.trim()
-        return nameA.localeCompare(nameB)
-      })
+    if (appointmentFrom) {
+      result = result.filter(
+        (a) => (a.appointment_date?.trim().slice(0, 10) ?? '') >= appointmentFrom
+      )
+    }
+    if (appointmentTo) {
+      result = result.filter(
+        (a) => (a.appointment_date?.trim().slice(0, 10) ?? '') <= appointmentTo
+      )
     }
 
+    result.sort(compareActivityDesc)
     return result
-  }, [appointments, parsedSearch, debouncedQuery, sortBy])
+  }, [appointments, parsedDobSearch, debouncedDobQuery, appointmentFrom, appointmentTo])
+
+  const hasActiveFilters = Boolean(
+    dobSearchQuery.trim() || appointmentFrom || appointmentTo
+  )
+
+  const clearFilters = () => {
+    setDobSearchQuery('')
+    setAppointmentFrom('')
+    setAppointmentTo('')
+    setPage(1)
+  }
 
   const paginatedAppointments = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -256,13 +266,13 @@ function FutureAppointmentsPageInner() {
           search={
             <SmartPatientSearchInput
               size="sm"
-              value={searchQuery}
+              value={dobSearchQuery}
               onChange={(value) => {
-                setSearchQuery(value)
+                setDobSearchQuery(value)
                 setPage(1)
               }}
-              placeholder={t('appointments.search_placeholder')}
-              loading={searchPending}
+              placeholder={t('appointments.search_dob_placeholder')}
+              loading={dobSearchPending}
             />
           }
           searchActions={
@@ -290,6 +300,20 @@ function FutureAppointmentsPageInner() {
           }
           filters={
             <>
+              <FlowboardFilterField label={t('appointments.date_range')} dob>
+                <AppointmentDateRangeFilter
+                  from={appointmentFrom}
+                  to={appointmentTo}
+                  onFromChange={(value) => {
+                    setAppointmentFrom(value)
+                    setPage(1)
+                  }}
+                  onToChange={(value) => {
+                    setAppointmentTo(value)
+                    setPage(1)
+                  }}
+                />
+              </FlowboardFilterField>
               <FlowboardFilterField label={t('location.filter_label')} wide>
                 <LocationFilterSelect
                   locations={userLocations}
@@ -302,25 +326,23 @@ function FutureAppointmentsPageInner() {
                   className={FLOWBOARD_SELECT_CLASS}
                 />
               </FlowboardFilterField>
-              <FlowboardFilterField label={t('flow.sort')}>
-                <select
-                  value={sortBy}
-                  onChange={(e) => {
-                    setSortBy(e.target.value as typeof sortBy)
-                    setPage(1)
-                  }}
-                  className={FLOWBOARD_SELECT_CLASS}
-                >
-                  <option value="time">{t('flow.sort_time')}</option>
-                  <option value="name">{t('flow.sort_name')}</option>
-                </select>
-              </FlowboardFilterField>
             </>
           }
           footer={
-            <p className="text-xs text-slate-500">
-              {t('appointments.count', { count: filteredAppointments.length })}
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-xs text-slate-500">
+                {t('appointments.count', { count: filteredAppointments.length })}
+              </p>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="text-xs font-medium text-[#2E6EF3] hover:underline"
+                >
+                  {t('common.clear_filters')}
+                </button>
+              )}
+            </div>
           }
         />
 

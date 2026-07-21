@@ -12,10 +12,25 @@ import { applyParsedPatientSearchToQuery } from '@/lib/nurse/patient-search-appl
 import { resolvePatientSearch } from '@/lib/nurse/patient-search-openai'
 import { loadPatientVisitStats, resolvePatientLastVisit } from '@/lib/patients/patient-visit-stats'
 import { listPatientIdsVisibleInScope } from '@/lib/patients/patient-location-visibility'
+import { latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
 
 export const dynamic = 'force-dynamic'
 
 const PAGE_SIZE = 10
+
+type PatientHistoryRow = {
+  id: number
+  first_name: string
+  last_name: string
+  email: string | null
+  phone: string | null
+  date_of_birth: string | null
+  gender: string | null
+  created_at: string
+  location_id: number | null
+  created_by_source?: string | null
+  locations?: { title?: string } | null
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -75,16 +90,28 @@ export async function GET(req: NextRequest) {
     }
 
     if (sortBy === 'recent') {
-      query = query.order('created_at', { ascending: false })
+      // Loaded below — sort by last encounter/appointment activity, not registration date.
     } else {
       query = query.order('last_name', { ascending: true }).order('first_name', { ascending: true })
     }
 
-    const from = (page - 1) * PAGE_SIZE
-    const to = from + PAGE_SIZE - 1
-    const { data: patientsData, error: patientsError, count } = await query.range(from, to)
+    let patientsData: PatientHistoryRow[] | null = null
+    let count: number | null = null
 
-    if (patientsError) throw patientsError
+    if (sortBy === 'recent') {
+      const { data, error: patientsError } = await query
+      if (patientsError) throw patientsError
+      patientsData = (data ?? []) as PatientHistoryRow[]
+      count = data?.length ?? 0
+    } else {
+      const from = (page - 1) * PAGE_SIZE
+      const to = from + PAGE_SIZE - 1
+      const { data, error: patientsError, count: totalCount } = await query.range(from, to)
+      if (patientsError) throw patientsError
+      patientsData = (data ?? []) as PatientHistoryRow[]
+      count = totalCount
+    }
+
     if (!patientsData?.length) {
       return NextResponse.json({
         rows: [],
@@ -128,6 +155,20 @@ export async function GET(req: NextRequest) {
 
     if (sortBy === 'visits') {
       rows.sort((a, b) => (b.encounter_count ?? 0) - (a.encounter_count ?? 0))
+    } else if (sortBy === 'recent') {
+      rows.sort((a, b) => {
+        const aActivity = latestActivityTimestamp(a.last_visit, a.created_at)
+        const bActivity = latestActivityTimestamp(b.last_visit, b.created_at)
+        return new Date(bActivity).getTime() - new Date(aActivity).getTime()
+      })
+      const from = (page - 1) * PAGE_SIZE
+      const pagedRows = rows.slice(from, from + PAGE_SIZE)
+      return NextResponse.json({
+        rows: pagedRows,
+        total: rows.length,
+        page,
+        searchParse: parsedSearch?.source ?? null,
+      })
     }
 
     return NextResponse.json({

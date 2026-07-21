@@ -160,7 +160,7 @@ export const nurseWalkInCreateSchema = z.object({
     .regex(/^\d{2}:\d{2}(:\d{2})?$/)
     .optional()
     .nullable(),
-  service_id: z.number().int().positive().optional(),
+  service_id: z.number().int().positive(),
   location_id: z.number().int().positive().optional().nullable(),
   onsite_type: z.enum(['telemedicine', 'onsite']).optional().default('onsite'),
   pharmacy_id: z.number().int().positive().optional().nullable(),

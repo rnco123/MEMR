@@ -13,6 +13,7 @@ import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
+import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import {
   formatClinicDateOnly,
   formatClinicTimeSlot,
@@ -71,6 +72,7 @@ type Props = {
 
 export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLocationId }: Props) {
   const { t, language } = useT()
+  const { locations } = useUserLocations()
   const [step, setStep] = useState<Step>('search')
   const [searchQuery, setSearchQuery] = useState('')
   const [dobYear, setDobYear] = useState('')
@@ -87,7 +89,6 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [appointmentDate, setAppointmentDate] = useState(getTodayDate)
   const [appointmentTime, setAppointmentTime] = useState(getCurrentTime)
   const [serviceId, setServiceId] = useState('')
-  const [onsiteType, setOnsiteType] = useState<'onsite' | 'telemedicine'>('onsite')
   const [pharmacyId, setPharmacyId] = useState('')
   const [pharmacyQuery, setPharmacyQuery] = useState('')
   const [showManualPharmacy, setShowManualPharmacy] = useState(false)
@@ -107,7 +108,6 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     setAppointmentDate(getTodayDate())
     setAppointmentTime(getCurrentTime())
     setServiceId('')
-    setOnsiteType('onsite')
     setPharmacyId('')
     setPharmacyQuery('')
     setShowManualPharmacy(false)
@@ -129,13 +129,17 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
         setPharmacies(
           (json.pharmacies ?? []).map((row: Record<string, unknown>) => normalizePharmacyRow(row))
         )
-        if (json.services?.[0]?.id) {
-          setServiceId(String(json.services[0].id))
-        }
       })
       .catch(() => toast.error(t('nurse_walkin.options_failed')))
       .finally(() => setOptionsLoading(false))
   }, [isOpen, resetForm, t])
+
+  useEffect(() => {
+    setServiceId((current) => {
+      if (services.some((service) => String(service.id) === current)) return current
+      return services[0]?.id ? String(services[0].id) : ''
+    })
+  }, [services])
 
   // Preload every patient in the nurse's assigned location(s) when the modal opens.
   useEffect(() => {
@@ -287,10 +291,26 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     }
   }
 
+  const effectiveLocationId = defaultLocationId ?? selectedPatient?.location_id ?? null
+  const isKempwoodTenant = useMemo(() => {
+    if (effectiveLocationId == null) return false
+    const loc = locations.find((l) => l.id === effectiveLocationId)
+    return loc?.tenant_id === 3
+  }, [effectiveLocationId, locations])
+
+  const serviceTitle = (s: ServiceRow) => {
+    const title = language === 'es' && s.title_es ? s.title_es : s.title_en
+    return isKempwoodTenant ? title.replace(/\s*\$220\s*$/, '') : title
+  }
+
   const submitWalkIn = async () => {
     if (!selectedPatient) return
     if (!appointmentDate) {
       toast.error(t('nurse_walkin.date_required'))
+      return
+    }
+    if (!serviceId) {
+      toast.error(t('patient_register.treatment_type_required'))
       return
     }
     const isFuture = isFutureAppointmentDate(appointmentDate)
@@ -304,9 +324,9 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           patient_id: selectedPatient.id,
           appointment_date: appointmentDate,
           appointment_time: appointmentTime,
-          service_id: serviceId ? Number(serviceId) : undefined,
+          service_id: Number(serviceId),
           location_id: defaultLocationId ?? selectedPatient.location_id,
-          onsite_type: onsiteType,
+          onsite_type: 'onsite',
           pharmacy_id: pharmacyId ? Number(pharmacyId) : null,
           intake: Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
         }),
@@ -334,6 +354,10 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       toast.error(t('nurse_walkin.date_required'))
       return
     }
+    if (!serviceId) {
+      toast.error(t('patient_register.treatment_type_required'))
+      return
+    }
     if (isFutureAppointmentDate(appointmentDate)) {
       setShowFutureConfirm(true)
       return
@@ -342,9 +366,6 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   }
 
   if (!isOpen) return null
-
-  const serviceTitle = (s: ServiceRow) =>
-    language === 'es' && s.title_es ? s.title_es : s.title_en
 
   return (
     <div
@@ -539,24 +560,22 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.service')}</label>
-                    <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className={`${INPUT} mt-1`}>
+                    <label className="text-xs font-semibold text-slate-600">{t('patient_register.treatment_type')} *</label>
+                    <select
+                      value={serviceId}
+                      onChange={(e) => setServiceId(e.target.value)}
+                      disabled={optionsLoading || services.length === 0}
+                      className={`${INPUT} mt-1`}
+                      required
+                    >
+                      {services.length === 0 ? (
+                        <option value="">{t('patient_register.treatment_type_ph')}</option>
+                      ) : null}
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>
                           {serviceTitle(s)}
                         </option>
                       ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.visit_type')}</label>
-                    <select
-                      value={onsiteType}
-                      onChange={(e) => setOnsiteType(e.target.value as 'onsite' | 'telemedicine')}
-                      className={`${INPUT} mt-1`}
-                    >
-                      <option value="onsite">{t('nurse_walkin.onsite')}</option>
-                      <option value="telemedicine">{t('nurse_walkin.telemedicine')}</option>
                     </select>
                   </div>
                 </div>
@@ -628,7 +647,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
             <button
               type="button"
               onClick={handleCreateClick}
-              disabled={submitting}
+              disabled={submitting || !serviceId}
               className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
             >
               {submitting ? t('common.saving') : t('nurse_walkin.create_encounter')}
@@ -661,7 +680,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 <button
                   type="button"
                   onClick={() => void submitWalkIn()}
-                  disabled={submitting}
+                  disabled={submitting || !serviceId}
                   className="h-10 px-5 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] disabled:opacity-50"
                 >
                   {submitting ? t('common.saving') : t('nurse_walkin.future_appointment_confirm')}

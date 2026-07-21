@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { compareActivityDesc, latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
 
 export const PATIENT_ENCOUNTER_SELECT = `*, appointments (*), doctors (*)`
 
@@ -50,9 +51,15 @@ export async function loadEncountersForPatient<T = Record<string, unknown>>(
   addRows(byPatientId as T[] | null)
 
   merged.sort((a, b) => {
-    const aTime = new Date((a as { created_at?: string | null }).created_at ?? 0).getTime()
-    const bTime = new Date((b as { created_at?: string | null }).created_at ?? 0).getTime()
-    return bTime - aTime
+    const aTime = latestActivityTimestamp(
+      (a as { updated_at?: string | null }).updated_at,
+      (a as { created_at?: string | null }).created_at
+    )
+    const bTime = latestActivityTimestamp(
+      (b as { updated_at?: string | null }).updated_at,
+      (b as { created_at?: string | null }).created_at
+    )
+    return new Date(bTime).getTime() - new Date(aTime).getTime()
   })
 
   return merged

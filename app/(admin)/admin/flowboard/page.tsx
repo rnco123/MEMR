@@ -30,6 +30,8 @@ import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
 import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
 import { formatDobShort } from '@/lib/datetime/date-input'
+import { flowboardServiceTitle } from '@/lib/flowboard/service-title'
+import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
 
 type Appointment = FlowboardKanbanAppointment & {
   created_at?: string
@@ -63,7 +65,7 @@ export default function AdminFlowboardPage() {
     useAiPatientSearchParse(searchQuery)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterLocationId, setFilterLocationId] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
+  const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [pageSize, setPageSize] = useState(10)
   const [page, setPage] = useState(1)
   const [selectedEncounter, setSelectedEncounter] = useState<{
@@ -167,6 +169,9 @@ export default function AdminFlowboardPage() {
     }
 
     switch (sortBy) {
+      case 'recent':
+        result = [...result].sort(compareActivityDesc)
+        break
       case 'time':
         result = [...result].sort((a, b) => {
           const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
@@ -182,12 +187,16 @@ export default function AdminFlowboardPage() {
         })
         break
       case 'treatment':
-        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
+        result = [...result].sort((a, b) =>
+          flowboardServiceTitle(a, language, a.location_tenant_id).localeCompare(
+            flowboardServiceTitle(b, language, b.location_tenant_id)
+          )
+        )
         break
     }
 
     return result
-  }, [appointments, parsedSearch, debouncedQuery, filterStatus, filterLocationId, sortBy])
+  }, [appointments, parsedSearch, debouncedQuery, filterStatus, filterLocationId, sortBy, language])
 
   const paginatedAppointments = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -234,11 +243,12 @@ export default function AdminFlowboardPage() {
                 <select
                   value={sortBy}
                   onChange={(e) => {
-                    setSortBy(e.target.value as 'time' | 'name' | 'treatment')
+                    setSortBy(e.target.value as 'recent' | 'time' | 'name' | 'treatment')
                     setPage(1)
                   }}
                   className={FLOWBOARD_SELECT_CLASS}
                 >
+                  <option value="recent">{t('flow.sort_recent')}</option>
                   <option value="time">{t('admin.flow.sort_time')}</option>
                   <option value="name">{t('admin.flow.sort_name')}</option>
                   <option value="treatment">{t('admin.flow.sort_treatment')}</option>
@@ -404,12 +414,18 @@ export default function AdminFlowboardPage() {
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-2 text-sm">
                       <div className="flex items-center gap-2 text-slate-500">
                         <span>{formatDate(appointment.appointment_date)}</span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-500">
                         <span>{appointment.appointment_time ? appointment.appointment_time.slice(0, 5) : '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-600 font-medium">
+                        <span className="truncate">
+                          {flowboardServiceTitle(appointment, language, appointment.location_tenant_id) ||
+                            t('common.em_dash')}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-500">
                         <span>{appointment.patient?.phone || '—'}</span>

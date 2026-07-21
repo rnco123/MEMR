@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from 'react'
 import { ENCOUNTER_STATUSES, getStatusVisualStyle } from '@/lib/encounter-status'
 import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { useT } from '@/lib/i18n'
+import { flowboardServiceTitle } from '@/lib/flowboard/service-title'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
 export type FlowboardKanbanAppointment = {
@@ -12,6 +13,9 @@ export type FlowboardKanbanAppointment = {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type?: string | null
+  service_title_en?: string | null
+  service_title_es?: string | null
+  location_tenant_id?: number | null
   encounter_status?: string | null
   encounter_id?: number | null
   assigned_doctor?: { full_name: string } | null
@@ -269,6 +273,7 @@ function KanbanCard({
   onViewClick?: (appointment: FlowboardKanbanAppointment, e: React.MouseEvent) => void
   renderCardFooter?: (appointment: FlowboardKanbanAppointment) => ReactNode
 }) {
+  const { language } = useT()
   const visual = getStatusVisualStyle(resolveKanbanStatus(appointment))
   const awaitingEncounter = isAwaitingEncounter(appointment)
   const initials = appointment.patient
@@ -342,11 +347,19 @@ function KanbanCard({
         {appointment.assigned_doctor?.full_name && (
           <p className="text-emerald-700 font-medium truncate">Dr. {appointment.assigned_doctor.full_name}</p>
         )}
-        {appointment.onsite_type && (
-          <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-medium">
-            {appointment.onsite_type}
-          </span>
-        )}
+        {(() => {
+          const treatmentType = flowboardServiceTitle(
+            appointment,
+            language,
+            appointment.location_tenant_id
+          )
+          if (!treatmentType) return null
+          return (
+            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-violet-50 text-violet-800 border border-violet-100 text-[10px] font-medium">
+              {treatmentType}
+            </span>
+          )
+        })()}
         {awaitingEncounter && (
           <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-medium">
             {pendingEncounterLabel}
