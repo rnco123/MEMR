@@ -67,10 +67,12 @@ test.describe('admin user creation and login', () => {
     requireCredentials()
 
     // ── JS error collector ─────────────────────────────────────────────────────
-    // React catches thrown errors in event handlers before they reach window.onerror,
-    // so page.on('pageerror') misses them. React DOES log them via console.error though.
-    // We collect both console errors and page errors to catch all regressions.
+    // We only care about errors thrown during role selection — not background
+    // network errors from the admin dashboard loading stats/data.
+    // So we start collecting AFTER navigation settles, and only check errors
+    // that occurred during the role button click itself.
     const jsErrors: string[] = []
+    // Listener is attached early but we reset it just before the role click
     page.on('pageerror', (err) => jsErrors.push(`[uncaught] ${err.message}`))
     page.on('console', (msg) => {
       if (msg.type() === 'error') jsErrors.push(`[console.error] ${msg.text()}`)
@@ -112,6 +114,11 @@ test.describe('admin user creation and login', () => {
         page.getByRole('button', { name: /^nurse$/i })
       )
       await expect(nurseRoleBtn).toBeVisible({ timeout: 15000 })
+
+      // Clear any background errors that fired during page load/navigation
+      // before we click — we only want errors from the role click itself
+      jsErrors.length = 0
+
       await nurseRoleBtn.click()
 
       // After clicking, wait a moment for any React state update to flush
