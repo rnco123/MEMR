@@ -66,6 +66,14 @@ test.describe('admin user creation and login', () => {
   test('admin can create a user and the new user can log in', async ({ page, request }) => {
     requireCredentials()
 
+    // ── JS error collector ─────────────────────────────────────────────────────
+    // Catches any uncaught browser exceptions (e.g. thrown inside onClick handlers).
+    // We assert this list is empty before form submission so that silent regressions
+    // — where the app throws but still completes the action — are not ignored.
+    const jsErrors: string[] = []
+    page.on('pageerror', (err) => jsErrors.push(err.message))
+    // ──────────────────────────────────────────────────────────────────────────
+
     const created = makeUniqueUser()
     let createdUid: string | null = null
 
@@ -103,15 +111,21 @@ test.describe('admin user creation and login', () => {
       await expect(nurseRoleBtn).toBeVisible({ timeout: 15000 })
       await nurseRoleBtn.click()
 
-      // If the bug is present, a "Failed to select role" error message appears
-      await expect(
-        page.getByText('Failed to select role'),
-        'Role selection threw an error — intentional regression is present'
-      ).not.toBeVisible({ timeout: 3000 })
+      // After clicking, wait a moment for any React state update to flush
+      await page.waitForTimeout(500)
 
-      // Confirm the role button now appears selected (has the active class styling)
-      // and no JS error dialog appeared
-      await expect(nurseRoleBtn).toBeVisible({ timeout: 5000 })
+      // The error div has no testid — locate it precisely by its red styling + exact text
+      // so we don't accidentally match hidden <option> elements or other text nodes.
+      const roleErrorDiv = page.locator(
+        'div.text-red-600, div.text-red-500, [class*="text-red"]'
+      ).filter({ hasText: /failed to select role/i })
+
+      // Assert the error element does not exist in the DOM at all.
+      // If the bug is present, setFormError() renders this div and this will fail.
+      await expect(
+        roleErrorDiv,
+        'Role selection error message appeared — regression is present in onClick handler'
+      ).toHaveCount(0)
       // ──────────────────────────────────────────────────────────────────────
 
       // Form fields: testid on local, placeholder on deployed
@@ -127,6 +141,15 @@ test.describe('admin user creation and login', () => {
       await nameInput.fill(created.name)
       await emailInput.fill(created.email)
       await passwordInput.fill(created.password)
+
+      // ── Assert no JS errors occurred during form interaction ───────────────
+      // Any thrown exceptions during role selection, field input, etc. must be
+      // caught here before we submit. A clean form path must be error-free.
+      expect(
+        jsErrors,
+        `JS errors occurred before form submission:\n${jsErrors.join('\n')}`
+      ).toHaveLength(0)
+      // ──────────────────────────────────────────────────────────────────────
 
       // Set up response listener before clicking — use broad URL match in case
       // the dev server resolves to localhost vs 127.0.0.1

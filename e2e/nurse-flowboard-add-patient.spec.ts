@@ -175,29 +175,27 @@ test.describe('nurse flowboard — add new patient', () => {
       timeout: 20000,
     })
 
-    // Document Label — the second combobox inside the document uploads section
+    // Document Label — select 'ID' from the combobox inside the document uploads section
     const docLabelSelect = page.locator('section').filter({ hasText: /document uploads/i }).getByRole('combobox')
     await docLabelSelect.selectOption('ID')
 
-    // Upload a simple text file as a dummy document
+    // Queue a dummy file via the hidden file input — do NOT use noWaitAfter so
+    // the onChange fires synchronously and pendingFiles state updates before we proceed
     const fileInput = page.locator('input[type="file"]')
-    await fileInput.setInputFiles(
-      { name: 'patient-id.txt', mimeType: 'text/plain', buffer: Buffer.from('Ali Hassan - Patient ID document') },
-      { noWaitAfter: true }
-    )
+    await fileInput.setInputFiles({
+      name: 'patient-id.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('Ali Hassan - Patient ID document'),
+    })
 
-    // Wait for "Upload & finish" or fall back to "Skip documents" if file queuing failed in headless
+    // Wait for the file list UI to confirm the file was queued into pendingFiles state.
+    // The modal renders "{count} file(s) ready" only when pendingFiles.length > 0.
+    await expect(page.getByText(/1 file\(s\) ready/i)).toBeVisible({ timeout: 15000 })
+
+    // Button now reads "Upload & finish" (not "Finish") — click to upload and close wizard
     const uploadFinishBtn = page.getByRole('button', { name: /upload.*finish/i })
-    const skipBtn = page.getByRole('button', { name: /skip documents/i })
-
-    const uploadVisible = await uploadFinishBtn.isVisible({ timeout: 15000 }).catch(() => false)
-    if (uploadVisible) {
-      await uploadFinishBtn.click()
-    } else {
-      // File didn't queue in headless — just skip documents
-      await expect(skipBtn).toBeVisible({ timeout: 15000 })
-      await skipBtn.click()
-    }
+    await expect(uploadFinishBtn).toBeVisible({ timeout: 5000 })
+    await uploadFinishBtn.click()
 
     // ── Wizard closes → back on the flowboard ─────────────────────────────────
     await expect(page.getByRole('heading', { name: /register new patient/i })).toBeHidden({
