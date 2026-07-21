@@ -145,16 +145,20 @@ test.describe('admin user creation and login', () => {
       await passwordInput.fill(created.password)
 
       // ── Assert no JS errors occurred during form interaction ───────────────
-      // Filter to errors that are clearly from our regression, not React internals
-      // or unrelated network noise. The regression throws: 'Create user role selection failed'
-      const regressionErrors = jsErrors.filter(e =>
-        e.toLowerCase().includes('role') ||
-        e.toLowerCase().includes('failed to select') ||
-        e.toLowerCase().includes('create user role')
-      )
+      // React swallows thrown errors from event handlers before they reach window.onerror
+      // but re-emits them via console.error. Filter out known React framework noise
+      // (act() warnings, hydration messages) and flag anything from our app code.
+      const regressionErrors = jsErrors.filter(e => {
+        const lower = e.toLowerCase()
+        // Skip known React/Next.js internal noise
+        if (lower.includes('act(') || lower.includes('hydrat') || lower.includes('warning:')) return false
+        // Skip network errors unrelated to our flow
+        if (lower.includes('neterr') || lower.includes('err_')) return false
+        return true
+      })
       expect(
         regressionErrors,
-        `Role-related JS/console errors before form submission:\n${regressionErrors.join('\n')}`
+        `Unexpected JS/console errors before form submission:\n${regressionErrors.join('\n')}`
       ).toHaveLength(0)
       // ──────────────────────────────────────────────────────────────────────
 
