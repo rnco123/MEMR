@@ -41,6 +41,7 @@ export const PATIENT_DOCUMENT_LABELS = [
   'id_document',
   'previous_medical_records',
   'imaging',
+  'future_appointments',
   'other',
 ] as const
 

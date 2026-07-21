@@ -66,6 +66,7 @@ const DOCUMENT_UPLOAD_OPTIONS: Array<{ value: PatientDocumentLabel; labelKey: st
   { value: 'lab_result', labelKey: 'patient_file.doc_label_lab_result' },
   { value: 'xray', labelKey: 'patient_file.doc_label_xray' },
   { value: 'imaging', labelKey: 'patient_file.doc_label_imaging' },
+  { value: 'future_appointments', labelKey: 'patient_file.doc_label_future_appointments' },
   { value: 'immigration', labelKey: 'patient_file.doc_label_immigration' },
   { value: 'i693', labelKey: 'patient_file.doc_label_i693' },
   { value: 'other', labelKey: 'patient_file.doc_label_other' },

@@ -195,6 +195,7 @@ const en: Dictionary = {
   'patient_file.doc_label_id_document': 'ID',
   'patient_file.doc_label_previous_medical_records': 'Previous Medical Records',
   'patient_file.doc_label_imaging': 'Imaging',
+  'patient_file.doc_label_future_appointments': 'Future appointments',
   'patient_file.doc_label_other': 'Other',
 
   // ---- patient source / manual registration ----
@@ -740,6 +741,8 @@ const en: Dictionary = {
   'i693.wf_move_failed': 'Could not move case. Please try again.',
   'i693.wf_select': 'Select',
   'i693.wf_select_form': 'Select form for {name}',
+  'i693.wf_select_all_delivered': 'Select all',
+  'i693.wf_select_all_delivered_aria': 'Select all delivered forms',
   'i693.wf_close_selected': 'Close selected forms',
   'i693.wf_closing': 'Closing forms…',
   'i693.wf_close_confirm':
@@ -822,6 +825,7 @@ const en: Dictionary = {
   'i693.splitview_zoom_150': '150%',
   'i693.splitview_contain_hint': 'Full document fits in panel',
   'i693.splitview_pan_hint': 'Drag to move when zoomed in',
+  'i693.splitview_resize': 'Resize split panels',
   'i693.pdf_overlay_filled': 'Official I-693 PDF filled from your digital form',
   'i693.pdf_generated_hint':
     'Summary PDF generated. Add public/forms/i-693-template.pdf for official USCIS field mapping.',
@@ -1992,6 +1996,7 @@ const es: Dictionary = {
   'patient_file.doc_label_id_document': 'Identificación',
   'patient_file.doc_label_previous_medical_records': 'Expedientes médicos previos',
   'patient_file.doc_label_imaging': 'Imágenes',
+  'patient_file.doc_label_future_appointments': 'Citas futuras',
   'patient_file.doc_label_other': 'Otro',
 
   'patient_source.qr': 'QR',
@@ -2537,6 +2542,8 @@ const es: Dictionary = {
   'i693.wf_move_failed': 'No se pudo mover el caso. Inténtelo de nuevo.',
   'i693.wf_select': 'Seleccionar',
   'i693.wf_select_form': 'Seleccionar formulario de {name}',
+  'i693.wf_select_all_delivered': 'Seleccionar todos',
+  'i693.wf_select_all_delivered_aria': 'Seleccionar todos los formularios entregados',
   'i693.wf_close_selected': 'Cerrar formularios seleccionados',
   'i693.wf_closing': 'Cerrando formularios…',
   'i693.wf_close_confirm':
@@ -2620,6 +2627,7 @@ const es: Dictionary = {
   'i693.splitview_zoom_150': '150%',
   'i693.splitview_contain_hint': 'El documento completo cabe en el panel',
   'i693.splitview_pan_hint': 'Arrastre para mover cuando esté ampliado',
+  'i693.splitview_resize': 'Redimensionar paneles',
   'i693.pdf_overlay_filled': 'PDF I-693 oficial completado desde el formulario digital',
   'i693.pdf_generated_hint': 'PDF resumen generado. Agregue plantilla USCIS en public/forms/i-693-template.pdf',
   'i693.pdf_template_hint':

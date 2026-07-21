@@ -22,11 +22,24 @@ import { useT } from '@/lib/i18n'
 
 const SPLIT_VIEW_SCALE = 1.05
 const VIEWPORT_PADDING = 16
-const ZOOM_150_SCALE = 1.5
 
-type ViewMode = 'contain' | 'fit' | 'zoom150'
+/** Discrete zoom steps: viewport-relative modes first, then absolute % of rendered content. */
+type ViewMode = 'contain' | 'fit' | 50 | 75 | 100 | 125 | 150 | 175 | 200 | 250 | 300 | 400
 
-const VIEW_MODES: ViewMode[] = ['contain', 'fit', 'zoom150']
+const VIEW_MODES: ViewMode[] = [
+  'contain',
+  50,
+  75,
+  'fit',
+  100,
+  125,
+  150,
+  175,
+  200,
+  250,
+  300,
+  400,
+]
 
 type Size = { w: number; h: number }
 
@@ -132,7 +145,7 @@ export function I693SplitView({
   const displayScale = useMemo(() => {
     if (viewMode === 'contain') return containScale
     if (viewMode === 'fit') return fitScale
-    return ZOOM_150_SCALE
+    return viewMode / 100
   }, [containScale, fitScale, viewMode])
 
   const scaledContent = useMemo(
@@ -156,7 +169,7 @@ export function I693SplitView({
     const x =
       VIEWPORT_PADDING + Math.max(0, (availSize.w - scaledContent.w) / 2)
     const y =
-      viewMode === 'contain'
+      scaledContent.h <= availSize.h
         ? VIEWPORT_PADDING + Math.max(0, (availSize.h - scaledContent.h) / 2)
         : VIEWPORT_PADDING
 
@@ -167,7 +180,6 @@ export function I693SplitView({
     contentSize.w,
     scaledContent.h,
     scaledContent.w,
-    viewMode,
     viewportSize.w,
   ])
 
@@ -343,14 +355,16 @@ export function I693SplitView({
     }
   }, [activeIndex, hasSelection, item, items, measureSizes, t])
 
+  const zoomIndex = VIEW_MODES.indexOf(viewMode)
+  const canZoomOut = zoomIndex > 0
+  const canZoomIn = zoomIndex >= 0 && zoomIndex < VIEW_MODES.length - 1
+
   const zoomOut = () => {
-    const index = VIEW_MODES.indexOf(viewMode)
-    if (index > 0) setViewMode(VIEW_MODES[index - 1]!)
+    if (canZoomOut) setViewMode(VIEW_MODES[zoomIndex - 1]!)
   }
 
   const zoomIn = () => {
-    const index = VIEW_MODES.indexOf(viewMode)
-    if (index < VIEW_MODES.length - 1) setViewMode(VIEW_MODES[index + 1]!)
+    if (canZoomIn) setViewMode(VIEW_MODES[zoomIndex + 1]!)
   }
 
   const zoomLabel =
@@ -358,7 +372,7 @@ export function I693SplitView({
       ? t('i693.splitview_zoom_contain')
       : viewMode === 'fit'
         ? t('i693.splitview_zoom_fit')
-        : t('i693.splitview_zoom_150')
+        : `${viewMode}%`
 
   if (items.length === 0) return null
 
@@ -491,7 +505,7 @@ export function I693SplitView({
               <button
                 type="button"
                 onClick={zoomOut}
-                disabled={viewMode === 'contain'}
+                disabled={!canZoomOut}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 title={t('i693.splitview_zoom_out')}
                 aria-label={t('i693.splitview_zoom_out')}
@@ -504,7 +518,7 @@ export function I693SplitView({
               <button
                 type="button"
                 onClick={zoomIn}
-                disabled={viewMode === 'zoom150'}
+                disabled={!canZoomIn}
                 className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
                 title={t('i693.splitview_zoom_in')}
                 aria-label={t('i693.splitview_zoom_in')}

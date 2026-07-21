@@ -1,14 +1,14 @@
--- Keep the database constraint aligned with PATIENT_DOCUMENT_LABELS used by
--- both the patient chart and flowboard registration upload interfaces.
+-- Future appointments document folder (stored in document_category).
+-- Live schema uses document_category; app maps it as document_label in the API.
 
 ALTER TABLE public.patient_documents
-  DROP CONSTRAINT IF EXISTS patient_documents_document_label_check;
+  DROP CONSTRAINT IF EXISTS patient_documents_document_category_check;
 
 ALTER TABLE public.patient_documents
-  ADD CONSTRAINT patient_documents_document_label_check
+  ADD CONSTRAINT patient_documents_document_category_check
   CHECK (
-    document_label IS NULL
-    OR document_label IN (
+    document_category IS NULL
+    OR document_category IN (
       'image',
       'report',
       'bill',
