@@ -4,9 +4,9 @@ on:
   push:
     branches:
       - qa
-  # pull_request:
-  #   branches:
-  #     - qa
+  pull_request:
+    branches:
+      - qa
 
 jobs:
   playwright:
@@ -37,8 +37,18 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Run nurse E2E tests against deployed URL
+      - name: Run admin user creation test
+        run: npx playwright test e2e/admin-user-create-login.spec.ts
+        env:
+          CI: true
+
+      - name: Run nurse flowboard add patient test
         run: npx playwright test e2e/nurse-flowboard-add-patient.spec.ts
+        env:
+          CI: true
+
+      - name: Run nurse flowboard add encounter test
+        run: npx playwright test e2e/nurse-flowboard-add-encounter.spec.ts
         env:
           CI: true
 
