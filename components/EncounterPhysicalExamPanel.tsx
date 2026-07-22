@@ -31,7 +31,7 @@ function StatusBtn({
     A:  'bg-red-100 text-red-800 border-red-400 font-bold ring-1 ring-red-400',
     NA: 'bg-slate-200 text-slate-600 border-slate-400 font-bold ring-1 ring-slate-400',
   }
-  const baseClass = 'w-8 h-7 text-xs rounded border transition-all disabled:opacity-50 disabled:cursor-not-allowed'
+  const baseClass = 'w-9 h-8 text-sm rounded border transition-all disabled:opacity-50 disabled:cursor-not-allowed'
   const activeClass = active ? colorMap[value!] : 'border-slate-200 text-slate-400 hover:border-slate-400 hover:text-slate-600 bg-white'
 
   return (
@@ -272,7 +272,7 @@ export function EncounterPhysicalExamPanel({
         type="button"
         disabled={locked || saving}
         onClick={() => onAll('N')}
-        className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 text-[10px] font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-2.5 py-1 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 text-xs font-semibold hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {t('encounter_modal.pe_all_normal')}
       </button>
@@ -280,7 +280,7 @@ export function EncounterPhysicalExamPanel({
         type="button"
         disabled={locked || saving}
         onClick={() => onAll('A')}
-        className="px-2 py-0.5 rounded border border-red-300 bg-red-50 text-red-800 text-[10px] font-semibold hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        className="px-2.5 py-1 rounded border border-red-300 bg-red-50 text-red-800 text-xs font-semibold hover:bg-red-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {t('encounter_modal.pe_all_abnormal')}
       </button>
@@ -308,7 +308,7 @@ export function EncounterPhysicalExamPanel({
               type="button"
               disabled={locked || saving}
               onClick={() => toggleFinding(section, rowKey, finding.label)}
-              className={`px-2 py-0.5 rounded-full border text-[10px] font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`px-2.5 py-1 rounded-full border text-xs font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
                 active
                   ? 'bg-red-100 text-red-800 border-red-400 ring-1 ring-red-400'
                   : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
@@ -326,14 +326,14 @@ export function EncounterPhysicalExamPanel({
     const status = (rosExam.ros?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px] align-top">{row.label}</td>
-        <td className="py-1.5 pr-1 w-9 text-center align-top">
+        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{row.label}</td>
+        <td className="py-2 pr-1.5 w-10 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setRosStatus(row.key, v)} />
         </td>
-        <td className="py-1.5 pr-2 w-9 text-center align-top">
+        <td className="py-2 pr-2 w-10 text-center align-top">
           <StatusBtn value="A" current={status} disabled={locked || saving} onChange={v => setRosStatus(row.key, v)} />
         </td>
-        <td className="py-1.5">
+        <td className="py-2">
           {renderFindingsCapsules('ros', row.key, row.findings)}
           {row.extras?.map(ex => (
             <input
@@ -343,7 +343,7 @@ export function EncounterPhysicalExamPanel({
               disabled={locked || saving}
               value={(rosExam.ros?.[ex.key] as string | null | undefined) ?? ''}
               onChange={e => setRosText(ex.key, e.target.value)}
-              className="mt-1 w-full text-xs bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#2E6EF3] disabled:opacity-50"
+              className="mt-1.5 w-full text-sm bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#2E6EF3] disabled:opacity-50"
             />
           ))}
         </td>
@@ -355,14 +355,14 @@ export function EncounterPhysicalExamPanel({
     const status = (rosExam.exam?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-1.5 pr-2 text-xs font-semibold text-slate-700 whitespace-nowrap w-[90px] align-top">{row.label}</td>
-        <td className="py-1.5 pr-1 w-9 text-center align-top">
+        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{row.label}</td>
+        <td className="py-2 pr-1.5 w-10 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setExamStatus(row.key, v)} />
         </td>
-        <td className="py-1.5 pr-2 w-9 text-center align-top">
+        <td className="py-2 pr-2 w-10 text-center align-top">
           <StatusBtn value="A" current={status} disabled={locked || saving} onChange={v => setExamStatus(row.key, v)} />
         </td>
-        <td className="py-1.5">
+        <td className="py-2">
           {renderFindingsCapsules('exam', row.key, row.findings)}
           {row.extras?.map(ex => (
             <input
@@ -372,7 +372,7 @@ export function EncounterPhysicalExamPanel({
               disabled={locked || saving}
               value={(rosExam.exam?.[ex.key] as string | null | undefined) ?? ''}
               onChange={e => setExamText(ex.key, e.target.value)}
-              className="mt-1 w-full text-xs bg-white border border-slate-200 rounded px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-[#2E6EF3] disabled:opacity-50"
+              className="mt-1.5 w-full text-sm bg-white border border-slate-200 rounded-lg px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-[#2E6EF3] disabled:opacity-50"
             />
           ))}
         </td>
@@ -420,39 +420,39 @@ export function EncounterPhysicalExamPanel({
       ) : (
         <>
           {/* Legend */}
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
-            <span className="flex items-center gap-1">
-              <span className="inline-flex items-center justify-center w-6 h-5 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-bold text-[10px]">N</span>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-slate-600">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-bold text-xs">N</span>
               Normal
             </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-flex items-center justify-center w-6 h-5 rounded border border-red-400 bg-red-100 text-red-800 font-bold text-[10px]">A</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-red-400 bg-red-100 text-red-800 font-bold text-xs">A</span>
               Abnormal
             </span>
-            <span className="flex items-center gap-1">
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full border border-red-400 bg-red-100 text-red-800 font-medium text-[10px]">Finding</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full border border-red-400 bg-red-100 text-red-800 font-medium text-xs">Finding</span>
               Click a finding to mark it abnormal
             </span>
-            <span className="text-slate-400">(click again to deselect)</span>
+            <span className="text-slate-400 text-xs">(click again to deselect)</span>
           </div>
 
           {/* Two-column ROS / EXAM tables */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
             {/* ROS */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+              <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">ROS</span>
+                  <span className="text-sm font-bold text-slate-800 uppercase tracking-wide">ROS</span>
                   {!locked && renderBulkActions(setAllRos)}
                 </div>
                 <div className="flex items-center">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1" aria-hidden />
-                  <span className="w-9 text-center text-[10px] font-semibold text-slate-500">N</span>
-                  <span className="w-9 text-center text-[10px] font-semibold text-slate-500 mr-2">A</span>
-                  <span className="text-[10px] font-semibold text-slate-500 flex-1">Findings</span>
+                  <span className="text-sm font-bold text-slate-700 uppercase tracking-wide flex-1" aria-hidden />
+                  <span className="w-10 text-center text-xs font-semibold text-slate-500">N</span>
+                  <span className="w-10 text-center text-xs font-semibold text-slate-500 mr-2">A</span>
+                  <span className="text-xs font-semibold text-slate-500 flex-1">Findings</span>
                 </div>
               </div>
-              <div className="px-3">
+              <div className="px-4 py-1">
                 <table className="w-full">
                   <tbody>
                     {ROS_ROWS.map(row => renderRosRow(row))}
@@ -463,19 +463,19 @@ export function EncounterPhysicalExamPanel({
 
             {/* EXAM */}
             <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+              <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200">
                 <div className="flex items-center justify-between gap-2 mb-2">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">EXAM</span>
+                  <span className="text-sm font-bold text-slate-800 uppercase tracking-wide">EXAM</span>
                   {!locked && renderBulkActions(setAllExam)}
                 </div>
                 <div className="flex items-center">
-                  <span className="text-xs font-bold text-slate-700 uppercase tracking-wider flex-1" aria-hidden />
-                  <span className="w-9 text-center text-[10px] font-semibold text-slate-500">N</span>
-                  <span className="w-9 text-center text-[10px] font-semibold text-slate-500 mr-2">A</span>
-                  <span className="text-[10px] font-semibold text-slate-500 flex-1">Findings</span>
+                  <span className="text-sm font-bold text-slate-700 uppercase tracking-wide flex-1" aria-hidden />
+                  <span className="w-10 text-center text-xs font-semibold text-slate-500">N</span>
+                  <span className="w-10 text-center text-xs font-semibold text-slate-500 mr-2">A</span>
+                  <span className="text-xs font-semibold text-slate-500 flex-1">Findings</span>
                 </div>
               </div>
-              <div className="px-3">
+              <div className="px-4 py-1">
                 <table className="w-full">
                   <tbody>
                     {EXAM_ROWS.map(row => renderExamRow(row))}

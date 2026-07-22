@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type PointerEvent,
+  type ChangeEvent,
   type WheelEvent,
 } from 'react'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -18,16 +19,39 @@ import {
   readSplitViewBytes,
 } from '@/lib/i693/split-view-document'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
+import {
+  CHART_PDF_VIEW_SCALE,
+  renderPdfPageToCanvas,
+} from '@/lib/patient-documents/pdf-canvas-render'
 import { useT } from '@/lib/i18n'
 
-const SPLIT_VIEW_SCALE = 1.05
 const VIEWPORT_PADDING = 16
 
 /** Discrete zoom steps: viewport-relative modes first, then absolute % of rendered content. */
-type ViewMode = 'contain' | 'fit' | 50 | 75 | 100 | 125 | 150 | 175 | 200 | 250 | 300 | 400
+type ViewMode =
+  | 'contain'
+  | 'fit'
+  | 25
+  | 33
+  | 50
+  | 75
+  | 100
+  | 125
+  | 150
+  | 175
+  | 200
+  | 250
+  | 300
+  | 400
+  | 450
+  | 500
+  | 600
+  | 800
 
 const VIEW_MODES: ViewMode[] = [
   'contain',
+  25,
+  33,
   50,
   75,
   'fit',
@@ -39,7 +63,17 @@ const VIEW_MODES: ViewMode[] = [
   250,
   300,
   400,
+  450,
+  500,
+  600,
+  800,
 ]
+
+function formatViewModeLabel(mode: ViewMode, t: (key: string) => string): string {
+  if (mode === 'contain') return t('i693.splitview_zoom_contain')
+  if (mode === 'fit') return t('i693.splitview_zoom_fit')
+  return `${mode}%`
+}
 
 type Size = { w: number; h: number }
 
@@ -74,6 +108,9 @@ type Props = {
   source?: I693SplitViewSource
   onSourceChange?: (source: I693SplitViewSource) => void
   showSourceToggle?: boolean
+  allowUpload?: boolean
+  onFilesSelected?: (files: File[]) => void
+  emptyHint?: string
 }
 
 export function I693SplitView({
@@ -86,10 +123,14 @@ export function I693SplitView({
   source = 'supporting',
   onSourceChange,
   showSourceToggle = false,
+  allowUpload = false,
+  onFilesSelected,
+  emptyHint,
 }: Props) {
   const { t } = useT()
   const hostRef = useRef<HTMLDivElement>(null)
   const viewportRef = useRef<HTMLDivElement>(null)
+  const uploadInputRef = useRef<HTMLInputElement>(null)
   const renderTokenRef = useRef(0)
   const panStartRef = useRef<{ x: number; y: number; panW: number; panH: number } | null>(null)
   const [loading, setLoading] = useState(false)
@@ -248,8 +289,27 @@ export function I693SplitView({
   }
 
   const handleViewportWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (!canPan) return
+    if (!event.ctrlKey && !event.metaKey) {
+      if (canPan) event.preventDefault()
+      return
+    }
     event.preventDefault()
+    const idx = VIEW_MODES.indexOf(viewMode)
+    if (idx < 0) return
+    if (event.deltaY < 0 && idx < VIEW_MODES.length - 1) {
+      setViewMode(VIEW_MODES[idx + 1]!)
+    } else if (event.deltaY > 0 && idx > 0) {
+      setViewMode(VIEW_MODES[idx - 1]!)
+    }
+  }
+
+  const resetZoom = () => setViewMode('contain')
+
+  const handleUploadChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length === 0 || !onFilesSelected) return
+    onFilesSelected(files)
   }
 
   useEffect(() => {
@@ -316,13 +376,8 @@ export function I693SplitView({
           const page = await pdf.getPage(pageNum)
           if (isStale()) return
 
-          const viewport = page.getViewport({ scale: SPLIT_VIEW_SCALE })
           const canvas = document.createElement('canvas')
-          const context = canvas.getContext('2d')
-          if (!context) continue
-
-          canvas.width = viewport.width
-          canvas.height = viewport.height
+          canvas.className = 'block'
 
           const wrapper = document.createElement('div')
           wrapper.className =
@@ -334,7 +389,7 @@ export function I693SplitView({
           wrapper.appendChild(canvas)
           host.appendChild(wrapper)
 
-          await page.render({ canvasContext: context, viewport }).promise
+          await renderPdfPageToCanvas(page, canvas, CHART_PDF_VIEW_SCALE)
         }
 
         measureSizes()
@@ -367,14 +422,10 @@ export function I693SplitView({
     if (canZoomIn) setViewMode(VIEW_MODES[zoomIndex + 1]!)
   }
 
-  const zoomLabel =
-    viewMode === 'contain'
-      ? t('i693.splitview_zoom_contain')
-      : viewMode === 'fit'
-        ? t('i693.splitview_zoom_fit')
-        : `${viewMode}%`
+  const pickHint = emptyHint ?? t('i693.splitview_pick_hint')
+  const showCanvasHand = hasSelection && !loading
 
-  if (items.length === 0) return null
+  if (items.length === 0 && !allowUpload && !showSourceToggle) return null
 
   const documentList = (
     <ul className="max-h-40 space-y-0.5 overflow-y-auto px-2 py-2">
@@ -430,7 +481,7 @@ export function I693SplitView({
             className="mt-0.5 truncate text-xs text-slate-500"
             title={hasSelection ? item?.name : undefined}
           >
-            {hasSelection ? item?.name : t('i693.splitview_pick_hint')}
+            {hasSelection ? item?.name : pickHint}
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
@@ -493,13 +544,44 @@ export function I693SplitView({
         </div>
       ) : null}
 
-      <div className="shrink-0 border-b border-violet-50 bg-slate-50">{documentList}</div>
+      {allowUpload && onFilesSelected ? (
+        <div className="flex shrink-0 items-center gap-2 border-b border-violet-50 px-4 py-2">
+          <input
+            ref={uploadInputRef}
+            type="file"
+            accept=".pdf,image/*"
+            multiple
+            className="hidden"
+            onChange={handleUploadChange}
+          />
+          <button
+            type="button"
+            onClick={() => uploadInputRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-800 hover:bg-violet-100"
+            title={t('i693.splitview_upload_hint')}
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 16V4m0 0l-4 4m4-4l4 4M4 20h16" />
+            </svg>
+            {t('i693.splitview_upload')}
+          </button>
+          {items.length === 0 ? (
+            <p className="text-[11px] text-slate-500">{t('i693.splitview_empty_hint')}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {items.length > 0 ? (
+        <div className="shrink-0 border-b border-violet-50 bg-slate-50">{documentList}</div>
+      ) : null}
 
       {hasSelection ? (
         <>
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-violet-50 bg-white px-3 py-2">
             <p className="text-[11px] text-slate-500">
               {canPan ? t('i693.splitview_pan_hint') : t('i693.splitview_contain_hint')}
+              {' · '}
+              {t('i693.splitview_zoom_wheel_hint')}
             </p>
             <div className="flex items-center gap-1">
               <button
@@ -512,9 +594,27 @@ export function I693SplitView({
               >
                 −
               </button>
-              <span className="min-w-[4.5rem] rounded-lg border border-slate-200 px-2 py-1 text-center text-xs font-medium text-slate-700">
-                {zoomLabel}
-              </span>
+              <select
+                value={String(viewMode)}
+                onChange={(event) => {
+                  const raw = event.target.value
+                  if (raw === 'contain' || raw === 'fit') {
+                    setViewMode(raw)
+                  } else {
+                    const pct = Number(raw)
+                    if (VIEW_MODES.includes(pct as ViewMode)) setViewMode(pct as ViewMode)
+                  }
+                }}
+                className="h-7 min-w-[5.5rem] max-w-[6.5rem] rounded-lg border border-slate-200 bg-white px-1.5 text-xs font-medium text-slate-700"
+                title={t('i693.splitview_zoom_level')}
+                aria-label={t('i693.splitview_zoom_level')}
+              >
+                {VIEW_MODES.map((mode) => (
+                  <option key={String(mode)} value={String(mode)}>
+                    {formatViewModeLabel(mode, t)}
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onClick={zoomIn}
@@ -525,13 +625,23 @@ export function I693SplitView({
               >
                 +
               </button>
+              <button
+                type="button"
+                onClick={resetZoom}
+                disabled={viewMode === 'contain'}
+                className="inline-flex h-7 items-center justify-center rounded-lg border border-slate-200 px-2 text-[11px] font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+                title={t('i693.splitview_zoom_reset')}
+                aria-label={t('i693.splitview_zoom_reset')}
+              >
+                {t('i693.splitview_zoom_reset')}
+              </button>
             </div>
           </div>
 
           <div
             ref={viewportRef}
             className={`relative min-h-0 flex-1 touch-none overflow-hidden bg-slate-50 ${
-              canPan ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+              showCanvasHand ? (isPanning ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
             }`}
             onPointerDown={handleViewportPointerDown}
             onPointerMove={handleViewportPointerMove}
@@ -562,7 +672,7 @@ export function I693SplitView({
         </>
       ) : (
         <div className="flex min-h-0 flex-1 items-center justify-center bg-slate-50 px-4 py-8 text-center text-xs text-slate-500">
-          {t('i693.splitview_pick_hint')}
+          {pickHint}
         </div>
       )}
     </aside>

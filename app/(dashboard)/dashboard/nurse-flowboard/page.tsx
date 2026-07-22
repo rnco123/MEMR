@@ -40,6 +40,7 @@ import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { NurseAddEncounterModal } from '@/components/NurseAddEncounterModal'
+import { NurseRegisterPatientModal } from '@/components/NurseRegisterPatientModal'
 import { formatDobShort } from '@/lib/datetime/date-input'
 
 interface Appointment {
@@ -48,9 +49,14 @@ interface Appointment {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string
+  service_id?: number | null
+  service_title_en?: string | null
+  service_title_es?: string | null
+  location_tenant_id?: number | null
   status?: string | null
   notes?: string | null
   created_at: string
+  activity_at?: string
   encounter_status?: string
   encounter_id?: number
   location_id?: number | null
@@ -96,7 +102,7 @@ function parseAppointmentDateTime(date: string | null, time: string | null): Dat
 function NurseFlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
-  const { t } = useT()
+  const { t, language } = useT()
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
@@ -119,11 +125,8 @@ function NurseFlowboardPage() {
   })
   const [assigningDoctor, setAssigningDoctor] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const {
-    parsed: parsedSearch,
-    isPending: searchPending,
-    debouncedQuery,
-  } = useAiPatientSearchParse(searchQuery, { includeProvider: true })
+  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
+    useAiPatientSearchParse(searchQuery, { includeProvider: true })
   const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [pageSize, setPageSize] = useState(25)
@@ -263,6 +266,9 @@ function NurseFlowboardPage() {
 
     // Sort (copy then sort so we return a new array and React updates the list)
     switch (sortBy) {
+      case 'recent':
+        result = [...result].sort(compareActivityDesc)
+        break
       case 'time':
         result = [...result].sort((a, b) => {
           const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
@@ -278,14 +284,12 @@ function NurseFlowboardPage() {
         })
         break
       case 'treatment':
-        result = [...result].sort((a, b) =>
-          (a.onsite_type || '').localeCompare(b.onsite_type || '')
-        )
+        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
         break
     }
 
     return result
-  }, [appointments, parsedSearch, debouncedQuery, sortBy, filterStatus])
+  }, [appointments, parsedSearch, debouncedQuery, sortBy, filterStatus, language])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -545,6 +549,7 @@ function NurseFlowboardPage() {
                   }}
                   className={FLOWBOARD_SELECT_CLASS}
                 >
+                  <option value="recent">{t('flow.sort_recent')}</option>
                   <option value="time">{t('flow.sort_time')}</option>
                   <option value="name">{t('flow.sort_name')}</option>
                   <option value="treatment">{t('flow.sort_treatment')}</option>
@@ -856,14 +861,10 @@ function NurseFlowboardPage() {
                       )}
                     </div>
 
-                    <div className="lg:col-span-2 flex flex-col justify-center">
-                      <p className="text-slate-700 text-sm">
-                        {formatDate(appointment.appointment_date)}
-                      </p>
-                      <p className="text-slate-500 text-xs">
-                        {formatTime(appointment.appointment_time)}
-                      </p>
-                    </div>
+                  <div className="lg:col-span-2 flex flex-col justify-center">
+                    <p className="text-slate-700 text-sm">{formatDate(appointment.appointment_date)}</p>
+                    <p className="text-slate-500 text-xs">{formatTime(appointment.appointment_time)}</p>
+                  </div>
 
                     <div className="lg:col-span-2 flex items-center">
                       {appointment.assigned_doctor ? (
@@ -1049,24 +1050,45 @@ function NurseFlowboardPage() {
           }}
           canJoinTelemedicine={canJoinTelemedicine(selectedEncounter.encounterStatus)}
         />
-      )}
-      {role === UserRole.NURSE && (
-        <NurseAddEncounterModal
-          isOpen={showAddVisitModal}
-          onClose={() => setShowAddVisitModal(false)}
-          defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
-          onCreated={async ({ encounterId, appointmentId, patientId }) => {
-            sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
-            await fetchAllAppointments(true)
-            setSelectedEncounter({
-              encounterId,
-              appointmentId,
-              patientId,
-              encounterStatus: 'appointment_initiated',
-            })
-          }}
-        />
-      )}
+        )}
+        {role === UserRole.NURSE && (
+          <NurseAddEncounterModal
+            isOpen={showAddVisitModal}
+            onClose={() => setShowAddVisitModal(false)}
+            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
+            onCreated={async ({ encounterId, appointmentId, patientId }) => {
+              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+              await fetchAllAppointments(true)
+              setSelectedEncounter({
+                encounterId,
+                appointmentId,
+                patientId,
+                encounterStatus: 'appointment_initiated',
+              })
+            }}
+          />
+        )}
+        {role === UserRole.NURSE && (
+          <NurseRegisterPatientModal
+            isOpen={showRegisterPatientModal}
+            onClose={() => setShowRegisterPatientModal(false)}
+            defaultLocationId={selectedLocationId === 'all' ? null : selectedLocationId}
+            onCreated={async ({ patientId, encounterId, appointmentId }) => {
+              sessionStorage.removeItem(NURSE_FLOWBOARD_CACHE_KEY)
+              await fetchAllAppointments(true)
+              if (encounterId && appointmentId) {
+                setSelectedEncounter({
+                  encounterId,
+                  appointmentId,
+                  patientId,
+                  encounterStatus: 'appointment_initiated',
+                })
+              } else {
+                router.push(`/patient-file/${patientId}`)
+              }
+            }}
+          />
+        )}
     </div>
   )
 }

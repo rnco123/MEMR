@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { loadPatientVisitStats, resolvePatientLastVisit } from '@/lib/patients/patient-visit-stats'
+import { latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,6 +39,12 @@ export async function GET(_req: NextRequest) {
         encounter_count: encounterCounts[patient.id] || 0,
         last_visit: lastVisit,
       }
+    })
+
+    rows.sort((a, b) => {
+      const aActivity = latestActivityTimestamp(a.last_visit, a.created_at)
+      const bActivity = latestActivityTimestamp(b.last_visit, b.created_at)
+      return new Date(bActivity).getTime() - new Date(aActivity).getTime()
     })
 
     return NextResponse.json({ rows, total: rows.length })

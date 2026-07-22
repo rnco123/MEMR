@@ -6,6 +6,7 @@ import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
+import { PatientPdfViewer } from '@/components/PatientPdfViewer'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
@@ -1862,7 +1863,6 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <option value="imaging">{t('patient_file.doc_label_imaging')}</option>
                                 <option value="id_document">{t('patient_file.doc_label_id_document')}</option>
                                 <option value="previous_medical_records">{t('patient_file.doc_label_previous_medical_records')}</option>
-                                <option value="future_appointments">{t('patient_file.doc_label_future_appointments')}</option>
                                 <option value="immigration">{t('patient_file.doc_label_immigration')}</option>
                                 <option value="i693">{t('patient_file.doc_label_i693')}</option>
                                 <option value="other">{t('patient_file.doc_label_other')}</option>
@@ -2031,9 +2031,8 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <p className="text-slate-500 text-sm">{t('patient_file.no_file_slot')}</p>
                               </div>
                             ) : isPdfDocument(viewingDocument) ? (
-                              <iframe
-                                src={viewingDocument.file_url}
-                                className="w-full h-full min-h-[600px] rounded-lg border border-white/10"
+                              <PatientPdfViewer
+                                url={viewingDocument.file_url}
                                 title={viewingDocument.document_name}
                               />
                             ) : isImageDocument(viewingDocument) ? (

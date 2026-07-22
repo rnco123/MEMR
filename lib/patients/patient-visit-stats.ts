@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
 
 export type PatientVisitStats = {
   encounterCounts: Record<number, number>
@@ -61,6 +62,7 @@ export async function loadPatientVisitStats(
     patient_id: number | null
     appointment_id: number | null
     created_at: string | null
+    updated_at: string | null
   }> = []
 
   const addEncounters = (
@@ -69,6 +71,7 @@ export async function loadPatientVisitStats(
       patient_id: number | null
       appointment_id: number | null
       created_at: string | null
+      updated_at: string | null
     }> | null
   ) => {
     for (const row of rows ?? []) {
@@ -78,7 +81,7 @@ export async function loadPatientVisitStats(
     }
   }
 
-  const encounterSelect = 'id, patient_id, appointment_id, created_at'
+  const encounterSelect = 'id, patient_id, appointment_id, created_at, updated_at'
 
   if (appointmentIds.length > 0) {
     const { data, error } = await admin
@@ -99,14 +102,12 @@ export async function loadPatientVisitStats(
 
   for (const encounter of encounters) {
     const patientId = resolveEncounterPatientId(encounter, appointmentIdToPatientId)
-    if (patientId == null || !encounter.created_at) continue
+    const activityAt = latestActivityTimestamp(encounter.updated_at, encounter.created_at)
+    if (patientId == null || !activityAt) continue
 
     encounterCounts[patientId] = (encounterCounts[patientId] || 0) + 1
-    if (
-      !encounterLastVisits[patientId] ||
-      encounter.created_at > encounterLastVisits[patientId]
-    ) {
-      encounterLastVisits[patientId] = encounter.created_at
+    if (!encounterLastVisits[patientId] || activityAt > encounterLastVisits[patientId]) {
+      encounterLastVisits[patientId] = activityAt
     }
   }
 

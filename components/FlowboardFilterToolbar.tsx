@@ -4,7 +4,7 @@ import type { ReactNode } from 'react'
 
 /** Shared native select styles for flowboard filter bars. */
 export const FLOWBOARD_SELECT_CLASS =
-  'h-9 w-full min-w-0 max-w-full px-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer'
+  'h-9 w-full min-w-0 max-w-full pl-2.5 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer'
 
 type FlowboardFilterToolbarProps = {
   search: ReactNode
@@ -57,7 +57,7 @@ export function FlowboardFilterField({
           ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden lg:basis-auto lg:w-auto'
           : wide
             ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden sm:basis-auto sm:w-[min(100%,14rem)]'
-            : 'flex w-full min-w-0 max-w-full shrink-0 basis-[calc(50%-0.375rem)] items-center gap-2 overflow-hidden sm:basis-auto sm:w-auto sm:max-w-[11rem]'
+            : 'flex w-full min-w-0 max-w-full shrink-0 basis-[calc(50%-0.375rem)] items-center gap-2 overflow-hidden sm:basis-auto sm:w-auto sm:max-w-[14rem]'
       }
     >
       <span className="shrink-0 text-[11px] font-medium text-slate-500 whitespace-nowrap">{label}</span>

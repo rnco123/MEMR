@@ -60,10 +60,14 @@ export async function GET(req: NextRequest) {
       doctorId = await getDoctorIdForUser(admin, user.id)
     }
 
+    const scopeParam = req.nextUrl.searchParams.get('scope')
+    const dateScope = scopeParam === 'future' ? 'future' : 'active'
+
     const data = await buildFlowboardRows(admin, scope, {
       mode,
       doctorId,
       locationFilterId: locationFilter,
+      dateScope,
     })
 
     return NextResponse.json({ data })
