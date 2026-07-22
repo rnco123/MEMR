@@ -89,6 +89,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [appointmentDate, setAppointmentDate] = useState(getTodayDate)
   const [appointmentTime, setAppointmentTime] = useState(getCurrentTime)
   const [serviceId, setServiceId] = useState('')
+  const [onsiteType, setOnsiteType] = useState<'onsite' | 'telemedicine'>('onsite')
   const [pharmacyId, setPharmacyId] = useState('')
   const [pharmacyQuery, setPharmacyQuery] = useState('')
   const [showManualPharmacy, setShowManualPharmacy] = useState(false)
@@ -113,6 +114,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     setAppointmentDate(getTodayDate())
     setAppointmentTime(getCurrentTime())
     setServiceId('')
+    setOnsiteType('onsite')
     setPharmacyId('')
     setPharmacyQuery('')
     setShowManualPharmacy(false)
@@ -335,7 +337,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           appointment_time: appointmentTime,
           service_id: Number(serviceId),
           location_id: defaultLocationId ?? selectedPatient.location_id,
-          onsite_type: 'onsite',
+          onsite_type: onsiteType,
           pharmacy_id: pharmacyId ? Number(pharmacyId) : null,
           intake: Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
         }),
