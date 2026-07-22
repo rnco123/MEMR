@@ -91,7 +91,7 @@ export async function POST(request: Request) {
       throw new AuthorizationError('Patient is outside your assigned locations')
     }
 
-    const serviceId = v.service_id
+    let serviceId = v.service_id
     if (v.pharmacy_id != null) {
       const { data: pharmacy } = await admin
         .from('pharmacy')
