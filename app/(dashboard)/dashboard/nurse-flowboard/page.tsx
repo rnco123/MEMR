@@ -42,6 +42,7 @@ import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { NurseAddEncounterModal } from '@/components/NurseAddEncounterModal'
 import { NurseRegisterPatientModal } from '@/components/NurseRegisterPatientModal'
 import { formatDobShort } from '@/lib/datetime/date-input'
+import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
 
 interface Appointment {
   id: number
@@ -143,6 +144,7 @@ function NurseFlowboardPage() {
   } | null>(null)
   const [showVitalsModal, setShowVitalsModal] = useState<number | null>(null)
   const [showAddVisitModal, setShowAddVisitModal] = useState(false)
+  const [showRegisterPatientModal, setShowRegisterPatientModal] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [displayMode, setDisplayMode] = useState<FlowboardDisplayMode>('list')
   const [selectedAppointmentIds, setSelectedAppointmentIds] = useState<Set<number>>(new Set())
