@@ -127,7 +127,7 @@ function NurseFlowboardPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
     useAiPatientSearchParse(searchQuery, { includeProvider: true })
-  const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
+  const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
