@@ -91,7 +91,7 @@ test.describe('admin user creation and login', () => {
       // admin-users-page testid exists on local; deployed uses heading text
       const usersPage = page.getByTestId('admin-users-page').or(
         page.getByRole('heading', { name: /clinical accounts|users/i })
-      )
+      ).first()
       await expect(usersPage).toBeVisible({ timeout: 30000 })
 
       // Create button: testid on local, button text on deployed
@@ -103,7 +103,7 @@ test.describe('admin user creation and login', () => {
       // Modal: testid on local, heading text on deployed
       const createModal = page.getByTestId('admin-users-create-modal').or(
         page.getByRole('heading', { name: /create user account/i }).locator('../..')
-      )
+      ).first()
       await expect(createModal).toBeVisible({ timeout: 30000 })
 
       // ── Role selection — must work without throwing an error ───────────────
