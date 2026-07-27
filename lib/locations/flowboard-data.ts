@@ -5,10 +5,20 @@ import {
   resolveEffectiveLocationId,
   type LocationScope,
 } from '@/lib/locations/scope'
+import { compareActivityDesc, latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
+
+/** Appointment date (YYYY-MM-DD) is after today in clinic (Central) time. */
+export function isFutureFlowboardRow(
+  appointmentDate: string | null | undefined,
+  todayDate = getClinicTodayDateString()
+): boolean {
+  const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
+  return Boolean(dateKey && dateKey > todayDate)
+}
 
 /**
- * Flowboard hides only past appointments that are completed.
- * Today/future and any non-completed row (including stale in-progress visits) stay visible.
+ * Flowboard: today + overdue non-completed visits only.
+ * Future-dated appointments appear on the Appointments tab until their clinic calendar day.
  */
 export function isActiveFlowboardRow(
   appointmentDate: string | null | undefined,
@@ -16,7 +26,9 @@ export function isActiveFlowboardRow(
   todayDate = getClinicTodayDateString()
 ): boolean {
   const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
-  if (!dateKey || dateKey >= todayDate) return true
+  if (!dateKey) return true
+  if (isFutureFlowboardRow(dateKey, todayDate)) return false
+  if (dateKey >= todayDate) return true
   return encounterStatus !== 'completed'
 }
 
@@ -26,7 +38,12 @@ export type FlowboardRow = {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string
+  service_id: number | null
+  service_title_en: string | null
+  service_title_es: string | null
+  location_tenant_id: number | null
   created_at: string
+  activity_at: string
   location_id: number | null
   location_title: string | null
   encounter_status: string | null
@@ -52,6 +69,8 @@ type BuildFlowboardOptions = {
   mode: 'nurse' | 'doctor' | 'admin'
   doctorId?: number | null
   locationFilterId?: number
+  /** active = flowboard (today + overdue); future = Appointments tab only */
+  dateScope?: 'active' | 'future'
 }
 
 export async function buildFlowboardRows(
@@ -61,9 +80,7 @@ export async function buildFlowboardRows(
 ): Promise<FlowboardRow[]> {
   const { data: appointments, error: appointmentsError } = await admin
     .from('appointments')
-    .select('id, patient_id, appointment_date, appointment_time, onsite_type, created_at, location_id')
-    .order('appointment_date', { ascending: true })
-    .order('appointment_time', { ascending: true })
+    .select('id, patient_id, appointment_date, appointment_time, onsite_type, service_id, created_at, location_id')
 
   if (appointmentsError) throw appointmentsError
   if (!appointments?.length) return []
@@ -71,16 +88,26 @@ export async function buildFlowboardRows(
   const patientIds = [...new Set(appointments.map((a) => a.patient_id).filter(Boolean))]
   const appointmentIds = appointments.map((a) => a.id)
 
-  const [{ data: patients }, { data: encounters }] = await Promise.all([
+  const serviceIds = [...new Set(appointments.map((a) => a.service_id).filter(Boolean))] as number[]
+
+  const [{ data: patients }, { data: encounters }, { data: services }] = await Promise.all([
     admin
       .from('patients')
       .select('id, first_name, last_name, email, phone, date_of_birth, location_id, created_by_source')
       .in('id', patientIds),
     admin
       .from('encounters')
-      .select('id, appointment_id, status, doctor_id')
+      .select('id, appointment_id, status, doctor_id, created_at, updated_at')
       .in('appointment_id', appointmentIds),
+    serviceIds.length > 0
+      ? admin.from('services').select('id, title_en, title_es').in('id', serviceIds)
+      : Promise.resolve({ data: [] as { id: number; title_en: string; title_es: string | null }[] }),
   ])
+
+  const servicesById: Record<number, { title_en: string; title_es: string | null }> = {}
+  for (const service of services ?? []) {
+    servicesById[service.id] = { title_en: service.title_en, title_es: service.title_es }
+  }
 
   const locationIds = new Set<number>()
   for (const p of patients ?? []) {
@@ -91,13 +118,15 @@ export async function buildFlowboardRows(
   }
 
   const locationTitles: Record<number, string> = {}
+  const locationTenantIds: Record<number, number | null> = {}
   if (locationIds.size > 0) {
     const { data: locs } = await admin
       .from('locations')
-      .select('id, title')
+      .select('id, title, tenant_id')
       .in('id', [...locationIds])
     for (const loc of locs ?? []) {
       locationTitles[loc.id] = loc.title
+      locationTenantIds[loc.id] = (loc as { tenant_id?: number | null }).tenant_id ?? null
     }
   }
 
@@ -128,10 +157,15 @@ export async function buildFlowboardRows(
     }
 
     const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
+    const dateScope = options.dateScope ?? 'active'
 
-    if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) continue
+    if (dateScope === 'future') {
+      if (!isFutureFlowboardRow(appointment.appointment_date)) continue
+    } else if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) {
+      continue
+    }
 
-    if (options.mode === 'doctor') {
+    if (dateScope !== 'future' && options.mode === 'doctor') {
       if (options.doctorId == null) continue
       if (!encounter || encounter.doctor_id !== options.doctorId) continue
     }
@@ -139,13 +173,27 @@ export async function buildFlowboardRows(
     const assignedDoctor =
       encounter?.doctor_id != null ? doctorsById[encounter.doctor_id] : undefined
 
+    const service = appointment.service_id != null ? servicesById[appointment.service_id] : undefined
+
     rows.push({
       id: appointment.id,
       patient_id: appointment.patient_id,
       appointment_date: appointment.appointment_date,
       appointment_time: appointment.appointment_time,
       onsite_type: appointment.onsite_type ?? '',
+      service_id: appointment.service_id ?? null,
+      service_title_en: service?.title_en ?? null,
+      service_title_es: service?.title_es ?? null,
+      location_tenant_id:
+        effectiveLocationId != null ? locationTenantIds[effectiveLocationId] ?? null : null,
       created_at: appointment.created_at,
+      activity_at: latestActivityTimestamp(
+        appointment.created_at,
+        (encounter as { created_at?: string | null; updated_at?: string | null } | undefined)
+          ?.updated_at,
+        (encounter as { created_at?: string | null; updated_at?: string | null } | undefined)
+          ?.created_at
+      ),
       location_id: effectiveLocationId,
       location_title: effectiveLocationId != null ? locationTitles[effectiveLocationId] ?? null : null,
       encounter_status: encounter?.status ?? null,
@@ -171,6 +219,8 @@ export async function buildFlowboardRows(
         : null,
     })
   }
+
+  rows.sort(compareActivityDesc)
 
   return rows
 }

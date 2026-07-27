@@ -6,6 +6,7 @@ import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
+import { PatientPdfViewer } from '@/components/PatientPdfViewer'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
@@ -175,6 +176,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       | 'id_document'
       | 'previous_medical_records'
       | 'imaging'
+      | 'future_appointments'
       | 'other',
   })
   const [viewingDocument, setViewingDocument] = useState<PatientDocument | null>(null)
@@ -388,6 +390,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       id_document: 'bg-cyan-500/20 text-cyan-800',
       previous_medical_records: 'bg-teal-500/20 text-teal-800',
       imaging: 'bg-fuchsia-500/20 text-fuchsia-800',
+      future_appointments: 'bg-sky-500/20 text-sky-800',
       other: 'bg-gray-500/20 text-gray-300',
     }
     return colors[label] || colors.other
@@ -407,6 +410,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
         id_document: t('patient_file.doc_label_id_document'),
         previous_medical_records: t('patient_file.doc_label_previous_medical_records'),
         imaging: t('patient_file.doc_label_imaging'),
+        future_appointments: t('patient_file.doc_label_future_appointments'),
         other: t('patient_file.doc_label_other'),
       }
       return names[label] || t('patient_file.doc_label_other')
@@ -2027,9 +2031,8 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <p className="text-slate-500 text-sm">{t('patient_file.no_file_slot')}</p>
                               </div>
                             ) : isPdfDocument(viewingDocument) ? (
-                              <iframe
-                                src={viewingDocument.file_url}
-                                className="w-full h-full min-h-[600px] rounded-lg border border-white/10"
+                              <PatientPdfViewer
+                                url={viewingDocument.file_url}
                                 title={viewingDocument.document_name}
                               />
                             ) : isImageDocument(viewingDocument) ? (

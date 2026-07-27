@@ -1,7 +1,15 @@
 'use client'
 
 import 'pdfjs-dist/web/pdf_viewer.css'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
@@ -11,8 +19,11 @@ import { extractFormDataFromApi, parseFormDataFromApi, countFilledI693Fields } f
 import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
 import { I693SplitView } from '@/components/I693SplitView'
 import {
+  type I693SplitViewItem,
+  type I693SplitViewSource,
   type PatientChartDocumentRef,
   isPreviewablePatientChartDocument,
+  localFileToSplitItem,
   patientChartDocToSplitItem,
 } from '@/lib/i693/split-view-document'
 import {
@@ -42,6 +53,13 @@ import { useImmigrationWorkflowCase } from '@/lib/hooks/use-immigration-workflow
 
 const PDF_URL = '/forms/i-693-template.pdf'
 const DEFAULT_SCALE = 1.2
+/** Form pane share when split is open (rest is chart/doc pane). Either side can grow until the other hits the min. */
+const SPLIT_FORM_RATIO_DEFAULT = 0.64
+const SPLIT_FORM_RATIO_MIN = 0.22
+const SPLIT_FORM_RATIO_MAX = 0.85
+/** Visible sash width; hit area is wider for easier grabbing (VS Code–style). */
+const SPLIT_SASH_WIDTH_PX = 5
+const SPLIT_SASH_HIT_PX = 14
 
 type Props = {
   encounterId: number
@@ -136,6 +154,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const [combPlacements, setCombPlacements] = useState<I693DomCombPlacement[]>([])
   const [splitViewOpen, setSplitViewOpen] = useState(false)
   const [splitDocIndex, setSplitDocIndex] = useState<number | null>(null)
+  const [splitViewSource, setSplitViewSource] = useState<I693SplitViewSource>('patient_chart')
+  const [supportingSplitItems, setSupportingSplitItems] = useState<I693SplitViewItem[]>([])
+  const [splitFormRatio, setSplitFormRatio] = useState(SPLIT_FORM_RATIO_DEFAULT)
+  const splitRowRef = useRef<HTMLDivElement>(null)
+  const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(null)
+  const [splitResizing, setSplitResizing] = useState(false)
   const [patientId, setPatientId] = useState<number | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
@@ -570,6 +594,64 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     setSplitDocIndex(null)
   }, [])
 
+  const clampSplitFormRatio = useCallback((ratio: number) => {
+    return Math.min(SPLIT_FORM_RATIO_MAX, Math.max(SPLIT_FORM_RATIO_MIN, ratio))
+  }, [])
+
+  const onSplitResizePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      splitDragRef.current = { startX: event.clientX, startRatio: splitFormRatio }
+      setSplitResizing(true)
+      event.preventDefault()
+    },
+    [splitFormRatio]
+  )
+
+  useEffect(() => {
+    if (!splitResizing) return
+
+    const onMove = (event: PointerEvent) => {
+      const drag = splitDragRef.current
+      const row = splitRowRef.current
+      if (!drag || !row) return
+      const width = row.getBoundingClientRect().width
+      if (width <= SPLIT_SASH_HIT_PX) return
+      const deltaRatio = (event.clientX - drag.startX) / width
+      setSplitFormRatio(clampSplitFormRatio(drag.startRatio + deltaRatio))
+    }
+
+    const onUp = () => {
+      splitDragRef.current = null
+      setSplitResizing(false)
+    }
+
+    window.addEventListener('pointermove', onMove)
+    window.addEventListener('pointerup', onUp)
+    window.addEventListener('pointercancel', onUp)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('pointerup', onUp)
+      window.removeEventListener('pointercancel', onUp)
+    }
+  }, [clampSplitFormRatio, splitResizing])
+
+  const resetSplitFormRatio = useCallback(() => {
+    setSplitFormRatio(SPLIT_FORM_RATIO_DEFAULT)
+  }, [])
+
+  useEffect(() => {
+    if (!splitResizing) return
+    const prev = document.body.style.cursor
+    const prevSelect = document.body.style.userSelect
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    return () => {
+      document.body.style.cursor = prev
+      document.body.style.userSelect = prevSelect
+    }
+  }, [splitResizing])
+
   const loadPatientChartDocuments = useCallback(async (): Promise<PatientChartDocumentRef[]> => {
     if (patientId == null) return []
     setPatientChartDocsLoading(true)
@@ -593,24 +675,64 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     }
   }, [patientId, t])
 
-  const openPatientChartSplitView = useCallback(async () => {
-    // Always refresh so newly uploaded files appear and one-hour signed URLs do not
-    // become stale while the editor remains open.
-    const docs = await loadPatientChartDocuments()
-    if (docs.length === 0) {
-      toast.message(t('i693.splitview_patient_chart_empty'))
-      return
+  const openSplitView = useCallback(async () => {
+    if (patientId != null) {
+      await loadPatientChartDocuments()
     }
-    // Always start on the picker — including when there is only 1 document —
-    // so the user explicitly chooses which chart file to open.
     setSplitDocIndex(null)
     setSplitViewOpen(true)
-  }, [loadPatientChartDocuments, t])
+  }, [loadPatientChartDocuments, patientId])
 
-  const splitViewItems = useMemo(
-    () => patientChartDocs.map(patientChartDocToSplitItem),
-    [patientChartDocs]
-  )
+  const handleSplitViewSourceChange = useCallback((next: I693SplitViewSource) => {
+    setSplitViewSource(next)
+    setSplitDocIndex(null)
+  }, [])
+
+  const handleSupportingUpload = useCallback((files: File[]) => {
+    const previewable = files.filter((file) => {
+      const name = file.name.toLowerCase()
+      const mime = file.type.toLowerCase()
+      return (
+        mime === 'application/pdf' ||
+        mime.startsWith('image/') ||
+        name.endsWith('.pdf') ||
+        /\.(png|jpe?g|webp|gif)$/i.test(name)
+      )
+    })
+    if (previewable.length === 0) {
+      toast.message(t('i693.splitview_unsupported'))
+      return
+    }
+    setSupportingSplitItems((current) => {
+      const start = current.length
+      const added = previewable.map((file, index) => localFileToSplitItem(file, start + index))
+      setSplitDocIndex((docIdx) => docIdx ?? start)
+      return [...current, ...added]
+    })
+    setSplitViewSource('supporting')
+    setSplitViewOpen(true)
+  }, [t])
+
+  const removeSupportingSplitItem = useCallback((index: number) => {
+    setSupportingSplitItems((current) => current.filter((_, i) => i !== index))
+    setSplitDocIndex((current) => {
+      if (current == null) return null
+      if (current === index) return null
+      if (current > index) return current - 1
+      return current
+    })
+  }, [])
+
+  const splitViewItems = useMemo(() => {
+    if (splitViewSource === 'supporting') return supportingSplitItems
+    return patientChartDocs.map(patientChartDocToSplitItem)
+  }, [patientChartDocs, splitViewSource, supportingSplitItems])
+
+  const splitViewEmptyHint = useMemo(() => {
+    if (splitViewSource === 'supporting') return t('i693.splitview_pick_hint_supporting')
+    if (patientChartDocs.length === 0) return t('i693.splitview_patient_chart_empty')
+    return t('i693.splitview_pick_hint')
+  }, [patientChartDocs.length, splitViewSource, t])
 
   const charCellPortals = useMemo(() => {
     if (combPlacements.length === 0) return null
@@ -757,17 +879,17 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         </button>
         <button
           type="button"
-          onClick={() => void openPatientChartSplitView()}
-          disabled={patientId == null || patientChartDocsLoading || saving || printing}
-          title={t('i693.splitview_patient_chart_hint')}
+          onClick={() => void openSplitView()}
+          disabled={patientChartDocsLoading || saving || printing}
+          title={t('i693.splitview_hint')}
           className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50"
         >
           {patientChartDocsLoading
             ? t('i693.splitview_patient_chart_loading')
-            : t('i693.splitview_patient_chart_btn')}
-          {patientChartDocs.length > 0 && (
+            : t('i693.splitview_btn')}
+          {(patientChartDocs.length > 0 || supportingSplitItems.length > 0) && (
             <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-semibold leading-none text-white">
-              {patientChartDocs.length}
+              {Math.max(patientChartDocs.length, supportingSplitItems.length)}
             </span>
           )}
         </button>
@@ -818,13 +940,32 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       </div>
 
       <div
+        ref={splitRowRef}
         className={`w-full min-w-0 max-w-full overflow-hidden ${
           splitViewOpen
-            ? 'grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,36%)]'
+            ? `flex flex-col gap-4 md:flex-row md:items-stretch md:gap-0 ${
+                splitResizing ? 'select-none' : ''
+              }`
             : ''
         }`}
+        style={
+          splitViewOpen
+            ? ({
+                ['--i693-split-form' as string]: `${splitFormRatio * 100}%`,
+                ['--i693-split-doc-min' as string]: `${(1 - SPLIT_FORM_RATIO_MAX) * 100}%`,
+              } as CSSProperties)
+            : undefined
+        }
       >
-        <div className="min-w-0 space-y-3">
+        <div
+          className={`min-w-0 space-y-3 ${
+            splitViewOpen
+              ? `w-full md:w-[var(--i693-split-form)] md:max-w-[var(--i693-split-form)] md:shrink-0 ${
+                  splitResizing ? 'pointer-events-none' : ''
+                }`
+              : ''
+          }`}
+        >
           <div className="relative bg-slate-100 border border-slate-200 rounded-2xl overflow-hidden max-h-[calc(100vh-10rem)]">
             {!pdfReady ? (
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-100/90">
@@ -844,15 +985,86 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
           </div>
         </div>
 
-        {splitViewOpen && splitViewItems.length > 0 ? (
-          <div className="flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-col overflow-hidden">
-            <I693SplitView
-              items={splitViewItems}
-              activeIndex={splitDocIndex}
-              onActiveIndexChange={setSplitDocIndex}
-              onClosePanel={hideSplitView}
-            />
-          </div>
+        {splitViewOpen ? (
+          <>
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t('i693.splitview_resize')}
+              aria-valuemin={Math.round(SPLIT_FORM_RATIO_MIN * 100)}
+              aria-valuemax={Math.round(SPLIT_FORM_RATIO_MAX * 100)}
+              aria-valuenow={Math.round(splitFormRatio * 100)}
+              tabIndex={0}
+              title={t('i693.splitview_resize_hint')}
+              className={`group relative hidden shrink-0 touch-none md:flex md:items-stretch md:cursor-col-resize md:focus-visible:outline md:focus-visible:outline-2 md:focus-visible:outline-offset-0 md:focus-visible:outline-violet-400 ${
+                splitResizing ? 'z-30' : 'z-10'
+              }`}
+              style={{ width: SPLIT_SASH_WIDTH_PX }}
+              onPointerDown={onSplitResizePointerDown}
+              onDoubleClick={resetSplitFormRatio}
+              onKeyDown={(event) => {
+                if (event.key === 'ArrowLeft') {
+                  event.preventDefault()
+                  setSplitFormRatio((r) => clampSplitFormRatio(r - 0.02))
+                } else if (event.key === 'ArrowRight') {
+                  event.preventDefault()
+                  setSplitFormRatio((r) => clampSplitFormRatio(r + 0.02))
+                } else if (event.key === 'Home') {
+                  event.preventDefault()
+                  setSplitFormRatio(SPLIT_FORM_RATIO_MIN)
+                } else if (event.key === 'End') {
+                  event.preventDefault()
+                  setSplitFormRatio(SPLIT_FORM_RATIO_MAX)
+                } else if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  resetSplitFormRatio()
+                }
+              }}
+            >
+              <div
+                className="absolute inset-y-0 cursor-col-resize"
+                style={{
+                  left: -(SPLIT_SASH_HIT_PX - SPLIT_SASH_WIDTH_PX) / 2,
+                  width: SPLIT_SASH_HIT_PX,
+                }}
+                aria-hidden
+              />
+              <span
+                className={`pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 transition-colors ${
+                  splitResizing
+                    ? 'bg-violet-500'
+                    : 'bg-slate-300 group-hover:bg-violet-400 group-focus-visible:bg-violet-400'
+                }`}
+                aria-hidden
+              />
+              {splitResizing ? (
+                <span
+                  className="pointer-events-none fixed inset-0 z-20 cursor-col-resize"
+                  aria-hidden
+                />
+              ) : null}
+            </div>
+            <div
+              className={`flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden md:min-w-[var(--i693-split-doc-min)] ${
+                splitResizing ? 'pointer-events-none' : ''
+              }`}
+            >
+              <I693SplitView
+                items={splitViewItems}
+                activeIndex={splitDocIndex}
+                onActiveIndexChange={setSplitDocIndex}
+                onClosePanel={hideSplitView}
+                source={splitViewSource}
+                onSourceChange={handleSplitViewSourceChange}
+                showSourceToggle
+                allowUpload={splitViewSource === 'supporting'}
+                onFilesSelected={handleSupportingUpload}
+                removable={splitViewSource === 'supporting'}
+                onRemoveDocument={removeSupportingSplitItem}
+                emptyHint={splitViewEmptyHint}
+              />
+            </div>
+          </>
         ) : null}
       </div>
     </div>

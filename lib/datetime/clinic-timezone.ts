@@ -87,6 +87,19 @@ export function formatClinicTimeSlot(timeString: string | null | undefined): str
   return appendCtSuffix(`${displayHours}:${minutes} ${ampm}`)
 }
 
+/** HH:MM for the current clock time in clinic (Central) time — for date/time inputs. */
+export function getClinicCurrentTimeString(now: Date = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CLINIC_TIME_ZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now)
+  const hour = parts.find((p) => p.type === 'hour')?.value ?? '00'
+  const minute = parts.find((p) => p.type === 'minute')?.value ?? '00'
+  return `${hour}:${minute}`
+}
+
 function centralDayKey(d: Date): string {
   return new Intl.DateTimeFormat('en-US', {
     timeZone: CLINIC_TIME_ZONE,

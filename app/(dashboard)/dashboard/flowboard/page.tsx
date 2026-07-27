@@ -39,6 +39,8 @@ import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { formatDobShort } from '@/lib/datetime/date-input'
+import { flowboardServiceTitle } from '@/lib/flowboard/service-title'
+import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
@@ -60,9 +62,14 @@ interface Appointment {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string
+  service_id?: number | null
+  service_title_en?: string | null
+  service_title_es?: string | null
+  location_tenant_id?: number | null
   status?: string | null
   notes?: string | null
   created_at: string
+  activity_at?: string
   encounter_status?: string
   encounter_id?: number
   location_id?: number | null
@@ -80,7 +87,7 @@ interface Appointment {
 function FlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
-  const { t } = useT()
+  const { t, language } = useT()
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
@@ -104,7 +111,7 @@ function FlowboardPage() {
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
     useAiPatientSearchParse(searchQuery, { includeProvider: true })
   const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [sortBy, setSortBy] = useState<'time' | 'name' | 'treatment'>('time')
+  const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -269,6 +276,9 @@ function FlowboardPage() {
 
     // Sort (copy then sort so we return a new array and React updates the list)
     switch (sortBy) {
+      case 'recent':
+        result = [...result].sort(compareActivityDesc)
+        break
       case 'time':
         result = [...result].sort((a, b) => {
           const dateA = parseAppointmentDateTime(a.appointment_date, a.appointment_time)
@@ -284,12 +294,16 @@ function FlowboardPage() {
         })
         break
       case 'treatment':
-        result = [...result].sort((a, b) => (a.onsite_type || '').localeCompare(b.onsite_type || ''))
+        result = [...result].sort((a, b) =>
+          flowboardServiceTitle(a, language, a.location_tenant_id).localeCompare(
+            flowboardServiceTitle(b, language, b.location_tenant_id)
+          )
+        )
         break
     }
 
     return result
-  }, [appointments, parsedSearch, debouncedQuery, filterStatus, sortBy])
+  }, [appointments, parsedSearch, debouncedQuery, filterStatus, sortBy, language])
 
   // Paginate filtered results
   const paginatedAppointments = useMemo(() => {
@@ -450,11 +464,12 @@ function FlowboardPage() {
                 <select
                   value={sortBy}
                   onChange={(e) => {
-                    setSortBy(e.target.value as 'time' | 'name' | 'treatment')
+                    setSortBy(e.target.value as 'recent' | 'time' | 'name' | 'treatment')
                     setPage(1)
                   }}
                   className={FLOWBOARD_SELECT_CLASS}
                 >
+                  <option value="recent">{t('flow.sort_recent')}</option>
                   <option value="time">{t('flow.sort_time')}</option>
                   <option value="name">{t('flow.sort_name')}</option>
                   <option value="treatment">{t('flow.sort_treatment')}</option>
@@ -644,7 +659,7 @@ function FlowboardPage() {
                         )}
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                       <div className="flex items-center gap-2 text-slate-500">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -656,6 +671,12 @@ function FlowboardPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
                         <span>{formatTime(appointment.appointment_time)}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-600 font-medium">
+                        <span className="truncate">
+                          {flowboardServiceTitle(appointment, language, appointment.location_tenant_id) ||
+                            t('common.em_dash')}
+                        </span>
                       </div>
                       <div className="flex items-center gap-2 text-slate-500">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

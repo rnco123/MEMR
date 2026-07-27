@@ -91,20 +91,7 @@ export async function POST(request: Request) {
       throw new AuthorizationError('Patient is outside your assigned locations')
     }
 
-    let serviceId = v.service_id
-    if (serviceId == null) {
-      const { data: defaultService } = await admin
-        .from('services')
-        .select('id')
-        .order('id', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      if (!defaultService?.id) {
-        throw new ValidationError('No service configured — add a service in Supabase first')
-      }
-      serviceId = Number(defaultService.id)
-    }
-
+    const serviceId = v.service_id
     if (v.pharmacy_id != null) {
       const { data: pharmacy } = await admin
         .from('pharmacy')

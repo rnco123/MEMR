@@ -51,7 +51,7 @@ export function LocationFilterSelect({
         const v = e.target.value
         onChange(v === 'all' ? 'all' : Number(v))
       }}
-      className={`min-w-0 w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/30 ${className}`}
+      className={`h-9 min-w-0 w-full pl-2.5 pr-8 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/30 cursor-pointer ${className}`}
       aria-label={t('location.filter_label')}
     >
       <option value="all">{t('location.all_locations')}</option>

@@ -1,4 +1,7 @@
-import { patientDobMatchesSearchParts } from '@/lib/nurse/patient-dob-match'
+import {
+  patientDobMatchesFilter,
+  patientDobMatchesSearchParts,
+} from '@/lib/nurse/patient-dob-match'
 import { parseSearchDateParts } from '@/lib/nurse/patient-search-query'
 import {
   appointmentMatchesParsedSearch,
@@ -56,6 +59,27 @@ export function appointmentMatchesParsedPatientSearch(
 ): boolean {
   if (!parsed?.raw.trim()) return true
   return appointmentMatchesParsedSearch(appointment, parsed, options)
+}
+
+/** DOB-only matcher for appointments tab (free-text input, same parsers as flowboard). */
+export function appointmentMatchesDobSearch(
+  appointment: FlowboardAppointmentSearch,
+  parsed: ParsedPatientSearch | null,
+  rawQuery: string
+): boolean {
+  const query = rawQuery.trim()
+  if (!query) return true
+
+  if (parsed?.dobFilter) {
+    return patientDobMatchesFilter(appointment.patient?.date_of_birth, parsed.dobFilter)
+  }
+
+  const dateParts = parseSearchDateParts(query)
+  if (dateParts) {
+    return patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)
+  }
+
+  return false
 }
 
 export { patientMatchesParsedSearch }
