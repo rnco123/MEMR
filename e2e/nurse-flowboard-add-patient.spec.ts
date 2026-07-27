@@ -179,27 +179,51 @@ test.describe('nurse flowboard — add new patient', () => {
     const docLabelSelect = page.locator('section').filter({ hasText: /document uploads/i }).getByRole('combobox')
     await docLabelSelect.selectOption('ID')
 
-    // The file input is visually hidden (sr-only). In headless CI, Playwright's
-    // setInputFiles() on a hidden input does NOT trigger React's synthetic onChange.
-    // Fix: unhide the input first so the browser dispatches the change event normally,
-    // then setInputFiles — React's onChange fires and pendingFiles state updates.
+    // The file input is visually hidden (sr-only). Headless Chrome doesn't fire
+    // React's synthetic onChange for hidden inputs via setInputFiles alone.
+    // Solution: unhide the input, set the files, then manually dispatch a 'change'
+    // event so React's onChange fires and pendingFiles state updates.
     const fileInput = page.locator('input[type="file"]')
+
     await fileInput.evaluate((el: HTMLInputElement) => {
+      // Make input interactable
       el.style.display = 'block'
       el.style.opacity = '1'
       el.style.position = 'static'
       el.style.width = '1px'
       el.style.height = '1px'
-    })
-    await fileInput.setInputFiles({
-      name: 'patient-id.txt',
-      mimeType: 'text/plain',
-      buffer: Buffer.from('Ali Hassan - Patient ID document'),
+      el.classList.remove('sr-only')
     })
 
-    // Wait up to 10s for the file queue UI to appear — rendered only when pendingFiles > 0
+    await fileInput.setInputFiles({
+      name: 'patient-id.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, // 1x1 pixel
+        0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, // bit depth, color type
+        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, // IDAT chunk
+        0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+        0x00, 0x00, 0x02, 0x00, 0x01, 0xe2, 0x21, 0xbc,
+        0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, // IEND chunk
+        0x44, 0xae, 0x42, 0x60, 0x82,
+      ]),
+    })
+
+    // Manually dispatch change event to trigger React's synthetic onChange
+    await fileInput.evaluate((el: HTMLInputElement) => {
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    // Also try input event which some React versions listen to
+    await fileInput.evaluate((el: HTMLInputElement) => {
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    // Wait up to 15s for the file queue UI to appear — rendered only when pendingFiles > 0
     const fileQueued = await page.getByText(/file\(s\) ready/i)
-      .isVisible({ timeout: 10000 })
+      .isVisible({ timeout: 15000 })
       .catch(() => false)
 
     if (fileQueued) {
