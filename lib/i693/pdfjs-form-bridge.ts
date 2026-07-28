@@ -217,7 +217,9 @@ async function applyVaccinationFields(
       if (!id) continue
 
       const val = vaccinationWidgetValue(data, short, idx)
-      if (typeof val === 'boolean') {
+      const isCompleteSeries = short.includes('CompleteSeries')
+
+      if (typeof val === 'boolean' && !isCompleteSeries) {
         const pdfExport = normalizePdfCheckboxExport(entry?.exportValues) ?? 'Yes'
         pdf.annotationStorage.setValue(id, {
           value: val ? 'On' : 'Off',
