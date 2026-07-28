@@ -153,7 +153,7 @@ export function buildClinicaI693VaccinationGrid(): I693VaccinationGridRow[] {
 
   row('dt').notAgeAppropriate = true
   row('td').givenTdap = true
-  row('mmr').completeSeries = true
+  row('mmr').completeSeries = 'X'
   row('polio').givenIpv = true
   row('polio').insufficientInterval = true
   row('hib').notAgeAppropriate = true
