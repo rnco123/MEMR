@@ -429,7 +429,7 @@ export function I693SplitView({
     try {
       const bytes = await readSplitViewBytes(doc)
       if (!bytes) return
-      const blob = new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], { type: 'application/octet-stream' })
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
