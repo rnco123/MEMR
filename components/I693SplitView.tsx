@@ -428,7 +428,10 @@ export function I693SplitView({
   const downloadDocument = async (doc: I693SplitViewItem) => {
     try {
       const bytes = await readSplitViewBytes(doc)
-      if (!bytes) return
+      if (!bytes) {
+        toast.error(t('i693.splitview_download_failed'))
+        return
+      }
       const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -436,8 +439,10 @@ export function I693SplitView({
       a.download = doc.name || 'document'
       a.click()
       URL.revokeObjectURL(url)
+      toast.success(t('i693.splitview_download_complete'))
     } catch (err) {
       console.error('Download failed:', err)
+      toast.error(err instanceof Error ? err.message : t('i693.splitview_download_failed'))
     }
   }
 
