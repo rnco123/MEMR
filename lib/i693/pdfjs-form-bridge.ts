@@ -458,6 +458,12 @@ export async function extractI693FormFromPdfDocument(
     await extractPdfWidgetValues(pdf, widgetOptions),
     widgetOptions
   )
+  if (next.vaccination_grid?.length) {
+    console.debug('[extractI693FormFromPdfDocument] vaccination_grid extracted:', {
+      count: next.vaccination_grid.length,
+      sample: next.vaccination_grid[0],
+    })
+  }
   return next
 }
 
