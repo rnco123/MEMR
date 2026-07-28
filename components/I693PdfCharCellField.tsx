@@ -80,7 +80,7 @@ export function I693PdfCharCellField({
   const boxHeightPt = placement.height ?? PDF_FIELD_BOX_HEIGHT
   const h = pixelCoords ? boxHeightPt : boxHeightPt * editScale
   const w = pixelCoords ? placement.cellWidth : placement.cellWidth * editScale
-  const fontSize = pixelCoords ? 9 : 9 * editScale
+  const fontSize = pixelCoords ? 8 : 8 * editScale
   const left = pixelCoords ? placement.x : placement.x * editScale
   const top = pixelCoords
     ? placement.y
