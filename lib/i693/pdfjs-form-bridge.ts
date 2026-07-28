@@ -240,9 +240,11 @@ async function extractVaccinationFields(
   const fieldObjects = await pdf.getFieldObjects()
   if (!fieldObjects) return
 
+  const vaccinationFields: string[] = []
   for (const [pdfFieldName, rawEntries] of Object.entries(fieldObjects)) {
     const short = widgetShortName(pdfFieldName)
     if (!isVaccinationTableWidget(short)) continue
+    vaccinationFields.push(pdfFieldName)
 
     const entries = (rawEntries ?? []) as {
       id?: string
@@ -269,6 +271,12 @@ async function extractVaccinationFields(
       }
       applyVaccinationWidgetToGrid(data, short, val, checked, idx)
     }
+  }
+  if (vaccinationFields.length > 0) {
+    console.debug('[extractVaccinationFields] Found vaccination fields:', vaccinationFields.length, {
+      fields: vaccinationFields.slice(0, 5),
+      gridRows: data.vaccination_grid?.length,
+    })
   }
 }
 

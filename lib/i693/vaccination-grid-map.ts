@@ -180,6 +180,12 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   if (short.includes('CompleteSeries')) {
     return { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
   }
+  if (short.includes(`Pt10Line${line}_ImmuneCheckBox`) || short.includes(`Pt10Line${line}_Immune`)) {
+    return { vaccineCode: code, field: 'immune', doseIndex: 0 }
+  }
+  if (short.includes(`Pt10Line${line}_HistoryOfDiseaseCheckBox`) || short.includes(`Pt10Line${line}_HistoryOfDisease`)) {
+    return { vaccineCode: code, field: 'historyOfDisease', doseIndex: 0 }
+  }
 
   return null
 }
