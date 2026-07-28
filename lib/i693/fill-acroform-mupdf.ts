@@ -60,6 +60,38 @@ function valueForKey(data: I693FormData, key: string): string {
   return String(nested).trim()
 }
 
+/**
+ * Vaccination-table text cells use auto-size fonts (DA size 0) in the USCIS
+ * template, so MuPDF grows dates to fill the tall MMR/COVID cells and clips
+ * them. Pin a fixed size so the export matches the on-screen editor.
+ */
+const VACCINATION_TEXT_FONT_SIZE = 8
+
+type MupdfDaObject = {
+  isString?: () => boolean
+  asString?: () => string
+  put: (key: string, value: unknown) => unknown
+  get: (key: string) => MupdfDaObject | null
+}
+
+function forceWidgetFontSize(
+  widget: { getObject?: () => MupdfDaObject },
+  size: number
+): void {
+  try {
+    const obj = widget.getObject?.()
+    if (!obj) return
+    const daObj = obj.get('DA')
+    const da = daObj?.isString?.() ? daObj.asString?.() ?? '' : ''
+    const next = /\bTf\b/.test(da)
+      ? da.replace(/(\/\S+\s+)[\d.]+(\s+Tf)/, `$1${size}$2`)
+      : `/Helv ${size} Tf 0 g`
+    obj.put('DA', next)
+  } catch {
+    // Best-effort: fall back to the template's own appearance.
+  }
+}
+
 function fillVaccinationWidget(
   widget: {
     isCheckbox: () => boolean
@@ -71,6 +103,7 @@ function fillVaccinationWidget(
     setTextValue: (t: string) => void
     setChoiceValue: (t: string) => void
     getMaxLen: () => number
+    getObject?: () => MupdfDaObject
   },
   data: I693FormData,
   fullName: string,
@@ -99,6 +132,7 @@ function fillVaccinationWidget(
   if (!text) return true
 
   if (widget.isText()) {
+    forceWidgetFontSize(widget, VACCINATION_TEXT_FONT_SIZE)
     widget.setTextValue(text.slice(0, widget.getMaxLen() || 500))
     filled.push(`vaccination_grid:${short}`)
   } else if (widget.isComboBox() || widget.isListBox()) {
