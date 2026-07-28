@@ -165,6 +165,10 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
       doseIndex: Number(receivedNum[2]),
     }
   }
+  // Support simple dateReceived patterns without dose index suffix (e.g., Pt10Line7_DateReceived)
+  if (short === `Pt10Line${line}_DateReceived` || short === `Pt10Line${line}a_DateReceived`) {
+    return { vaccineCode: code, field: 'dateReceived', doseIndex: 1 }
+  }
   if (short.includes(`Pt10Line${line}_ContraCheckBox`)) {
     return { vaccineCode: code, field: 'contraindicated', doseIndex: 0 }
   }
