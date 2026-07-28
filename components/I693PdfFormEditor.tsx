@@ -259,6 +259,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
       setSaving(true)
       try {
+        if (formRef.current.vaccination_grid?.length) {
+          console.debug('[I693PdfFormEditor] saveCurrent vaccination_grid:', {
+            count: formRef.current.vaccination_grid.length,
+            sample: formRef.current.vaccination_grid[0],
+          })
+        }
         const res = await fetch(`/api/encounters/${encounterId}/i693`, {
           method: 'PUT',
           credentials: 'include',

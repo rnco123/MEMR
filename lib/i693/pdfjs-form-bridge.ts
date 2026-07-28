@@ -217,7 +217,9 @@ async function applyVaccinationFields(
       if (!id) continue
 
       const val = vaccinationWidgetValue(data, short, idx)
-      if (typeof val === 'boolean') {
+      const isCompleteSeries = short.includes('CompleteSeries')
+
+      if (typeof val === 'boolean' && !isCompleteSeries) {
         const pdfExport = normalizePdfCheckboxExport(entry?.exportValues) ?? 'Yes'
         pdf.annotationStorage.setValue(id, {
           value: val ? 'On' : 'Off',
@@ -240,9 +242,11 @@ async function extractVaccinationFields(
   const fieldObjects = await pdf.getFieldObjects()
   if (!fieldObjects) return
 
+  const vaccinationFields: string[] = []
   for (const [pdfFieldName, rawEntries] of Object.entries(fieldObjects)) {
     const short = widgetShortName(pdfFieldName)
     if (!isVaccinationTableWidget(short)) continue
+    vaccinationFields.push(pdfFieldName)
 
     const entries = (rawEntries ?? []) as {
       id?: string
@@ -269,6 +273,12 @@ async function extractVaccinationFields(
       }
       applyVaccinationWidgetToGrid(data, short, val, checked, idx)
     }
+  }
+  if (vaccinationFields.length > 0) {
+    console.debug('[extractVaccinationFields] Found vaccination fields:', vaccinationFields.length, {
+      fields: vaccinationFields.slice(0, 5),
+      gridRows: data.vaccination_grid?.length,
+    })
   }
 }
 
@@ -458,6 +468,12 @@ export async function extractI693FormFromPdfDocument(
     await extractPdfWidgetValues(pdf, widgetOptions),
     widgetOptions
   )
+  if (next.vaccination_grid?.length) {
+    console.debug('[extractI693FormFromPdfDocument] vaccination_grid extracted:', {
+      count: next.vaccination_grid.length,
+      sample: next.vaccination_grid[0],
+    })
+  }
   return next
 }
 
