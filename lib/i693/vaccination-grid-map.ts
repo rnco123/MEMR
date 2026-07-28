@@ -289,8 +289,8 @@ export function vaccinationWidgetValue(
     case 'datesReceived':
       return doseDate(row, parsed.doseIndex)
     case 'completeSeries':
-      // Form convention: Mark "X" if the series is complete.
-      return row.completeSeries ? 'X' : ''
+      // Allow any string value (X, VH, dates, etc.)
+      return row.completeSeries ?? ''
     case 'contraindicated':
       return row.contraindicated === true
     case 'insufficientInterval':
@@ -357,8 +357,8 @@ export function applyVaccinationWidgetToGrid(
       break
     }
     case 'completeSeries':
-      row.completeSeries =
-        checked || val === 'Yes' || val === 'On' || val.toUpperCase() === 'X'
+      // Store the actual string value (X, VH, dates, etc.)
+      row.completeSeries = val || undefined
       break
     case 'contraindicated':
       row.contraindicated = checked

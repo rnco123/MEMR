@@ -14,7 +14,7 @@ export type I693VaccinationGridRow = {
   dateReceived?: string
   /** Historical dose columns 1–4 when more than one dateReceived slot exists on the PDF. */
   datesReceived?: string[]
-  completeSeries?: boolean
+  completeSeries?: string
   contraindicated?: boolean
   insufficientInterval?: boolean
   notAgeAppropriate?: boolean
