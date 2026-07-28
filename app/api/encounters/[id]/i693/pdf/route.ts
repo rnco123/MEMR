@@ -30,7 +30,14 @@ export async function GET(request: Request, { params }: { params: { id: string }
     if (authError || !user) throw new AuthenticationError()
 
     const roleInfo = await fetchUserRole(supabase, user.id)
-    if (!isI693ApiRole(roleInfo?.role)) throw new AuthorizationError()
+    if (!isI693ApiRole(roleInfo?.role)) {
+      console.error('[i693/pdf] Authorization failed:', {
+        userId: user.id,
+        role: roleInfo?.role,
+        isI693ApiRole: isI693ApiRole(roleInfo?.role),
+      })
+      throw new AuthorizationError()
+    }
     const role = roleInfo!.role!.trim().toLowerCase()
 
     await guardI693EncounterAccess(user.id, encounterId)
