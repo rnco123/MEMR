@@ -165,8 +165,13 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
       doseIndex: Number(receivedNum[2]),
     }
   }
-  // Support simple dateReceived patterns without dose index suffix (e.g., Pt10Line7_DateReceived)
-  if (short === `Pt10Line${line}_DateReceived` || short === `Pt10Line${line}a_DateReceived`) {
+  // Support simple dateReceived patterns without dose index suffix (e.g., Pt10Line7_DateReceived, Pt10Line5_HibDateReceived)
+  if (short.includes('DateReceived') && short.startsWith(`Pt10Line${line}`)) {
+    return { vaccineCode: code, field: 'dateReceived', doseIndex: 1 }
+  }
+  // Support vaccine-named dateReceived fields (e.g., Pt10Line7_VaricellaDateReceived)
+  const vaccineNamePattern = /^Pt10Line\d+_[A-Za-z]*DateReceived/.test(short)
+  if (vaccineNamePattern && lineMatch) {
     return { vaccineCode: code, field: 'dateReceived', doseIndex: 1 }
   }
   if (short.includes(`Pt10Line${line}_ContraCheckBox`)) {
@@ -184,10 +189,12 @@ export function parseVaccinationWidget(short: string): ParsedVaxWidget | null {
   if (short.includes('CompleteSeries')) {
     return { vaccineCode: code, field: 'completeSeries', doseIndex: 0 }
   }
-  if (short.includes(`Pt10Line${line}_ImmuneCheckBox`) || short.includes(`Pt10Line${line}_Immune`)) {
+  // Support all variations of immune checkboxes
+  if (short.includes('Immune') && short.startsWith(`Pt10Line${line}`)) {
     return { vaccineCode: code, field: 'immune', doseIndex: 0 }
   }
-  if (short.includes(`Pt10Line${line}_HistoryOfDiseaseCheckBox`) || short.includes(`Pt10Line${line}_HistoryOfDisease`)) {
+  // Support all variations of history of disease checkboxes (History, HistoryOfDisease, etc)
+  if ((short.includes('History') || short.includes('HistoryOfDisease')) && short.startsWith(`Pt10Line${line}`)) {
     return { vaccineCode: code, field: 'historyOfDisease', doseIndex: 0 }
   }
 
