@@ -447,7 +447,7 @@ function FutureAppointmentsPageInner() {
                                 patientName: patientName || undefined,
                               })
                             }}
-                            className="inline-flex h-9 items-center rounded-lg border border-[#2E6EF3]/30 bg-[#2E6EF3]/5 px-3 text-xs font-semibold text-[#2E6EF3] hover:bg-[#2E6EF3]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                            className="inline-flex min-h-9 items-center whitespace-nowrap rounded-lg border border-[#2E6EF3]/30 bg-[#2E6EF3]/5 px-3 py-1.5 text-xs font-semibold text-[#2E6EF3] hover:bg-[#2E6EF3]/10 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {movingAppointmentId === appointment.id
                               ? t('common.saving')

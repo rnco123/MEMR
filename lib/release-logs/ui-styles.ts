@@ -14,8 +14,11 @@ export const RELEASE_LOGS_UI = {
   },
   panel: {
     shell: 'flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm',
-    viewerMaxHeight: 'max-h-[calc(100dvh-12rem)]',
-    managerMaxHeight: 'max-h-[calc(100dvh-18rem)]',
+    // Viewport-relative budgets only hold once the shell stops reserving space for
+    // the mobile tab bar; below `sm` the panel flows into the shell's own scroller
+    // instead of nesting a second, mis-sized scroll region. Values unchanged.
+    viewerMaxHeight: 'sm:max-h-[calc(100dvh-12rem)]',
+    managerMaxHeight: 'sm:max-h-[calc(100dvh-18rem)]',
     header:
       'shrink-0 flex flex-wrap items-center gap-3 border-b border-slate-100 bg-white/95 px-5 py-3.5 backdrop-blur-sm',
     scrollBody:

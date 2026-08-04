@@ -303,19 +303,20 @@ function AdminFormsPage() {
   const copyOptions = templateGap.missing
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    // The admin shell already applies p-4 sm:p-6; page padding here doubled it.
+    <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">{t('admin.forms.title')}</h1>
         <p className="text-sm text-slate-600 mt-1">{t('admin.forms.subtitle')}</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex w-full min-w-0 flex-col gap-1 text-sm sm:w-auto">
           <span className="font-medium text-slate-700">{t('admin.forms.tenant')}</span>
           <select
             value={tenantId}
             onChange={(e) => setTenantId(Number(e.target.value))}
-            className="rounded-lg border border-slate-300 px-3 py-2 min-w-[260px]"
+            className="w-full max-w-full rounded-lg border border-slate-300 px-3 py-2 sm:min-w-[260px]"
           >
             {tenants.map((tenant) => (
               <option key={tenant.id} value={tenant.id}>
