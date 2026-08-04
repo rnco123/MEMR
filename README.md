@@ -4,6 +4,7 @@ Modern video conferencing application built with Next.js, Supabase, and Daily.co
 
 ## Features
 
+
 - 🎥 Video conferencing powered by Daily.co
 - 🔐 Authentication and database with Supabase
 - ⚡ Built with Next.js 14 (App Router)

@@ -130,7 +130,10 @@ export async function setCombFieldOnPdfDocument(
   const entries = fieldObjects[binding.pdfFieldName] as { id?: string }[] | undefined
   const idx = widgetFieldIndex(binding.pdfFieldName)
   const id = entries?.[idx]?.id ?? entries?.[0]?.id
-  if (!id) return
+  if (!id) {
+    console.warn('[setCombFieldOnPdfDocument] No PDF field id found for key:', key, 'binding:', binding.pdfFieldName)
+    return
+  }
 
   pdf.annotationStorage.setValue(id, { value: text, formattedValue: text })
 }

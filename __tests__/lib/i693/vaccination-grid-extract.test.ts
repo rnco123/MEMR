@@ -36,20 +36,45 @@ describe('vaccination grid extract from PDF widget values', () => {
     const form = mergeI693Form({})
     applyVaccinationWidgetToGrid(form, 'Pt10Line4_CompleteSeries', 'X', false, 0)
     const mmr = form.vaccination_grid.find((r) => r.vaccineCode === 'mmr')
-    expect(mmr?.completeSeries).toBe(true)
+    expect(mmr?.completeSeries).toBe('X')
+  })
+
+  it('stores free-form complete series text (dates, VH)', () => {
+    const form = mergeI693Form({})
+    applyVaccinationWidgetToGrid(form, 'Pt10Line4_CompleteSeries', '12/23/2000', false, 0)
+    applyVaccinationWidgetToGrid(form, 'Pt10Line7_CompleteSeries', 'VH', false, 0)
+    expect(form.vaccination_grid.find((r) => r.vaccineCode === 'mmr')?.completeSeries).toBe(
+      '12/23/2000'
+    )
+    expect(form.vaccination_grid.find((r) => r.vaccineCode === 'varicella')?.completeSeries).toBe(
+      'VH'
+    )
+  })
+
+  it('migrates legacy boolean complete-series values to strings', () => {
+    const form = mergeI693Form({
+      vaccination_grid: [
+        { vaccineCode: 'mmr', completeSeries: true as unknown as string },
+        { vaccineCode: 'hib', completeSeries: false as unknown as string },
+      ],
+    })
+    expect(form.vaccination_grid.find((r) => r.vaccineCode === 'mmr')?.completeSeries).toBe('X')
+    expect(
+      form.vaccination_grid.find((r) => r.vaccineCode === 'hib')?.completeSeries
+    ).toBeUndefined()
   })
 
   it('maps repeated complete-series widgets to their physical vaccine rows', () => {
     const form = mergeI693Form({
       vaccination_grid: [
-        { vaccineCode: 'polio', completeSeries: true },
-        { vaccineCode: 'mmr', completeSeries: false },
-        { vaccineCode: 'hib', completeSeries: true },
-        { vaccineCode: 'varicella', completeSeries: false },
-        { vaccineCode: 'pneumo', completeSeries: true },
-        { vaccineCode: 'influenza', completeSeries: false },
-        { vaccineCode: 'meningococcal', completeSeries: true },
-        { vaccineCode: 'rotavirus', completeSeries: false },
+        { vaccineCode: 'polio', completeSeries: 'X' },
+        { vaccineCode: 'mmr', completeSeries: '' },
+        { vaccineCode: 'hib', completeSeries: 'X' },
+        { vaccineCode: 'varicella', completeSeries: '' },
+        { vaccineCode: 'pneumo', completeSeries: 'X' },
+        { vaccineCode: 'influenza', completeSeries: '' },
+        { vaccineCode: 'meningococcal', completeSeries: 'X' },
+        { vaccineCode: 'rotavirus', completeSeries: '' },
       ],
     })
 
@@ -62,7 +87,7 @@ describe('vaccination grid extract from PDF widget values', () => {
 
   it('maps the template row-10 complete-series widget to hepatitis A', () => {
     const form = mergeI693Form({
-      vaccination_grid: [{ vaccineCode: 'hep_a', completeSeries: true }],
+      vaccination_grid: [{ vaccineCode: 'hep_a', completeSeries: 'X' }],
     })
 
     expect(vaccinationWidgetValue(form, 'Pt7Line1_CompleteSeries')).toBe('X')
@@ -74,7 +99,7 @@ describe('vaccination grid extract from PDF widget values', () => {
         {
           vaccineCode: 'mmr',
           datesReceived: ['01/01/2020'],
-          completeSeries: true,
+          completeSeries: 'X',
           notAgeAppropriate: true,
         },
       ],
@@ -85,14 +110,14 @@ describe('vaccination grid extract from PDF widget values', () => {
     applyVaccinationWidgetToGrid(form, 'Pt10Line4_NotAge4', 'Off', false)
 
     const mmr = form.vaccination_grid.find((row) => row.vaccineCode === 'mmr')
-    expect(mmr?.completeSeries).toBe(false)
+    expect(mmr?.completeSeries).toBeUndefined()
     expect(mmr?.datesReceived?.[0]).toBe('')
     expect(mmr?.notAgeAppropriate).toBe(false)
   })
 
   it('honors a cleared complete-series widget during manual edit extraction', async () => {
     const base = mergeI693Form({
-      vaccination_grid: [{ vaccineCode: 'mmr', completeSeries: true }],
+      vaccination_grid: [{ vaccineCode: 'mmr', completeSeries: 'X' }],
     })
     const pdf = {
       getFieldObjects: async () => ({
@@ -108,11 +133,11 @@ describe('vaccination grid extract from PDF widget values', () => {
     const edited = await extractI693FormFromPdfDocumentRespectingUserEdits(pdf, base)
     const preserving = await extractI693FormFromPdfDocumentPreserving(pdf, base)
 
-    expect(edited.vaccination_grid.find((row) => row.vaccineCode === 'mmr')?.completeSeries).toBe(
-      false
-    )
+    expect(
+      edited.vaccination_grid.find((row) => row.vaccineCode === 'mmr')?.completeSeries
+    ).toBeUndefined()
     expect(
       preserving.vaccination_grid.find((row) => row.vaccineCode === 'mmr')?.completeSeries
-    ).toBe(true)
+    ).toBe('X')
   })
 })

@@ -259,6 +259,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
       setSaving(true)
       try {
+        if (formRef.current.vaccination_grid?.length) {
+          console.debug('[I693PdfFormEditor] saveCurrent vaccination_grid:', {
+            count: formRef.current.vaccination_grid.length,
+            sample: formRef.current.vaccination_grid[0],
+          })
+        }
         const res = await fetch(`/api/encounters/${encounterId}/i693`, {
           method: 'PUT',
           credentials: 'include',
@@ -659,14 +665,20 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       const res = await fetch(`/api/patients/${patientId}/documents`, {
         credentials: 'include',
         cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || t('i693.splitview_patient_chart_load_failed'))
+      if (!res.ok) {
+        const message = json.error || `${res.status} ${res.statusText}`
+        console.error('[loadPatientChartDocuments] Error:', message)
+        throw new Error(message)
+      }
       const docs = (json.documents ?? []) as PatientChartDocumentRef[]
       const previewable = docs.filter(isPreviewablePatientChartDocument)
       setPatientChartDocs(previewable)
       return previewable
     } catch (e) {
+      console.error('[loadPatientChartDocuments] Exception:', e)
       toast.error(e instanceof Error ? e.message : t('i693.splitview_patient_chart_load_failed'))
       setPatientChartDocs([])
       return []

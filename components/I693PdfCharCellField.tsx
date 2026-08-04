@@ -80,7 +80,7 @@ export function I693PdfCharCellField({
   const boxHeightPt = placement.height ?? PDF_FIELD_BOX_HEIGHT
   const h = pixelCoords ? boxHeightPt : boxHeightPt * editScale
   const w = pixelCoords ? placement.cellWidth : placement.cellWidth * editScale
-  const fontSize = pixelCoords ? 9 : 9 * editScale
+  const fontSize = pixelCoords ? 8 : 8 * editScale
   const left = pixelCoords ? placement.x : placement.x * editScale
   const top = pixelCoords
     ? placement.y
@@ -98,7 +98,7 @@ export function I693PdfCharCellField({
           <span
             key={i}
             className="flex items-center justify-center text-slate-900 font-[Times_New_Roman,Times,serif] uppercase tracking-wide"
-            style={{ width: w, height: h, fontSize, lineHeight: `${h}px` }}
+            style={{ width: w, height: h, fontSize, lineHeight: 1 }}
           >
             {c}
           </span>
@@ -134,7 +134,7 @@ export function I693PdfCharCellField({
             width: w,
             height: h,
             fontSize,
-            lineHeight: `${h}px`,
+            lineHeight: 1,
           }}
           aria-label={`${placement.label} ${i + 1}`}
         />

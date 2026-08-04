@@ -204,15 +204,14 @@ export function I693FormEditor({ encounterId, patientName, isImmigration }: Prop
 
   const updateField = (key: string, value: string) => {
     setForm((prev) => {
-      const next = mergeI693Form(prev)
-      const root = next as unknown as Record<string, unknown>
+      const next = { ...prev } as unknown as Record<string, unknown>
       if (I693_BOOLEAN_KEYS.has(key)) {
-        if (value === '') setNestedValue(root, key, null)
-        else setNestedValue(root, key, value === 'true')
+        if (value === '') setNestedValue(next, key, null)
+        else setNestedValue(next, key, value === 'true')
       } else {
-        setNestedValue(root, key, value)
+        setNestedValue(next, key, value)
       }
-      return mergeI693Form(next)
+      return next as I693FormData
     })
   }
 

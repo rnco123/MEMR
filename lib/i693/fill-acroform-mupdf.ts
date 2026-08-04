@@ -60,6 +60,72 @@ function valueForKey(data: I693FormData, key: string): string {
   return String(nested).trim()
 }
 
+/**
+ * Vaccination-table cells are 51pt wide but the USCIS template sets them to
+ * CourierNew-Bold 10pt, so a 10-character date needs ~60pt and gets clipped.
+ * Shrink the widget's default appearance font just enough that the value fits.
+ *
+ * The DA must be written back as a PDF *string*; passing a raw JS value to
+ * PDFObject.put() stores a Name, which viewers reject and MuPDF then replaces
+ * with an even larger Helvetica 12pt fallback.
+ */
+const VACCINATION_MIN_FONT_SIZE = 6
+/** Courier is monospace at 0.6em; keep a little slack for the cell border. */
+const MONOSPACE_EM_RATIO = 0.6
+const CELL_HORIZONTAL_PADDING = 4
+
+type MupdfPdfObject = {
+  isString: () => boolean
+  asString: () => string
+  put: (key: string, value: unknown) => unknown
+  get: (key: string) => MupdfPdfObject
+}
+
+type MupdfTextWidget = {
+  getObject?: () => MupdfPdfObject
+  getBounds?: () => number[]
+}
+
+/** Parsed "/Font size Tf ..." default-appearance string. */
+function parseDaFontSize(da: string): number | null {
+  const match = /\/\S+\s+([\d.]+)\s+Tf/.exec(da)
+  if (!match) return null
+  const size = Number(match[1])
+  return Number.isFinite(size) && size > 0 ? size : null
+}
+
+function fitVaccinationWidgetFont(
+  doc: { newString: (v: string) => unknown },
+  widget: MupdfTextWidget,
+  text: string
+): void {
+  try {
+    const obj = widget.getObject?.()
+    const bounds = widget.getBounds?.()
+    if (!obj || !bounds || !text) return
+
+    const [left, , right] = bounds
+    if (left == null || right == null) return
+
+    const daObj = obj.get('DA')
+    const da = daObj?.isString() ? daObj.asString() : ''
+    const templateSize = parseDaFontSize(da)
+    if (!templateSize) return
+
+    const usableWidth = right - left - CELL_HORIZONTAL_PADDING
+    if (usableWidth <= 0) return
+
+    const fitted = usableWidth / (text.length * MONOSPACE_EM_RATIO)
+    if (fitted >= templateSize) return
+
+    const size = Math.max(VACCINATION_MIN_FONT_SIZE, Math.floor(fitted * 2) / 2)
+    const next = da.replace(/(\/\S+\s+)[\d.]+(\s+Tf)/, `$1${size.toFixed(2)}$2`)
+    obj.put('DA', doc.newString(next))
+  } catch {
+    // Best-effort: fall back to the template's own appearance.
+  }
+}
+
 function fillVaccinationWidget(
   widget: {
     isCheckbox: () => boolean
@@ -71,7 +137,8 @@ function fillVaccinationWidget(
     setTextValue: (t: string) => void
     setChoiceValue: (t: string) => void
     getMaxLen: () => number
-  },
+  } & MupdfTextWidget,
+  doc: { newString: (v: string) => unknown },
   data: I693FormData,
   fullName: string,
   short: string,
@@ -99,7 +166,9 @@ function fillVaccinationWidget(
   if (!text) return true
 
   if (widget.isText()) {
-    widget.setTextValue(text.slice(0, widget.getMaxLen() || 500))
+    const value = text.slice(0, widget.getMaxLen() || 500)
+    fitVaccinationWidgetFont(doc, widget, value)
+    widget.setTextValue(value)
     filled.push(`vaccination_grid:${short}`)
   } else if (widget.isComboBox() || widget.isListBox()) {
     widget.setChoiceValue(text)
@@ -149,7 +218,7 @@ export async function fillAcroformI693PdfMupdf(
       const short = widgetShortName(fullName)
       const idx = widgetFieldIndex(fullName)
 
-      if (fillVaccinationWidget(widget, data, fullName, short, idx, filled, checkboxExports))
+      if (fillVaccinationWidget(widget, doc, data, fullName, short, idx, filled, checkboxExports))
         continue
 
       if (fillMupdfWidgetFromRaw(widget, fullName, data.pdf_widget_values, filled, checkboxExports))

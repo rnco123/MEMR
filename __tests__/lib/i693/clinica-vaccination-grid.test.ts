@@ -16,7 +16,7 @@ describe('buildClinicaI693VaccinationGrid', () => {
     expect(row(grid, 'td').givenTdap).toBe(true)
     expect(row(grid, 'polio').givenIpv).toBe(true)
     expect(row(grid, 'polio').insufficientInterval).toBe(true)
-    expect(row(grid, 'mmr').completeSeries).toBe(true)
+    expect(row(grid, 'mmr').completeSeries).toBe('X')
     expect(row(grid, 'hib').notAgeAppropriate).toBe(true)
     expect(row(grid, 'hep_b').insufficientInterval).toBe(true)
     expect(row(grid, 'varicella').insufficientInterval).toBe(true)

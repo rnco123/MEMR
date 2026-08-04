@@ -14,7 +14,7 @@ export type I693VaccinationGridRow = {
   dateReceived?: string
   /** Historical dose columns 1–4 when more than one dateReceived slot exists on the PDF. */
   datesReceived?: string[]
-  completeSeries?: boolean
+  completeSeries?: string
   contraindicated?: boolean
   insufficientInterval?: boolean
   notAgeAppropriate?: boolean
@@ -385,7 +385,12 @@ function mergeVaccinationGrid(
     for (const row of partial) {
       if (!row?.vaccineCode) continue
       const prev = byCode.get(row.vaccineCode) ?? { vaccineCode: row.vaccineCode }
-      byCode.set(row.vaccineCode, { ...prev, ...row })
+      const merged = { ...prev, ...row } as I693VaccinationGridRow & Record<string, unknown>
+      // Migrate boolean completeSeries to string (legacy DB format)
+      if (typeof merged.completeSeries === 'boolean') {
+        merged.completeSeries = merged.completeSeries ? 'X' : undefined
+      }
+      byCode.set(row.vaccineCode, merged as I693VaccinationGridRow)
     }
   }
   return VACCINATION_GRID_CODES.map((code) => byCode.get(code)!)

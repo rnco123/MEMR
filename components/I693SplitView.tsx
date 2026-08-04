@@ -10,6 +10,7 @@ import {
   type ChangeEvent,
   type WheelEvent,
 } from 'react'
+import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import {
   type I693SplitViewItem,
@@ -425,6 +426,27 @@ export function I693SplitView({
   const pickHint = emptyHint ?? t('i693.splitview_pick_hint')
   const showCanvasHand = hasSelection && !loading
 
+  const downloadDocument = async (doc: I693SplitViewItem) => {
+    try {
+      const bytes = await readSplitViewBytes(doc)
+      if (!bytes) {
+        toast.error(t('i693.splitview_download_failed'))
+        return
+      }
+      const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = doc.name || 'document'
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(t('i693.splitview_download_complete'))
+    } catch (err) {
+      console.error('Download failed:', err)
+      toast.error(err instanceof Error ? err.message : t('i693.splitview_download_failed'))
+    }
+  }
+
   if (items.length === 0 && !allowUpload && !showSourceToggle) return null
 
   const documentList = (
@@ -455,11 +477,26 @@ export function I693SplitView({
               </svg>
               <span className="truncate">{doc.name}</span>
             </button>
+            <button
+              type="button"
+              onClick={() => downloadDocument(doc)}
+              className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ${
+                active ? 'text-white hover:bg-violet-700' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-800'
+              }`}
+              title={t('i693.splitview_download_document')}
+              aria-label={t('i693.splitview_download_document')}
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6M7 10l5 5m0 0l5-5m-5 5V3" />
+              </svg>
+            </button>
             {removable && onRemoveDocument ? (
               <button
                 type="button"
                 onClick={() => onRemoveDocument(index)}
-                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-800"
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ${
+                  active ? 'text-white hover:bg-violet-700' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-800'
+                }`}
                 title={t('i693.splitview_remove_document')}
                 aria-label={t('i693.splitview_remove_document')}
               >
