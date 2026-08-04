@@ -14,24 +14,19 @@ import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
 import { EncounterIntakePanel } from './EncounterIntakePanel'
 import { EncounterVitalsPanel } from './EncounterVitalsPanel'
-import {
-  normalizePharmacyRow,
-  type PharmacyRecord,
-} from '@/lib/pharmacies/normalize'
+import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
 import { EncounterSoapPanel } from './EncounterSoapPanel'
 import { EncounterPatientInfoPanel } from './EncounterPatientInfoPanel'
-import { EncounterMedicationOrdersPanel } from './EncounterMedicationOrdersPanel'
-import { EncounterDiagnosesPanel } from './EncounterDiagnosesPanel'
 import { canEditEncounterSoap, canEditSoapByRole } from '@/lib/soap/encounter-doctor-soap'
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
-import {
-  isPhysicianRole,
-  UserRole,
-  canManageEncounterPharmacy,
-} from '@/lib/roles'
+import { isPhysicianRole, UserRole, canManageEncounterPharmacy } from '@/lib/roles'
 import { canEditPhysicalExamination } from '@/lib/encounter/physical-examination'
-import { formatClinicDateOnly, formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
+import {
+  formatClinicDateOnly,
+  formatClinicDateTimeForLanguage,
+  formatClinicTimeSlot,
+} from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate } from '@/lib/datetime/date-input'
 import { isForbiddenResponse } from '@/lib/http/api-response'
 
@@ -50,7 +45,9 @@ interface Patient {
 }
 
 /** Intake severity (1–10) → Low / Medium / High */
-function severityBandFromIntake(severity: number | null | undefined): 'low' | 'medium' | 'high' | null {
+function severityBandFromIntake(
+  severity: number | null | undefined
+): 'low' | 'medium' | 'high' | null {
   if (severity == null || Number.isNaN(Number(severity))) return null
   const n = Math.round(Number(severity))
   if (n < 1 || n > 10) return null
@@ -193,10 +190,10 @@ export function EncounterDetailModal({
   const localeTag = language === 'es' ? 'es-ES' : 'en-US'
   const i693Href = useMemo(
     () =>
-      buildI693Href(
-        pathname.startsWith('/admin') ? '/admin/i-693' : getI693BasePath(role),
-        { encounterId, tab: 'form' }
-      ),
+      buildI693Href(pathname.startsWith('/admin') ? '/admin/i-693' : getI693BasePath(role), {
+        encounterId,
+        tab: 'form',
+      }),
     [pathname, role, encounterId]
   )
   const [loading, setLoading] = useState(true)
@@ -259,10 +256,9 @@ export function EncounterDetailModal({
     const fetchData = async () => {
       setLoading(true)
       try {
-        const res = await fetch(
-          `/api/encounters/${encounterId}/detail?pharmacy_registry=1`,
-          { credentials: 'include' }
-        )
+        const res = await fetch(`/api/encounters/${encounterId}/detail?pharmacy_registry=1`, {
+          credentials: 'include',
+        })
         const json = await res.json()
         if (!res.ok) {
           console.error('Error fetching encounter details:', json)
@@ -276,8 +272,8 @@ export function EncounterDetailModal({
         const vitalsData = json.vitals
         const soapData = json.ai_soap as SOAPNotes | null
         const pharmacyData = json.pharmacy
-        const pharmacyRegistry = ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map((row) =>
-          normalizePharmacyRow(row)
+        const pharmacyRegistry = ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map(
+          row => normalizePharmacyRow(row)
         )
 
         if (appointmentData) {
@@ -330,7 +326,7 @@ export function EncounterDetailModal({
       return
     }
     setPharmacies(
-      ((json.data as Record<string, unknown>[]) ?? []).map((row) => normalizePharmacyRow(row))
+      ((json.data as Record<string, unknown>[]) ?? []).map(row => normalizePharmacyRow(row))
     )
   }, [])
 
@@ -359,10 +355,9 @@ export function EncounterDetailModal({
   }, [encounterId])
 
   const refreshEncounterAndPharmacy = useCallback(async () => {
-    const res = await fetch(
-      `/api/encounters/${encounterId}/detail?pharmacy_registry=1`,
-      { credentials: 'include' }
-    )
+    const res = await fetch(`/api/encounters/${encounterId}/detail?pharmacy_registry=1`, {
+      credentials: 'include',
+    })
     const json = await res.json()
     if (!res.ok || !json.encounter) return
     setEncounter(json.encounter as Encounter)
@@ -371,21 +366,21 @@ export function EncounterDetailModal({
     setCanEditVitals(Boolean(json.permissions?.can_edit_vitals))
     setPharmacy((json.pharmacy as Pharmacy) ?? null)
     setPharmacies(
-      ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map((row) =>
+      ((json.pharmacy_registry as Record<string, unknown>[]) ?? []).map(row =>
         normalizePharmacyRow(row)
       )
     )
   }, [encounterId])
 
+  const canEditClinicalEncounter = canEditWorkflow
   const encounterLocked = encounter?.status === 'completed'
-  const canEditClinicalEncounter = canEditWorkflow && !encounterLocked
   const intakeEditable = canEditIntake && !encounterLocked
   const vitalsEditable = canEditVitals && !encounterLocked
-  const canManagePharmacy = canManageEncounterPharmacy(role) && canEditClinicalEncounter
+  const canManagePharmacy = canManageEncounterPharmacy(role) && canEditWorkflow
   const isAdminViewer = role === UserRole.ADMIN
-  const canEditEncounterRx = canEditClinicalEncounter
+  const canEditEncounterRx = canEditWorkflow
   const canSendPrescriptionsToAdmin =
-    isPhysicianRole(role) && canEditClinicalEncounter
+    isPhysicianRole(role) && canEditWorkflow && encounter?.status !== 'completed'
 
   const canEditSoap = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
@@ -395,11 +390,8 @@ export function EncounterDetailModal({
 
   const canCompleteEncounter = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
-    return (
-      isPhysicianRole(role) &&
-      canDoctorCompleteEncounter(encounter.status, { isI693: showI693Form })
-    )
-  }, [encounter, role, canEditClinicalEncounter, showI693Form])
+    return isPhysicianRole(role) && canDoctorCompleteEncounter(encounter.status)
+  }, [encounter, role, canEditClinicalEncounter])
 
   const handleCompleteEncounter = useCallback(async () => {
     if (!canCompleteEncounter || completingEncounter) return
@@ -417,7 +409,7 @@ export function EncounterDetailModal({
         throw new Error(json.error || t('encounter_modal.complete_failed'))
       }
 
-      setEncounter((prev) => (prev ? { ...prev, status: 'completed' } : prev))
+      setEncounter(prev => (prev ? { ...prev, status: 'completed' } : prev))
       onEncounterStatusChange?.('completed')
     } catch (error) {
       console.error('Error completing encounter:', error)
@@ -441,7 +433,6 @@ export function EncounterDetailModal({
     setIcdSuggestions(null)
     setIcdMessage(null)
     setIcdLoading(true)
-
     ;(async () => {
       try {
         const res = await fetch(`/api/encounters/${encounterId}/icd-suggestions`, {
@@ -526,9 +517,15 @@ export function EncounterDetailModal({
               label: t('common.name'),
               value: patient ? `${patient.first_name} ${patient.last_name}`.trim() : t('common.na'),
             },
-            { label: t('encounter_modal.patient_code'), value: patient?.patient_code || t('common.na') },
+            {
+              label: t('encounter_modal.patient_code'),
+              value: patient?.patient_code || t('common.na'),
+            },
             { label: t('common.dob'), value: formatDateOnly(patient?.date_of_birth ?? null) },
-            { label: t('common.age'), value: patientAgeYears != null ? String(patientAgeYears) : t('common.na') },
+            {
+              label: t('common.age'),
+              value: patientAgeYears != null ? String(patientAgeYears) : t('common.na'),
+            },
             { label: t('common.gender'), value: patient?.gender || t('common.na') },
             { label: t('common.phone'), value: patient?.phone || t('common.na') },
             { label: t('common.email'), value: patient?.email || t('common.na') },
@@ -537,9 +534,18 @@ export function EncounterDetailModal({
           visitSectionTitle: t('encounter_modal.appointment_info'),
           visitRows: [
             { label: t('orders.encounter_id'), value: String(encounterId) },
-            { label: t('encounter_modal.encounter_code'), value: encounter?.encounter_code || t('common.na') },
-            { label: t('common.date'), value: formatDateOnly(appointment?.appointment_date ?? null) },
-            { label: t('common.time'), value: appointment?.appointment_time?.trim() || t('common.na') },
+            {
+              label: t('encounter_modal.encounter_code'),
+              value: encounter?.encounter_code || t('common.na'),
+            },
+            {
+              label: t('common.date'),
+              value: formatDateOnly(appointment?.appointment_date ?? null),
+            },
+            {
+              label: t('common.time'),
+              value: appointment?.appointment_time?.trim() || t('common.na'),
+            },
             { label: t('common.type'), value: apptType },
             { label: t('nurse_walkin.service'), value: appointmentServiceTitle },
             { label: t('location.clinic_location'), value: appointmentLocationTitle },
@@ -566,22 +572,43 @@ export function EncounterDetailModal({
         `Doctor-SOAP-${(encounter?.encounter_code || String(encounterId)).replace(/[^a-zA-Z0-9-_]+/g, '_')}.pdf`
       )
     },
-    [patient, encounter, appointment, encounterId, patientAgeYears, appointmentServiceTitle, appointmentLocationTitle, t, localeTag, language]
+    [
+      patient,
+      encounter,
+      appointment,
+      encounterId,
+      patientAgeYears,
+      appointmentServiceTitle,
+      appointmentLocationTitle,
+      t,
+      localeTag,
+      language,
+    ]
   )
 
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-slate-900/40 backdrop-blur-[2px] lg:p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-slate-900/40 backdrop-blur-[2px] lg:p-4"
+      data-testid="encounter-detail-modal"
+    >
       <div className="bg-white border border-slate-200 rounded-t-2xl lg:rounded-2xl w-full lg:max-w-6xl h-[94dvh] lg:h-[90vh] flex flex-col overflow-hidden shadow-xl shadow-slate-300/40">
         {/* Header */}
         <div className="flex items-center justify-between px-4 lg:px-6 py-3 lg:py-4 border-b border-slate-100 bg-[#f9fbff] flex-shrink-0">
           {/* Mobile drag handle */}
-          <div className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-200 lg:hidden" aria-hidden />
+          <div
+            className="absolute top-2 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full bg-slate-200 lg:hidden"
+            aria-hidden
+          />
           <div className="flex items-center gap-2 lg:gap-4 flex-wrap mt-1 lg:mt-0">
-            <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight">{t('encounter_modal.title')}</h2>
+            <h2 className="text-base lg:text-xl font-bold text-slate-900 tracking-tight">
+              {t('encounter_modal.title')}
+            </h2>
             {encounter?.encounter_code && (
-              <span className="text-xs lg:text-sm text-[#2E6EF3] font-mono font-medium">#{encounter.encounter_code}</span>
+              <span className="text-xs lg:text-sm text-[#2E6EF3] font-mono font-medium">
+                #{encounter.encounter_code}
+              </span>
             )}
             {encounter?.status && (
               <span
@@ -630,10 +657,14 @@ export function EncounterDetailModal({
               </span>
             )}
             {!loading && !intakeSeverityBand && intake && intake.severity == null && (
-              <span className="text-xs text-slate-500">{t('encounter_modal.severity_not_set')}</span>
+              <span className="text-xs text-slate-500">
+                {t('encounter_modal.severity_not_set')}
+              </span>
             )}
             {!loading && !intakeSeverityBand && !intake && (
-              <span className="text-xs text-slate-500">{t('encounter_modal.risk_needs_intake')}</span>
+              <span className="text-xs text-slate-500">
+                {t('encounter_modal.risk_needs_intake')}
+              </span>
             )}
           </div>
           <div className="flex items-center gap-3">
@@ -652,7 +683,9 @@ export function EncounterDetailModal({
                 disabled={completingEncounter}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
               >
-                {completingEncounter ? t('encounter_modal.completing') : t('encounter_modal.complete_encounter')}
+                {completingEncounter
+                  ? t('encounter_modal.completing')
+                  : t('encounter_modal.complete_encounter')}
               </button>
             )}
             {onJoinTelemedicine && canJoinTelemedicine && (
@@ -661,8 +694,19 @@ export function EncounterDetailModal({
                 onClick={onJoinTelemedicine}
                 className="px-4 py-2 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#256ae8] transition-colors flex items-center gap-2 shadow-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
                 </svg>
                 {t('encounter_modal.join_telemedicine')}
               </button>
@@ -673,8 +717,19 @@ export function EncounterDetailModal({
               className="p-2 rounded-xl text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2E6EF3]/50"
               aria-label={t('common.close')}
             >
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <svg
+                className="w-6 h-6"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -716,228 +771,307 @@ export function EncounterDetailModal({
             ) : modalTab === 'forms' ? (
               <EncounterConsentFormsTab encounterId={encounterId} />
             ) : (
-            <div className="space-y-6">
-              {/* Risk alerts — first in scroll so it cannot be missed */}
-              <div
-                id="encounter-risk-alerts"
-                className="rounded-xl border border-rose-200 bg-rose-50/90 p-6 shadow-sm ring-1 ring-rose-100"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
-                  <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 flex-wrap">
-                    <svg className="w-5 h-5 text-rose-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                    {t('encounter_modal.risk_alerts')}
-                    <span className="text-xs font-normal text-rose-700/90 rounded-md bg-white/80 px-2 py-0.5 border border-rose-200">
-                      {t('encounter_modal.ai_diagnose_tag')}
-                    </span>
-                  </h3>
-                </div>
-                {!intake && (
-                  <p className="text-rose-900/85 text-sm mb-3">{t('encounter_modal.severity_derived_when_intake')}</p>
-                )}
-                {intake && intakeSeverityBand && (
-                  <div className="space-y-3">
-                    <div
-                      className="flex rounded-lg overflow-hidden border border-slate-200 bg-white"
-                      title="From intake severity: 1–3 Low, 4–7 Medium, 8–10 High"
-                    >
-                      {(['low', 'medium', 'high'] as const).map((step) => (
-                        <div
-                          key={step}
-                          className={`flex-1 py-2 text-center text-xs font-semibold capitalize ${
-                            intakeSeverityBand === step
-                              ? step === 'high'
-                                ? 'bg-red-100 text-red-900'
-                                : step === 'medium'
-                                  ? 'bg-amber-100 text-amber-900'
-                                  : 'bg-emerald-100 text-emerald-900'
-                              : 'text-slate-400'
-                          }`}
-                        >
-                          {step === 'high'
-                            ? t('encounter_modal.band_high')
-                            : step === 'medium'
-                              ? t('encounter_modal.band_medium')
-                              : t('encounter_modal.band_low')}
-                        </div>
-                      ))}
-                    </div>
-                    <div
-                      className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold border ${
-                        intakeSeverityBand === 'high'
-                          ? 'bg-red-50 border-red-200 text-red-900'
-                          : intakeSeverityBand === 'medium'
-                            ? 'bg-amber-50 border-amber-200 text-amber-900'
-                            : 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                      }`}
-                    >
-                      <span className="uppercase tracking-wide text-xs opacity-90">{t('encounter_modal.level_label')}</span>
-                      <span>
-                        {intakeSeverityBand === 'high'
-                          ? t('encounter_modal.risk_high')
-                          : intakeSeverityBand === 'medium'
-                            ? t('encounter_modal.risk_medium')
-                            : t('encounter_modal.risk_low')}
+              <div className="space-y-6">
+                {/* Risk alerts — first in scroll so it cannot be missed */}
+                <div
+                  id="encounter-risk-alerts"
+                  className="rounded-xl border border-rose-200 bg-rose-50/90 p-6 shadow-sm ring-1 ring-rose-100"
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-3">
+                    <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                      <svg
+                        className="w-5 h-5 text-rose-600 shrink-0"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                        />
+                      </svg>
+                      {t('encounter_modal.risk_alerts')}
+                      <span className="text-xs font-normal text-rose-700/90 rounded-md bg-white/80 px-2 py-0.5 border border-rose-200">
+                        {t('encounter_modal.ai_diagnose_tag')}
                       </span>
-                    </div>
+                    </h3>
                   </div>
-                )}
-                {intake && intake.severity == null && (
-                  <p className="text-rose-900/85 text-sm">{t('encounter_modal.severity_hint_add_score')}</p>
-                )}
-                {intake && intake.severity != null && !intakeSeverityBand && (
-                  <p className="text-amber-900 text-sm">{t('encounter_modal.severity_invalid_range')}</p>
-                )}
-              </div>
-
-              {/* Appointment Details */}
-              {appointment && (
-                <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-                  <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {t('encounter_modal.appointment_info')}
-                  </h3>
-                  <div className="space-y-5">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.date')}</p>
-                        <p className="text-slate-900 font-semibold">{formatDate(appointment.appointment_date)}</p>
-                      </div>
-                      <div>
-                        <p className="text-slate-500 text-sm mb-1">{t('common.time')}</p>
-                        <p className="text-slate-900 font-semibold">
-                          {appointment.appointment_time
-                            ? formatClinicTimeSlot(appointment.appointment_time)
-                            : t('common.na')}
-                        </p>
-                      </div>
-                      <div className="col-span-2 sm:col-span-1">
-                        <p className="text-slate-500 text-sm mb-1">{t('common.type')}</p>
-                        <p className="text-slate-900 font-semibold">
-                          <span
-                            className={`inline-flex px-3 py-1 rounded-lg text-sm border ${
-                              appointment.onsite_type === 'onsite'
-                                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                                : 'bg-blue-50 text-[#2E6EF3] border-blue-200'
+                  {!intake && (
+                    <p className="text-rose-900/85 text-sm mb-3">
+                      {t('encounter_modal.severity_derived_when_intake')}
+                    </p>
+                  )}
+                  {intake && intakeSeverityBand && (
+                    <div className="space-y-3">
+                      <div
+                        className="flex rounded-lg overflow-hidden border border-slate-200 bg-white"
+                        title="From intake severity: 1–3 Low, 4–7 Medium, 8–10 High"
+                      >
+                        {(['low', 'medium', 'high'] as const).map(step => (
+                          <div
+                            key={step}
+                            className={`flex-1 py-2 text-center text-xs font-semibold capitalize ${
+                              intakeSeverityBand === step
+                                ? step === 'high'
+                                  ? 'bg-red-100 text-red-900'
+                                  : step === 'medium'
+                                    ? 'bg-amber-100 text-amber-900'
+                                    : 'bg-emerald-100 text-emerald-900'
+                                : 'text-slate-400'
                             }`}
                           >
-                            {appointment.onsite_type === 'onsite'
-                              ? t('encounter_modal.type_onsite')
-                              : t('encounter_modal.type_offsite')}
-                          </span>
-                        </p>
+                            {step === 'high'
+                              ? t('encounter_modal.band_high')
+                              : step === 'medium'
+                                ? t('encounter_modal.band_medium')
+                                : t('encounter_modal.band_low')}
+                          </div>
+                        ))}
+                      </div>
+                      <div
+                        className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl font-semibold border ${
+                          intakeSeverityBand === 'high'
+                            ? 'bg-red-50 border-red-200 text-red-900'
+                            : intakeSeverityBand === 'medium'
+                              ? 'bg-amber-50 border-amber-200 text-amber-900'
+                              : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        }`}
+                      >
+                        <span className="uppercase tracking-wide text-xs opacity-90">
+                          {t('encounter_modal.level_label')}
+                        </span>
+                        <span>
+                          {intakeSeverityBand === 'high'
+                            ? t('encounter_modal.risk_high')
+                            : intakeSeverityBand === 'medium'
+                              ? t('encounter_modal.risk_medium')
+                              : t('encounter_modal.risk_low')}
+                        </span>
                       </div>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-slate-100">
-                      <div className="min-w-0">
-                        <p className="text-slate-500 text-sm mb-1">{t('nurse_walkin.service')}</p>
-                        <p className="text-slate-900 font-semibold break-words">{appointmentServiceTitle}</p>
+                  )}
+                  {intake && intake.severity == null && (
+                    <p className="text-rose-900/85 text-sm">
+                      {t('encounter_modal.severity_hint_add_score')}
+                    </p>
+                  )}
+                  {intake && intake.severity != null && !intakeSeverityBand && (
+                    <p className="text-amber-900 text-sm">
+                      {t('encounter_modal.severity_invalid_range')}
+                    </p>
+                  )}
+                </div>
+
+                {/* ICD-10-CM suggestions (AI-assisted, from intake + SOAP subjective) */}
+                <div
+                  id="encounter-icd-suggestions"
+                  className="rounded-xl border border-sky-200 bg-sky-50/90 p-6 shadow-sm ring-1 ring-sky-100"
+                >
+                  <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2 flex-wrap">
+                    <svg
+                      className="w-5 h-5 text-sky-600 shrink-0"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                      aria-hidden
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                    {t('encounter_modal.icd_title')}
+                    <span className="text-xs font-normal text-sky-800/90">
+                      {t('encounter_modal.icd_disclaimer')}
+                    </span>
+                  </h3>
+                  {icdLoading && (
+                    <p className="text-sky-900/80 text-sm mt-3">
+                      {t('encounter_modal.loading_suggestions')}
+                    </p>
+                  )}
+                  {!icdLoading && icdMessage && !icdSuggestions?.length && (
+                    <p className="text-amber-900 text-sm mt-3">{icdMessage}</p>
+                  )}
+                  {!icdLoading && icdSuggestions && icdSuggestions.length > 0 && (
+                    <ul className="mt-4 space-y-4">
+                      {icdSuggestions.map((row, idx) => (
+                        <li
+                          key={`${row.code}-${idx}`}
+                          className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+                            <span className="font-mono text-lg font-semibold text-[#2E6EF3]">
+                              {row.code}
+                            </span>
+                            <span className="text-xs text-slate-500">
+                              {t('encounter_modal.icd_confidence')}{' '}
+                              <span className="text-sky-800 font-medium">{row.confidence}%</span>
+                            </span>
+                          </div>
+                          <p className="text-slate-900 font-medium text-sm mb-1">
+                            {row.description}
+                          </p>
+                          <p className="text-slate-600 text-xs leading-relaxed">{row.reasoning}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Appointment Details */}
+                {appointment && (
+                  <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                      <svg
+                        className="w-5 h-5 text-amber-500"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                        />
+                      </svg>
+                      {t('encounter_modal.appointment_info')}
+                    </h3>
+                    <div className="space-y-5">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-4">
+                        <div>
+                          <p className="text-slate-500 text-sm mb-1">{t('common.date')}</p>
+                          <p className="text-slate-900 font-semibold">
+                            {formatDate(appointment.appointment_date)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-slate-500 text-sm mb-1">{t('common.time')}</p>
+                          <p className="text-slate-900 font-semibold">
+                            {appointment.appointment_time
+                              ? formatClinicTimeSlot(appointment.appointment_time)
+                              : t('common.na')}
+                          </p>
+                        </div>
+                        <div className="col-span-2 sm:col-span-1">
+                          <p className="text-slate-500 text-sm mb-1">{t('common.type')}</p>
+                          <p className="text-slate-900 font-semibold">
+                            <span
+                              className={`inline-flex px-3 py-1 rounded-lg text-sm border ${
+                                appointment.onsite_type === 'onsite'
+                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                  : 'bg-blue-50 text-[#2E6EF3] border-blue-200'
+                              }`}
+                            >
+                              {appointment.onsite_type === 'onsite'
+                                ? t('encounter_modal.type_onsite')
+                                : t('encounter_modal.type_offsite')}
+                            </span>
+                          </p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-slate-500 text-sm mb-1">{t('location.clinic_location')}</p>
-                        <p className="text-slate-900 font-semibold break-words">{appointmentLocationTitle}</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-slate-100">
+                        <div className="min-w-0">
+                          <p className="text-slate-500 text-sm mb-1">{t('nurse_walkin.service')}</p>
+                          <p className="text-slate-900 font-semibold break-words">
+                            {appointmentServiceTitle}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-slate-500 text-sm mb-1">
+                            {t('location.clinic_location')}
+                          </p>
+                          <p className="text-slate-900 font-semibold break-words">
+                            {appointmentLocationTitle}
+                          </p>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              <EncounterPatientInfoPanel
-                encounterId={encounterId}
-                canEdit={canEditPatientInfo}
-                encounterStatus={encounter?.status ?? null}
-                onPatientUpdated={(updated) => setPatient(updated)}
-              />
-
-              {encounter && (
-                <EncounterRoomingPanel
+                <EncounterPatientInfoPanel
                   encounterId={encounterId}
-                  encounter={encounter}
-                  readOnly={!canEditClinicalEncounter}
-                  onUpdated={async () => {
-                    await refreshEncounterFromApi()
+                  canEdit={canEditPatientInfo}
+                  encounterStatus={encounter?.status ?? null}
+                  onPatientUpdated={updated => setPatient(updated)}
+                />
+
+                {encounter && (
+                  <EncounterRoomingPanel
+                    encounterId={encounterId}
+                    encounter={encounter}
+                    readOnly={!canEditClinicalEncounter}
+                    onUpdated={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
+                {encounter && (
+                  <EncounterPhysicalExamPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditPhysicalExam}
+                    onSaved={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
+                {encounter && (
+                  <EncounterPrescriptionsPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditEncounterRx}
+                    canSendToAdmin={canSendPrescriptionsToAdmin}
+                    canManagePharmacy={canManagePharmacy}
+                    canPrintPrescriptions={isAdminViewer}
+                    hasDoctor={encounter.doctor_id != null}
+                    hasPharmacy={encounter.pharmacy_id != null}
+                    pharmacyId={encounter.pharmacy_id}
+                    assignedPharmacy={
+                      pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
+                    }
+                    pharmacies={pharmacies}
+                    onPharmacyUpdated={refreshEncounterAndPharmacy}
+                    onPharmaciesReload={reloadPharmacyRegistry}
+                  />
+                )}
+
+                <EncounterIntakePanel
+                  encounterId={encounterId}
+                  intake={intake}
+                  canEdit={intakeEditable}
+                  onUpdated={() => {
+                    void refreshEncounterFromApi()
                   }}
                 />
-              )}
 
-              {encounter && (
-                <EncounterPhysicalExamPanel
+                <EncounterVitalsPanel
                   encounterId={encounterId}
-                  encounterStatus={encounter.status}
-                  canEdit={canEditPhysicalExam}
-                  onSaved={async () => {
-                    await refreshEncounterFromApi()
+                  vitals={vitals}
+                  canEdit={vitalsEditable}
+                  onUpdated={() => {
+                    void refreshEncounterFromApi()
                   }}
                 />
-              )}
 
-              {encounter && (
-                <EncounterPrescriptionsPanel
+                <EncounterSoapPanel
                   encounterId={encounterId}
-                  encounterStatus={encounter.status}
-                  canEdit={canEditEncounterRx}
-                  canSendToAdmin={canSendPrescriptionsToAdmin}
-                  canManagePharmacy={canManagePharmacy}
-                  canPrintPrescriptions={isAdminViewer}
-                  hasDoctor={encounter.doctor_id != null}
-                  hasPharmacy={encounter.pharmacy_id != null}
-                  pharmacyId={encounter.pharmacy_id}
-                  assignedPharmacy={
-                    pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
-                  }
-                  pharmacies={pharmacies}
-                  onPharmacyUpdated={refreshEncounterAndPharmacy}
-                  onPharmaciesReload={reloadPharmacyRegistry}
+                  aiSoap={soapNotes}
+                  canEdit={canEditSoap}
+                  encounterStatus={encounter?.status ?? null}
+                  onDownloadDoctorPdf={soap => void handleDownloadDoctorSoapPdf(soap)}
                 />
-              )}
-
-              <EncounterIntakePanel
-                encounterId={encounterId}
-                intake={intake}
-                canEdit={intakeEditable}
-                onUpdated={() => {
-                  void refreshEncounterFromApi()
-                }}
-              />
-
-              <EncounterVitalsPanel
-                encounterId={encounterId}
-                vitals={vitals}
-                canEdit={vitalsEditable}
-                onUpdated={() => {
-                  void refreshEncounterFromApi()
-                }}
-              />
-
-              <EncounterSoapPanel
-                encounterId={encounterId}
-                aiSoap={soapNotes}
-                canEdit={canEditSoap}
-                encounterStatus={encounter?.status ?? null}
-                onDownloadDoctorPdf={(soap) => void handleDownloadDoctorSoapPdf(soap)}
-                afterSoapContent={
-                  <>
-                    <EncounterDiagnosesPanel
-                      encounterId={encounterId}
-                      canEdit={canEditClinicalEncounter && !isAdminViewer}
-                      aiSuggestions={icdSuggestions ?? []}
-                      aiLoading={icdLoading}
-                      aiMessage={icdMessage}
-                    />
-                    {encounter && !isAdminViewer && (
-                      <EncounterMedicationOrdersPanel
-                        encounterId={encounterId}
-                        canEdit={canEditWorkflow && encounter.status !== 'completed'}
-                      />
-                    )}
-                  </>
-                }
-              />
-
-            </div>
+              </div>
             )}
           </div>
         </div>

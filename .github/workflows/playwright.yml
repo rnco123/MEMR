@@ -3,10 +3,10 @@ name: Playwright E2E Tests
 on:
   push:
     branches:
-      - testing
+      - qa
   pull_request:
     branches:
-      - testing
+      - qa
 
 jobs:
   playwright:
@@ -78,7 +78,7 @@ jobs:
         run: npx playwright test e2e/auth.spec.ts e2e/security-permissions.spec.ts e2e/global-ui.spec.ts e2e/admin-user-create-login.spec.ts e2e/admin-locations.spec.ts e2e/admin-pharmacies.spec.ts e2e/admin-flowboard.spec.ts e2e/profile.spec.ts e2e/nurse-flowboard-add-patient.spec.ts e2e/nurse-flowboard-add-encounter.spec.ts e2e/nurse-vitals.spec.ts e2e/doctor-encounter-modal.spec.ts e2e/doctor-soap.spec.ts e2e/doctor-prescriptions.spec.ts e2e/encounter-lifecycle.spec.ts e2e/i693.spec.ts e2e/compliance.spec.ts e2e/support.spec.ts
         env:
           CI: true
-          PLAYWRIGHT_BASE_URL: https://mcm-development.up.railway.app
+          PLAYWRIGHT_BASE_URL: https://mcm-testing.up.railway.app
 
       - name: Upload screenshots, videos, traces and HTML report
         uses: actions/upload-artifact@v4
