@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
+import { formatCalendarDate } from '@/lib/datetime/date-input'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
@@ -139,6 +140,34 @@ function fitPdfFormLayerFonts(root: HTMLElement): void {
   })
 }
 
+type TbClassification = 'Positive' | 'Negative' | 'Indeterminate' | 'Unable to Determine'
+
+type TbFlagResult = {
+  classification: TbClassification
+  confidence: number
+  borderline: boolean
+  reasons: string[]
+  values: {
+    nil: number | null
+    tb1_nil: number | null
+    tb2_nil: number | null
+    mitogen_nil: number | null
+  }
+  document?: { file_name?: string | null } | null
+}
+
+/** Solid fill so the classification reads at a glance from across the toolbar. */
+const TB_FLAG_STYLES: Record<TbClassification, string> = {
+  Positive: 'border-red-700 bg-red-600 text-white hover:bg-red-700',
+  Negative: 'border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700',
+  Indeterminate: 'border-amber-600 bg-amber-500 text-white hover:bg-amber-600',
+  'Unable to Determine': 'border-slate-500 bg-slate-500 text-white hover:bg-slate-600',
+}
+
+function formatTbValue(value: number | null): string {
+  return value == null ? '—' : String(value)
+}
+
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const { t } = useT()
   const { caseRow: workflowCase, loading: workflowCaseLoading } = useImmigrationWorkflowCase(encounterId)
@@ -161,11 +190,16 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(null)
   const [splitResizing, setSplitResizing] = useState(false)
   const [patientId, setPatientId] = useState<number | null>(null)
+  const [lastVisitDate, setLastVisitDate] = useState<string | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
   const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
   const [locationAutofillLoading, setLocationAutofillLoading] = useState(false)
   const [aiChartLoading, setAiChartLoading] = useState(false)
+  const [tbFlagLoading, setTbFlagLoading] = useState(false)
+  const [tbFlag, setTbFlag] = useState<TbFlagResult | null>(null)
+  const [tbFileName, setTbFileName] = useState<string | null>(null)
+  const tbFileInputRef = useRef<HTMLInputElement>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const pageHostsRef = useRef<PagePortalHost[]>([])
@@ -369,6 +403,70 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       setAiChartLoading(false)
     }
   }, [encounterId, t])
+
+  const flagTb = useCallback(async (file: File) => {
+    setTbFlagLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/api/encounters/${encounterId}/i693/tb-analysis`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        body: formData,
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || json.message || t('i693.tb_flag_failed'))
+
+      const result = json as TbFlagResult
+      setTbFlag(result)
+
+      if (result.classification === 'Positive') {
+        toast.error(t('i693.tb_flag_positive'))
+      } else if (result.classification === 'Negative') {
+        toast.success(t('i693.tb_flag_negative'))
+      } else {
+        toast.warning(t('i693.tb_flag_inconclusive', { result: result.classification }))
+      }
+    } catch (e) {
+      setTbFlag(null)
+      toast.error(e instanceof Error ? e.message : t('i693.tb_flag_failed'))
+    } finally {
+      setTbFlagLoading(false)
+    }
+  }, [encounterId, t])
+
+  const handleTbFileSelected = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = '' // allow re-picking the same file
+      if (!file) return
+      const name = file.name.toLowerCase()
+      if (file.type.toLowerCase() !== 'application/pdf' && !name.endsWith('.pdf')) {
+        toast.error(t('i693.tb_flag_pdf_only'))
+        return
+      }
+      setTbFileName(file.name)
+      void flagTb(file)
+    },
+    [flagTb, t]
+  )
+
+  const tbFlagTitle = useMemo(() => {
+    if (!tbFlag) return t('i693.tb_flag_hint')
+    const { values } = tbFlag
+    const lines = [
+      `${tbFlag.classification} — ${Math.round(tbFlag.confidence * 100)}% ${t('i693.tb_confidence')}`,
+      `Nil ${formatTbValue(values.nil)} · TB1-Nil ${formatTbValue(values.tb1_nil)} · TB2-Nil ${formatTbValue(
+        values.tb2_nil
+      )} · Mitogen-Nil ${formatTbValue(values.mitogen_nil)}`,
+      ...(tbFlag.reasons ?? []),
+    ]
+    if (tbFlag.borderline) lines.push(t('i693.tb_borderline'))
+    if (tbFlag.document?.file_name) lines.push(tbFlag.document.file_name)
+    return lines.join('\n')
+  }, [tbFlag, t])
 
   const renderEditorPdf = useCallback(
     async (data: I693FormData) => {
@@ -687,6 +785,50 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     }
   }, [patientId, t])
 
+  const loadLastVisit = useCallback(async () => {
+    if (patientId == null) {
+      setLastVisitDate(null)
+      return
+    }
+    try {
+      const res = await fetch(`/api/patients/${patientId}/encounters`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (!res.ok) return
+
+      const rows = (json.encounters ?? []) as {
+        created_at?: string | null
+        updated_at?: string | null
+        appointments?: { appointment_date?: string | null } | null
+      }[]
+
+      // Latest visit across every encounter, including the one being documented, taking the
+      // later of the appointment date and the encounter's own activity — the same definition
+      // the Patients History "Last visit" column uses, so the two screens agree.
+      // Compare on the YYYY-MM-DD prefix since appointment dates carry no timezone.
+      let latest: string | null = null
+      for (const row of rows) {
+        for (const candidate of [
+          row.appointments?.appointment_date,
+          row.updated_at,
+          row.created_at,
+        ]) {
+          if (!candidate) continue
+          if (!latest || candidate.slice(0, 10) > latest.slice(0, 10)) latest = candidate
+        }
+      }
+      setLastVisitDate(latest)
+    } catch {
+      setLastVisitDate(null)
+    }
+  }, [patientId])
+
+  useEffect(() => {
+    void loadLastVisit()
+  }, [loadLastVisit])
+
   const openSplitView = useCallback(async () => {
     if (patientId != null) {
       await loadPatientChartDocuments()
@@ -814,22 +956,19 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-bold text-slate-900">{t('i693.immigration_heading')}</h1>
           <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            {displayPatientName || patientId != null ? (
+            {displayPatientName ? (
               <span>
                 <span className="text-slate-500">{t('i693.selected_patient')}:</span>{' '}
-                {displayPatientName ? (
-                  <span className="font-medium text-slate-900">{displayPatientName}</span>
-                ) : null}
-                {patientId != null ? (
-                  <span className="ml-1.5 text-xs text-slate-400">
-                    {t('i693.patient_id')} #{patientId}
-                  </span>
-                ) : null}
+                <span className="font-medium text-slate-900">{displayPatientName}</span>
               </span>
             ) : null}
             <span>
-              <span className="text-slate-500">{t('i693.encounter_label')}:</span>{' '}
-              <span className="font-medium text-slate-900">#{encounterId}</span>
+              <span className="text-slate-500">{t('i693.last_visit')}:</span>{' '}
+              <span className={lastVisitDate ? 'font-medium text-slate-900' : 'text-slate-400'}>
+                {lastVisitDate
+                  ? formatCalendarDate(lastVisitDate, 'en-US', { month: 'short' })
+                  : t('i693.last_visit_none')}
+              </span>
             </span>
             {clinicLocationLabel ? (
               <span>
@@ -905,6 +1044,43 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
             </span>
           )}
         </button>
+        <input
+          ref={tbFileInputRef}
+          type="file"
+          accept=".pdf,application/pdf"
+          className="hidden"
+          onChange={handleTbFileSelected}
+        />
+        <button
+          type="button"
+          onClick={() => tbFileInputRef.current?.click()}
+          disabled={tbFlagLoading || saving || printing}
+          title={tbFlagTitle}
+          className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+            tbFlag
+              ? TB_FLAG_STYLES[tbFlag.classification]
+              : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+          }`}
+        >
+          {!tbFlagLoading && !tbFlag && (
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.49-8.48" />
+            </svg>
+          )}
+          {tbFlagLoading
+            ? t('i693.tb_flag_running')
+            : tbFlag
+              ? `${t('i693.tb_flag')}: ${tbFlag.classification}`
+              : t('i693.tb_flag')}
+        </button>
+        {tbFileName && (
+          <span
+            className="max-w-[11rem] truncate text-[11px] text-slate-500"
+            title={tbFileName}
+          >
+            {tbFileName}
+          </span>
+        )}
 
         <div className="flex-1 min-w-2" />
 
