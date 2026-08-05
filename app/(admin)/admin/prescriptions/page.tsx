@@ -14,6 +14,7 @@ import {
   summarizeEncounterPrescriptionQueue,
   type AdminPrescriptionReadyRow,
   type PrescriptionReadyDateFilter,
+  type PrescriptionReadyGenderFilter,
 } from '@/lib/prescriptions/load-admin-prescription-ready'
 
 type PharmacyOption = { id: number; name: string }
@@ -72,6 +73,7 @@ export default function AdminPrescriptionsPage() {
   const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([])
   const [status, setStatus] = useState<AdminStatusFilter>('pending')
   const [prescriptionDate, setPrescriptionDate] = useState<PrescriptionReadyDateFilter>('all')
+  const [gender, setGender] = useState<PrescriptionReadyGenderFilter>('all')
   const [updatingEncounterId, setUpdatingEncounterId] = useState<number | null>(null)
   const [previewEncounter, setPreviewEncounter] = useState<{
     encounterId: number
@@ -94,6 +96,7 @@ export default function AdminPrescriptionsPage() {
       }
       params.set('status', status)
       if (prescriptionDate !== 'all') params.set('prescription_date', prescriptionDate)
+      if (gender !== 'all') params.set('gender', gender)
       const res = await fetch(`/api/admin/prescription-ready?${params.toString()}`, {
         credentials: 'include',
       })
@@ -115,7 +118,7 @@ export default function AdminPrescriptionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [pharmacyFilterKey, locationFilterKey, status, prescriptionDate, t])
+  }, [pharmacyFilterKey, locationFilterKey, status, prescriptionDate, gender, t])
 
   useEffect(() => {
     const timer = setTimeout(() => void fetchRows(), 250)
@@ -270,6 +273,30 @@ export default function AdminPrescriptionsPage() {
               {option.label}
             </button>
           ))}
+          </div>
+        </div>
+
+        <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0 self-center" aria-hidden />
+
+        <div className="flex flex-col gap-1.5">
+          <span className={filterLabelClass}>{t('admin.prescriptions.filter_gender')}</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { value: 'all' as const, label: t('admin.prescriptions.gender_all') },
+                { value: 'male' as const, label: t('admin.prescriptions.gender_male') },
+                { value: 'female' as const, label: t('admin.prescriptions.gender_female') },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setGender(option.value)}
+                className={filterBadgeClass(gender === option.value, 'neutral', true)}
+              >
+                {option.label}
+              </button>
+            ))}
           </div>
         </div>
 

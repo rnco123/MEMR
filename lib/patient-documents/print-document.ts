@@ -130,6 +130,24 @@ export function printPdfBlob(
   return openPrintWindow(html) != null
 }
 
+/** Opens the browser print dialog for an in-memory image blob. */
+export function printImageBlob(
+  blob: Blob,
+  title: string,
+  targetWindow?: Window | null
+): boolean {
+  const blobUrl = URL.createObjectURL(blob)
+  scheduleRevokeObjectUrl(blobUrl)
+  const html = buildImagePrintHtml(blobUrl, title)
+
+  if (targetWindow && !targetWindow.closed) {
+    writePrintWindow(targetWindow, html)
+    return true
+  }
+
+  return openPrintWindow(html) != null
+}
+
 /** Opens the browser print dialog for a patient document (PDF or image). */
 export async function printPatientDocument(
   doc: PrintablePatientDocument,

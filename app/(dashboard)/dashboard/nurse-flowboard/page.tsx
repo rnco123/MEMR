@@ -20,7 +20,7 @@ import { BatchAssignProviderModal } from '@/components/BatchAssignProviderModal'
 import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import { FlowboardKanban } from '@/components/FlowboardKanban'
 import {
   FlowboardFilterField,
@@ -127,7 +127,7 @@ function NurseFlowboardPage() {
   const [assigningDoctor, setAssigningDoctor] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery, { includeProvider: true })
+    usePatientSearchParse(searchQuery, { includeProvider: true })
   const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [pageSize, setPageSize] = useState(25)

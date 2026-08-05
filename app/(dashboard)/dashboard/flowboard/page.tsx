@@ -35,7 +35,7 @@ import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import { canDoctorCompleteEncounter } from '@/lib/encounter/complete-encounter'
 import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { formatDobShort } from '@/lib/datetime/date-input'
@@ -109,7 +109,7 @@ function FlowboardPage() {
   })
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery, { includeProvider: true })
+    usePatientSearchParse(searchQuery, { includeProvider: true })
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [pageSize, setPageSize] = useState(25)

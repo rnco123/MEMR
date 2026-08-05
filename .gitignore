@@ -19,5 +19,8 @@ blob-report/
 .DS_Store
 .cache/
 
+# audit report (local only)
+report.md
+
 # Claude Code local session settings (MCP permissions, etc.)
 .claude/settings.local.json

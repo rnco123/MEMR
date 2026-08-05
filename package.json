@@ -34,6 +34,7 @@
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",
+    "@anthropic-ai/sdk": "^0.115.0",
     "@aws-sdk/client-textract": "^3.1060.0",
     "@daily-co/daily-js": "^0.83.1",
     "@logtail/node": "^0.5.8",

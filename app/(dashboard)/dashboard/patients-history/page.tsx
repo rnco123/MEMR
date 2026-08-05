@@ -12,7 +12,7 @@ import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 
@@ -49,7 +49,7 @@ function PatientsHistoryPage() {
   const [loading, setLoading] = useState(false)
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
-  const { isPending: searchPending, debouncedQuery } = useAiPatientSearchParse(searchQuery)
+  const { isPending: searchPending, debouncedQuery } = usePatientSearchParse(searchQuery)
   const prevSearchRef = useRef(debouncedQuery)
 
   // Fetch patients for current page (search applies to ALL records)

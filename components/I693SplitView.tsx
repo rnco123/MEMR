@@ -20,6 +20,7 @@ import {
   readSplitViewBytes,
 } from '@/lib/i693/split-view-document'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
+import { printImageBlob, printPdfBlob } from '@/lib/patient-documents/print-document'
 import {
   CHART_PDF_VIEW_SCALE,
   renderPdfPageToCanvas,
@@ -141,8 +142,15 @@ export function I693SplitView({
   const [contentSize, setContentSize] = useState<Size>({ w: 0, h: 0 })
   const [viewportSize, setViewportSize] = useState<Size>({ w: 0, h: 0 })
   const [isPanning, setIsPanning] = useState(false)
+  const [listExpanded, setListExpanded] = useState(true)
   const hasSelection = activeIndex != null && activeIndex >= 0 && activeIndex < items.length
   const item = hasSelection ? items[activeIndex] ?? null : null
+
+  // Collapse the document list whenever a file opens; reopen it when the
+  // selection is cleared. Re-runs on activeIndex so switching files re-collapses.
+  useEffect(() => {
+    setListExpanded(!hasSelection)
+  }, [activeIndex, hasSelection])
 
   const measureSizes = useCallback(() => {
     const host = hostRef.current
@@ -426,24 +434,34 @@ export function I693SplitView({
   const pickHint = emptyHint ?? t('i693.splitview_pick_hint')
   const showCanvasHand = hasSelection && !loading
 
-  const downloadDocument = async (doc: I693SplitViewItem) => {
+  const printDocument = async (doc: I693SplitViewItem) => {
+    // Open while the click still has user activation — popup blockers eat windows opened after an await.
+    const printWindow = window.open('', '_blank')
     try {
       const bytes = await readSplitViewBytes(doc)
-      if (!bytes) {
-        toast.error(t('i693.splitview_download_failed'))
+      const name = doc.name || 'document'
+      if (isSplitViewPdf(doc)) {
+        const blob = new Blob([new Uint8Array(bytes)], { type: 'application/pdf' })
+        if (!printPdfBlob(blob, name, printWindow)) {
+          toast.error(t('i693.splitview_print_failed'))
+        }
         return
       }
-      const blob = new Blob([new Uint8Array(bytes)], { type: 'application/octet-stream' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = doc.name || 'document'
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success(t('i693.splitview_download_complete'))
+      if (isSplitViewImage(doc)) {
+        const blob = new Blob([new Uint8Array(bytes)], {
+          type: doc.mimeType || doc.file?.type || '',
+        })
+        if (!printImageBlob(blob, name, printWindow)) {
+          toast.error(t('i693.splitview_print_failed'))
+        }
+        return
+      }
+      printWindow?.close()
+      toast.error(t('i693.splitview_unsupported'))
     } catch (err) {
-      console.error('Download failed:', err)
-      toast.error(err instanceof Error ? err.message : t('i693.splitview_download_failed'))
+      if (printWindow && !printWindow.closed) printWindow.close()
+      console.error('Print failed:', err)
+      toast.error(err instanceof Error ? err.message : t('i693.splitview_print_failed'))
     }
   }
 
@@ -479,15 +497,15 @@ export function I693SplitView({
             </button>
             <button
               type="button"
-              onClick={() => downloadDocument(doc)}
+              onClick={() => printDocument(doc)}
               className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded ${
                 active ? 'text-white hover:bg-violet-700' : 'text-slate-400 hover:bg-slate-200 hover:text-slate-800'
               }`}
-              title={t('i693.splitview_download_document')}
-              aria-label={t('i693.splitview_download_document')}
+              title={t('i693.splitview_print_document')}
+              aria-label={t('i693.splitview_print_document')}
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v6a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-6M7 10l5 5m0 0l5-5m-5 5V3" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5M6 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1M8 14h8v7H8v-7z" />
               </svg>
             </button>
             {removable && onRemoveDocument ? (
@@ -522,26 +540,6 @@ export function I693SplitView({
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
-          {hasSelection ? (
-            <button
-              type="button"
-              onClick={() => onActiveIndexChange(null)}
-              className="rounded-lg border border-violet-200 px-2.5 py-1 text-xs font-medium text-violet-800 hover:bg-violet-50"
-              title={t('i693.splitview_change_document')}
-            >
-              {t('i693.splitview_change_document')}
-            </button>
-          ) : null}
-          {removable && onRemoveDocument && hasSelection ? (
-            <button
-              type="button"
-              onClick={() => onRemoveDocument(activeIndex)}
-              className="rounded-lg border border-red-200 px-2.5 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
-              title={t('i693.splitview_remove_document')}
-            >
-              {t('i693.splitview_remove_document')}
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={onClosePanel}
@@ -609,7 +607,34 @@ export function I693SplitView({
       ) : null}
 
       {items.length > 0 ? (
-        <div className="shrink-0 border-b border-violet-50 bg-slate-50">{documentList}</div>
+        <div className="shrink-0 border-b border-violet-50 bg-slate-50">
+          {hasSelection ? (
+            <button
+              type="button"
+              onClick={() => setListExpanded((prev) => !prev)}
+              className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-[11px] font-medium text-slate-500 hover:bg-slate-100"
+              aria-expanded={listExpanded}
+              title={listExpanded ? t('i693.splitview_hide_documents') : t('i693.splitview_show_documents', { count: items.length })}
+            >
+              <span className="truncate">
+                {listExpanded
+                  ? t('i693.splitview_hide_documents')
+                  : t('i693.splitview_show_documents', { count: items.length })}
+              </span>
+              <svg
+                className={`h-3.5 w-3.5 shrink-0 transition-transform ${listExpanded ? '' : 'rotate-180'}`}
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18 15l-6-6-6 6" />
+              </svg>
+            </button>
+          ) : null}
+          {!hasSelection || listExpanded ? documentList : null}
+        </div>
       ) : null}
 
       {hasSelection ? (
@@ -621,6 +646,29 @@ export function I693SplitView({
               {t('i693.splitview_zoom_wheel_hint')}
             </p>
             <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => item && printDocument(item)}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+                title={t('i693.splitview_print_document')}
+                aria-label={t('i693.splitview_print_document')}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5M6 18H5a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-1M8 14h8v7H8v-7z" />
+                </svg>
+              </button>
+              {removable && onRemoveDocument ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveDocument(activeIndex)}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-red-200 text-red-600 hover:bg-red-50"
+                  title={t('i693.splitview_remove_document')}
+                  aria-label={t('i693.splitview_remove_document')}
+                >
+                  ✕
+                </button>
+              ) : null}
+              <span className="mx-0.5 h-5 w-px bg-slate-200" aria-hidden />
               <button
                 type="button"
                 onClick={zoomOut}
