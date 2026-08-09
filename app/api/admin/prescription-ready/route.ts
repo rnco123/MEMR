@@ -26,6 +26,9 @@ export async function GET(req: NextRequest) {
     const dateRaw = req.nextUrl.searchParams.get('prescription_date') ?? 'all'
     const prescriptionDate: PrescriptionReadyDateFilter =
       dateRaw === 'today' || dateRaw === 'this_month' ? dateRaw : 'all'
+    const genderRaw = req.nextUrl.searchParams.get('gender')
+    const gender: 'male' | 'female' | 'all' =
+      genderRaw === 'male' || genderRaw === 'female' ? genderRaw : 'all'
 
     const baseFilters = {
       status: status as PrescriptionReadyAdminStatus | 'all',
@@ -35,6 +38,7 @@ export async function GET(req: NextRequest) {
     const rows = await loadAdminPrescriptionReadyRows(admin, {
       pharmacyIds: pharmacyIds.length > 0 ? pharmacyIds : undefined,
       locationIds: locationIds.length > 0 ? locationIds : undefined,
+      gender,
       ...baseFilters,
     })
 
