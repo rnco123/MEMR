@@ -28,7 +28,7 @@ import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
 import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { flowboardServiceTitle } from '@/lib/flowboard/service-title'
 import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
@@ -62,7 +62,7 @@ export default function AdminFlowboardPage() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery)
+    usePatientSearchParse(searchQuery)
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterLocationId, setFilterLocationId] = useState<string>('all')
   const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')

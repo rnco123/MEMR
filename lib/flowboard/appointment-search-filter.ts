@@ -1,11 +1,5 @@
 import {
-  patientDobMatchesFilter,
-  patientDobMatchesSearchParts,
-} from '@/lib/nurse/patient-dob-match'
-import { parseSearchDateParts } from '@/lib/nurse/patient-search-query'
-import {
   appointmentMatchesParsedSearch,
-  patientMatchesFreeText,
   patientMatchesParsedSearch,
 } from '@/lib/nurse/patient-search-apply'
 import type { ParsedPatientSearch } from '@/lib/nurse/patient-search-types'
@@ -22,36 +16,6 @@ export type FlowboardAppointmentSearch = {
   assigned_doctor?: { full_name?: string | null } | null
 }
 
-/** Legacy raw-string matcher (local date parse only). Prefer parsed OpenAI search. */
-export function appointmentMatchesSearchQuery(
-  appointment: FlowboardAppointmentSearch,
-  searchQuery: string,
-  options?: { includeProvider?: boolean }
-): boolean {
-  const query = searchQuery.trim()
-  if (!query) return true
-
-  const dateParts = parseSearchDateParts(query)
-  if (dateParts) {
-    if (patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)) return true
-    if (dateParts.year) return false
-  }
-
-  const patientMatch = patientMatchesFreeText(
-    {
-      id: appointment.patient_id,
-      ...appointment.patient,
-    },
-    query
-  )
-  if (patientMatch) return true
-
-  if (options?.includeProvider) {
-    return (appointment.assigned_doctor?.full_name ?? '').toLowerCase().includes(query.toLowerCase())
-  }
-  return false
-}
-
 export function appointmentMatchesParsedPatientSearch(
   appointment: FlowboardAppointmentSearch,
   parsed: ParsedPatientSearch | null,
@@ -59,27 +23,6 @@ export function appointmentMatchesParsedPatientSearch(
 ): boolean {
   if (!parsed?.raw.trim()) return true
   return appointmentMatchesParsedSearch(appointment, parsed, options)
-}
-
-/** DOB-only matcher for appointments tab (free-text input, same parsers as flowboard). */
-export function appointmentMatchesDobSearch(
-  appointment: FlowboardAppointmentSearch,
-  parsed: ParsedPatientSearch | null,
-  rawQuery: string
-): boolean {
-  const query = rawQuery.trim()
-  if (!query) return true
-
-  if (parsed?.dobFilter) {
-    return patientDobMatchesFilter(appointment.patient?.date_of_birth, parsed.dobFilter)
-  }
-
-  const dateParts = parseSearchDateParts(query)
-  if (dateParts) {
-    return patientDobMatchesSearchParts(appointment.patient?.date_of_birth, dateParts)
-  }
-
-  return false
 }
 
 export { patientMatchesParsedSearch }

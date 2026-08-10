@@ -4,6 +4,9 @@ node_modules/
 # next.js
 .next/
 out/
+playwright-report/
+test-results/
+blob-report/
 
 # typescript build cache
 *.tsbuildinfo
@@ -15,6 +18,9 @@ out/
 # misc
 .DS_Store
 .cache/
+
+# audit report (local only)
+report.md
 
 # Claude Code local session settings (MCP permissions, etc.)
 .claude/settings.local.json

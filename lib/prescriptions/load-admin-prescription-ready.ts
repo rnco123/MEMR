@@ -12,6 +12,15 @@ import {
 
 export type { PrescriptionReadyDateFilter }
 
+export type PrescriptionReadyGenderFilter = 'all' | 'male' | 'female'
+
+export function parsePrescriptionGenderFilter(
+  value: string | null | undefined
+): PrescriptionReadyGenderFilter {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === 'male' || normalized === 'female' ? normalized : 'all'
+}
+
 type QueueBaseFilters = {
   status?: PrescriptionReadyAdminStatus | 'all'
   prescriptionDate?: PrescriptionReadyDateFilter
@@ -144,7 +153,7 @@ export async function loadAdminPrescriptionReadyRows(
     locationIds?: number[]
     status?: PrescriptionReadyAdminStatus | 'all'
     prescriptionDate?: PrescriptionReadyDateFilter
-    gender?: PatientGenderValue | 'all'
+    gender?: PrescriptionReadyGenderFilter
   }
 ): Promise<AdminPrescriptionReadyRow[]> {
   let query = admin
@@ -298,7 +307,9 @@ export async function loadAdminPrescriptionReadyRows(
     )
   }
 
-  // Legacy rows store mixed-case gender values, so compare on the normalized field.
+  // Gender lives on the patient, so an encounter's rows all match or all don't — filtering
+  // rows never splits an encounter group. patient_gender is already normalized, which is
+  // what makes legacy mixed-case rows ('Male', 'F') match here.
   if (filters.gender && filters.gender !== 'all') {
     filtered = filtered.filter((row) => row.patient_gender === filters.gender)
   }

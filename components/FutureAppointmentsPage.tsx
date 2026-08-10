@@ -14,8 +14,8 @@ import {
   FlowboardFilterToolbar,
   FLOWBOARD_SELECT_CLASS,
 } from '@/components/FlowboardFilterToolbar'
-import { appointmentMatchesDobSearch } from '@/lib/flowboard/appointment-search-filter'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { appointmentMatchesParsedPatientSearch } from '@/lib/flowboard/appointment-search-filter'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import {
   formatClinicDateOnly,
   formatClinicTimeSlot,
@@ -82,9 +82,9 @@ function FutureAppointmentsPageInner() {
     return !sessionStorage.getItem(CACHE_KEY)
   })
   const [isRefreshing, setIsRefreshing] = useState(false)
-  const [dobSearchQuery, setDobSearchQuery] = useState('')
-  const { parsed: parsedDobSearch, isPending: dobSearchPending, debouncedQuery: debouncedDobQuery } =
-    useAiPatientSearchParse(dobSearchQuery)
+  const [searchQuery, setSearchQuery] = useState('')
+  const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
+    usePatientSearchParse(searchQuery)
   const [appointmentFrom, setAppointmentFrom] = useState('')
   const [appointmentTo, setAppointmentTo] = useState('')
   const [pageSize, setPageSize] = useState(25)
@@ -165,12 +165,10 @@ function FutureAppointmentsPageInner() {
   const filteredAppointments = useMemo(() => {
     let result = [...appointments]
 
-    const activeDobParsed =
-      parsedDobSearch && parsedDobSearch.raw === debouncedDobQuery.trim() ? parsedDobSearch : null
-    if (debouncedDobQuery.trim()) {
-      result = result.filter((a) =>
-        appointmentMatchesDobSearch(a, activeDobParsed, debouncedDobQuery)
-      )
+    const activeParsed =
+      parsedSearch && parsedSearch.raw === debouncedQuery.trim() ? parsedSearch : null
+    if (activeParsed) {
+      result = result.filter((a) => appointmentMatchesParsedPatientSearch(a, activeParsed))
     }
 
     if (appointmentFrom) {
@@ -186,14 +184,14 @@ function FutureAppointmentsPageInner() {
 
     result.sort(compareActivityDesc)
     return result
-  }, [appointments, parsedDobSearch, debouncedDobQuery, appointmentFrom, appointmentTo])
+  }, [appointments, parsedSearch, debouncedQuery, appointmentFrom, appointmentTo])
 
   const hasActiveFilters = Boolean(
-    dobSearchQuery.trim() || appointmentFrom || appointmentTo
+    searchQuery.trim() || appointmentFrom || appointmentTo
   )
 
   const clearFilters = () => {
-    setDobSearchQuery('')
+    setSearchQuery('')
     setAppointmentFrom('')
     setAppointmentTo('')
     setPage(1)
@@ -266,13 +264,13 @@ function FutureAppointmentsPageInner() {
           search={
             <SmartPatientSearchInput
               size="sm"
-              value={dobSearchQuery}
+              value={searchQuery}
               onChange={(value) => {
-                setDobSearchQuery(value)
+                setSearchQuery(value)
                 setPage(1)
               }}
-              placeholder={t('appointments.search_dob_placeholder')}
-              loading={dobSearchPending}
+              placeholder={t('appointments.search_placeholder')}
+              loading={searchPending}
             />
           }
           searchActions={

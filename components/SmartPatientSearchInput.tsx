@@ -15,33 +15,29 @@ type Props = {
   compact?: boolean
   size?: SearchSize
   loading?: boolean
-  showAiBadge?: boolean
 }
 
 const SIZE_STYLES: Record<
   SearchSize,
-  { shell: string; input: string; leftPad: string; icon: string; badge: string }
+  { shell: string; input: string; leftPad: string; icon: string }
 > = {
   sm: {
     shell: 'h-9 rounded-lg',
     input: 'text-sm',
     leftPad: 'pl-9',
     icon: 'h-4 w-4',
-    badge: 'px-1.5 py-0.5 text-[9px] gap-0.5',
   },
   md: {
     shell: 'h-10 rounded-xl',
     input: 'text-sm',
     leftPad: 'pl-10',
     icon: 'h-4 w-4',
-    badge: 'px-2 py-0.5 text-[10px] gap-1',
   },
   lg: {
     shell: 'h-11 rounded-xl',
     input: 'text-sm',
     leftPad: 'pl-10',
     icon: 'h-[18px] w-[18px]',
-    badge: 'px-2.5 py-1 text-[10px] gap-1',
   },
 }
 
@@ -77,17 +73,6 @@ function SearchSpinner({ className }: { className: string }) {
   )
 }
 
-function PoweredByAiBadge({ className }: { className: string }) {
-  return (
-    <span
-      className={`pointer-events-none inline-flex shrink-0 items-center rounded-full border border-violet-200/90 bg-gradient-to-r from-violet-50 via-white to-purple-50 font-semibold tracking-wide text-violet-700 shadow-[inset_0_1px_0_rgba(255,255,255,0.85)] ${className}`}
-      aria-hidden
-    >
-      PoweredbyAI
-    </span>
-  )
-}
-
 export function SmartPatientSearchInput({
   value,
   onChange,
@@ -98,7 +83,6 @@ export function SmartPatientSearchInput({
   compact = false,
   size,
   loading = false,
-  showAiBadge = true,
 }: Props) {
   const resolvedSize: SearchSize = size ?? (compact ? 'md' : 'lg')
   const styles = SIZE_STYLES[resolvedSize]
@@ -126,7 +110,6 @@ export function SmartPatientSearchInput({
 
         <div className="flex shrink-0 items-center gap-1.5">
           {loading && <SearchSpinner className={`${styles.icon} text-violet-500`} />}
-          {showAiBadge && <PoweredByAiBadge className={styles.badge} />}
         </div>
       </div>
     </div>

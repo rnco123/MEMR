@@ -6,6 +6,7 @@ import {
   loadAdminPrescriptionReadyRows,
   loadPrescriptionReadyPharmacyOptions,
   loadPrescriptionReadyLocationOptions,
+  parsePrescriptionGenderFilter,
   type PrescriptionReadyDateFilter,
 } from '@/lib/prescriptions/load-admin-prescription-ready'
 import type { PrescriptionReadyAdminStatus } from '@/lib/prescriptions/prescription-ready'
@@ -26,9 +27,7 @@ export async function GET(req: NextRequest) {
     const dateRaw = req.nextUrl.searchParams.get('prescription_date') ?? 'all'
     const prescriptionDate: PrescriptionReadyDateFilter =
       dateRaw === 'today' || dateRaw === 'this_month' ? dateRaw : 'all'
-    const genderRaw = req.nextUrl.searchParams.get('gender')
-    const gender: 'male' | 'female' | 'all' =
-      genderRaw === 'male' || genderRaw === 'female' ? genderRaw : 'all'
+    const gender = parsePrescriptionGenderFilter(req.nextUrl.searchParams.get('gender'))
 
     const baseFilters = {
       status: status as PrescriptionReadyAdminStatus | 'all',

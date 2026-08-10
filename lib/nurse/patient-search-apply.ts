@@ -214,7 +214,7 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
     const term = escapePostgrestFilterValue(sanitizePatientSearchTerm(parsed.raw))
     const ilikeTerm = `%${term}%`
     return query.or(
-      `date_of_birth.ilike.%-${month}-${day},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+      `and(dob_month.eq.${Number(month)},dob_day.eq.${Number(day)}),first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
     )
   }
   if (parsed.dobFilter?.anyYearMonth) {
@@ -222,7 +222,7 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
     const term = escapePostgrestFilterValue(sanitizePatientSearchTerm(parsed.raw))
     const ilikeTerm = `%${term}%`
     return query.or(
-      `date_of_birth.ilike.%-${m}-%,first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+      `dob_month.eq.${Number(m)},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
     )
   }
 
@@ -277,7 +277,7 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
         const term = escapePostgrestFilterValue(text)
         const ilikeTerm = `%${term}%`
         return query.or(
-          `date_of_birth.ilike.%-${month}-${day},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+          `and(dob_month.eq.${Number(month)},dob_day.eq.${Number(day)}),first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
         )
       }
       if (filter?.anyYearMonth) {
@@ -285,7 +285,7 @@ export function applyParsedPatientSearchToQuery<T extends FilterableQuery<T>>(
         const term = escapePostgrestFilterValue(text)
         const ilikeTerm = `%${term}%`
         return query.or(
-          `date_of_birth.ilike.%-${m}-%,first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
+          `dob_month.eq.${Number(m)},first_name.ilike.${ilikeTerm},last_name.ilike.${ilikeTerm}`
         )
       }
     }

@@ -14,12 +14,12 @@ import {
   summarizeEncounterPrescriptionQueue,
   type AdminPrescriptionReadyRow,
   type PrescriptionReadyDateFilter,
+  type PrescriptionReadyGenderFilter,
 } from '@/lib/prescriptions/load-admin-prescription-ready'
 
 type PharmacyOption = { id: number; name: string }
 type LocationOption = { id: number; title: string }
 type AdminStatusFilter = 'all' | 'pending' | 'sent_to_pharmacy'
-type AdminGenderFilter = 'all' | 'male' | 'female'
 
 function sameIdList(a: number[], b: number[]): boolean {
   if (a.length !== b.length) return false
@@ -73,7 +73,7 @@ export default function AdminPrescriptionsPage() {
   const [selectedLocationIds, setSelectedLocationIds] = useState<number[]>([])
   const [status, setStatus] = useState<AdminStatusFilter>('pending')
   const [prescriptionDate, setPrescriptionDate] = useState<PrescriptionReadyDateFilter>('all')
-  const [gender, setGender] = useState<AdminGenderFilter>('all')
+  const [gender, setGender] = useState<PrescriptionReadyGenderFilter>('all')
   const [updatingEncounterId, setUpdatingEncounterId] = useState<number | null>(null)
   const [previewEncounter, setPreviewEncounter] = useState<{
     encounterId: number
@@ -279,6 +279,30 @@ export default function AdminPrescriptionsPage() {
         <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0 self-center" aria-hidden />
 
         <div className="flex flex-col gap-1.5">
+          <span className={filterLabelClass}>{t('admin.prescriptions.filter_gender')}</span>
+          <div className="flex flex-wrap gap-1.5">
+            {(
+              [
+                { value: 'all' as const, label: t('admin.prescriptions.gender_all') },
+                { value: 'male' as const, label: t('admin.prescriptions.gender_male') },
+                { value: 'female' as const, label: t('admin.prescriptions.gender_female') },
+              ] as const
+            ).map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setGender(option.value)}
+                className={filterBadgeClass(gender === option.value, 'neutral', true)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0 self-center" aria-hidden />
+
+        <div className="flex flex-col gap-1.5">
           <span className={filterLabelClass}>{t('admin.prescriptions.filter_prescription_date')}</span>
           <div className="flex flex-wrap gap-1.5">
           {(
@@ -297,30 +321,6 @@ export default function AdminPrescriptionsPage() {
               type="button"
               onClick={() => setPrescriptionDate(option.value)}
               className={filterBadgeClass(prescriptionDate === option.value, option.tone, true)}
-            >
-              {option.label}
-            </button>
-          ))}
-          </div>
-        </div>
-
-        <div className="hidden sm:block w-px h-10 bg-slate-200 shrink-0 self-center" aria-hidden />
-
-        <div className="flex flex-col gap-1.5">
-          <span className={filterLabelClass}>{t('admin.prescriptions.filter_gender')}</span>
-          <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { value: 'all' as const, label: t('admin.prescriptions.gender_all') },
-              { value: 'male' as const, label: t('common.male') },
-              { value: 'female' as const, label: t('common.female') },
-            ] as const
-          ).map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setGender(option.value)}
-              className={filterBadgeClass(gender === option.value, 'neutral', true)}
             >
               {option.label}
             </button>

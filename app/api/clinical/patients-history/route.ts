@@ -9,7 +9,7 @@ import {
   resolveClinicalApiRole,
 } from '@/lib/locations/scope'
 import { applyParsedPatientSearchToQuery } from '@/lib/nurse/patient-search-apply'
-import { resolvePatientSearch } from '@/lib/nurse/patient-search-openai'
+import { parsePatientSearchLocally } from '@/lib/nurse/patient-search-local'
 import { loadPatientVisitStats, resolvePatientLastVisit } from '@/lib/patients/patient-visit-stats'
 import { listPatientIdsVisibleInScope } from '@/lib/patients/patient-location-visibility'
 import { latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
     const gender = req.nextUrl.searchParams.get('gender') || 'all'
     const sortBy = req.nextUrl.searchParams.get('sort') || 'recent'
 
-    const parsedSearch = rawSearch ? await resolvePatientSearch(rawSearch) : null
+    const parsedSearch = rawSearch ? parsePatientSearchLocally(rawSearch) : null
 
     const admin = createAdminClient()
     const scope = await getLocationScopeForUser(admin, user.id, clinicalRole)
