@@ -92,7 +92,7 @@ export type AdminPrescriptionReadyRow = {
   refills: number | null
   patient_first_name: string | null
   patient_last_name: string | null
-  patient_gender: PatientGenderValue | null
+  patient_gender: string | null
   encounter_code: string | null
   location_id: number | null
   location_title: string | null
@@ -288,7 +288,7 @@ export async function loadAdminPrescriptionReadyRows(
       refills: rx?.refills != null ? Number(rx.refills) : null,
       patient_first_name: (patient?.first_name as string | null) ?? null,
       patient_last_name: (patient?.last_name as string | null) ?? null,
-      patient_gender: normalizePatientGender(patient?.gender as string | null),
+      patient_gender: (patient?.gender as string | null) ?? null,
       encounter_code: (enc?.encounter_code as string | null) ?? null,
       location_id: locationId,
       location_title: locationId != null ? (locationTitleById.get(locationId) ?? null) : null,
@@ -308,10 +308,11 @@ export async function loadAdminPrescriptionReadyRows(
   }
 
   // Gender lives on the patient, so an encounter's rows all match or all don't — filtering
-  // rows never splits an encounter group. patient_gender is already normalized, which is
-  // what makes legacy mixed-case rows ('Male', 'F') match here.
+  // rows never splits an encounter group.
   if (filters.gender && filters.gender !== 'all') {
-    filtered = filtered.filter((row) => row.patient_gender === filters.gender)
+    filtered = filtered.filter(
+      (row) => (row.patient_gender ?? '').trim().toLowerCase() === filters.gender
+    )
   }
 
   if (filters.status && filters.status !== 'all') {
