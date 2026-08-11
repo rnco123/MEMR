@@ -117,13 +117,29 @@ export function printPdfBlob(
   targetWindow?: Window | null
 ): boolean {
   const blobUrl = URL.createObjectURL(blob)
+  // Note: we can't aggressively revoke this URL if we rely on the browser's native PDF viewer
+  // because it might take a moment to load it. It will be cleaned up on page unload.
+  
+  if (targetWindow && !targetWindow.closed) {
+    targetWindow.location.href = blobUrl
+    return true
+  }
+
+  return window.open(blobUrl, '_blank') != null
+}
+
+/** Opens the browser print dialog for an in-memory image blob. */
+export function printImageBlob(
+  blob: Blob,
+  title: string,
+  targetWindow?: Window | null
+): boolean {
+  const blobUrl = URL.createObjectURL(blob)
   scheduleRevokeObjectUrl(blobUrl)
-  const html = buildPdfPrintHtml(blobUrl, title)
+  const html = buildImagePrintHtml(blobUrl, title)
 
   if (targetWindow && !targetWindow.closed) {
-    targetWindow.document.open()
-    targetWindow.document.write(html)
-    targetWindow.document.close()
+    writePrintWindow(targetWindow, html)
     return true
   }
 

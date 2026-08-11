@@ -78,9 +78,24 @@ export async function buildFlowboardRows(
   scope: LocationScope,
   options: BuildFlowboardOptions
 ): Promise<FlowboardRow[]> {
-  const { data: appointments, error: appointmentsError } = await admin
+  const dateScope = options.dateScope ?? 'active'
+  const todayDate = getClinicTodayDateString()
+
+  let appointmentsQuery = admin
     .from('appointments')
     .select('id, patient_id, appointment_date, appointment_time, onsite_type, service_id, created_at, location_id')
+
+  // Same date bounds as isFutureFlowboardRow/isActiveFlowboardRow, pushed to the DB
+  // so the appointment_date index prunes the scan; exact filtering still happens below.
+  if (dateScope === 'future') {
+    appointmentsQuery = appointmentsQuery.gt('appointment_date', todayDate)
+  } else {
+    appointmentsQuery = appointmentsQuery.or(
+      `appointment_date.is.null,appointment_date.lte.${todayDate}`
+    )
+  }
+
+  const { data: appointments, error: appointmentsError } = await appointmentsQuery
 
   if (appointmentsError) throw appointmentsError
   if (!appointments?.length) return []
@@ -157,7 +172,6 @@ export async function buildFlowboardRows(
     }
 
     const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
-    const dateScope = options.dateScope ?? 'active'
 
     if (dateScope === 'future') {
       if (!isFutureFlowboardRow(appointment.appointment_date)) continue

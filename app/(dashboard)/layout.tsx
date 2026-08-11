@@ -337,7 +337,9 @@ export default function DashboardLayout({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-[calc(5.25rem+env(safe-area-inset-bottom))] lg:pb-3">
+      {/* MobileTabBar is a sticky flow sibling below, so it already reserves its own
+          height (and safe-area inset). Padding here only adds the page gutter. */}
+      <div className="flex min-h-0 flex-1 gap-2 sm:gap-3 px-2 sm:px-3 pb-2 sm:pb-3">
         {showSidebar && user && (
           <AppSidebar
             sections={sidebarSections}

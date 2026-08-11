@@ -50,6 +50,10 @@ export const config = {
   openai: {
     apiKey: getEnvVar('OPENAI_API_KEY', false),
   },
+  /** Server-only: I-693 TB report analysis (Anthropic). */
+  anthropic: {
+    apiKey: getEnvVar('ANTHROPIC_API_KEY', false),
+  },
   /** Server-only: Resend transactional email (e.g. SOAP notes to patients). */
   email: {
     resendApiKey: getEnvVar('RESEND_API_KEY', false),

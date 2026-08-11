@@ -2,11 +2,24 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { PrescriptionReadyAdminStatus } from '@/lib/prescriptions/prescription-ready'
 import { formatPharmacyDisplayAddress } from '@/lib/pharmacies/normalize'
 import {
+  normalizePatientGender,
+  type PatientGenderValue,
+} from '@/lib/encounter/patient-gender'
+import {
   getClinicPrescriptionDateRangeUtc,
   type PrescriptionReadyDateFilter,
 } from '@/lib/datetime/clinic-timezone'
 
 export type { PrescriptionReadyDateFilter }
+
+export type PrescriptionReadyGenderFilter = 'all' | 'male' | 'female'
+
+export function parsePrescriptionGenderFilter(
+  value: string | null | undefined
+): PrescriptionReadyGenderFilter {
+  const normalized = value?.trim().toLowerCase()
+  return normalized === 'male' || normalized === 'female' ? normalized : 'all'
+}
 
 type QueueBaseFilters = {
   status?: PrescriptionReadyAdminStatus | 'all'
@@ -79,6 +92,7 @@ export type AdminPrescriptionReadyRow = {
   refills: number | null
   patient_first_name: string | null
   patient_last_name: string | null
+  patient_gender: string | null
   encounter_code: string | null
   location_id: number | null
   location_title: string | null
@@ -139,6 +153,7 @@ export async function loadAdminPrescriptionReadyRows(
     locationIds?: number[]
     status?: PrescriptionReadyAdminStatus | 'all'
     prescriptionDate?: PrescriptionReadyDateFilter
+    gender?: PrescriptionReadyGenderFilter
   }
 ): Promise<AdminPrescriptionReadyRow[]> {
   let query = admin
@@ -166,6 +181,7 @@ export async function loadAdminPrescriptionReadyRows(
       patients (
         first_name,
         last_name,
+        gender,
         location_id
       ),
       encounters (
@@ -272,6 +288,7 @@ export async function loadAdminPrescriptionReadyRows(
       refills: rx?.refills != null ? Number(rx.refills) : null,
       patient_first_name: (patient?.first_name as string | null) ?? null,
       patient_last_name: (patient?.last_name as string | null) ?? null,
+      patient_gender: (patient?.gender as string | null) ?? null,
       encounter_code: (enc?.encounter_code as string | null) ?? null,
       location_id: locationId,
       location_title: locationId != null ? (locationTitleById.get(locationId) ?? null) : null,
@@ -287,6 +304,14 @@ export async function loadAdminPrescriptionReadyRows(
   if (filters.locationIds?.length) {
     filtered = filtered.filter(
       (row) => row.location_id != null && filters.locationIds!.includes(row.location_id)
+    )
+  }
+
+  // Gender lives on the patient, so an encounter's rows all match or all don't — filtering
+  // rows never splits an encounter group.
+  if (filters.gender && filters.gender !== 'all') {
+    filtered = filtered.filter(
+      (row) => (row.patient_gender ?? '').trim().toLowerCase() === filters.gender
     )
   }
 

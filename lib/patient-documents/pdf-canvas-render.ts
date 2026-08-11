@@ -19,10 +19,12 @@ export function pdfCanvasPixelRatio(): number {
 export async function renderPdfPageToCanvas(
   page: PDFPageProxy,
   canvas: HTMLCanvasElement,
-  cssScale: number
+  cssScale: number,
+  rotationDegrees: number = 0
 ): Promise<{ width: number; height: number }> {
   const pixelRatio = pdfCanvasPixelRatio()
-  const viewport = page.getViewport({ scale: cssScale * pixelRatio })
+  const totalRotation = ((page.rotate || 0) + (rotationDegrees % 360) + 360) % 360
+  const viewport = page.getViewport({ scale: cssScale * pixelRatio, rotation: totalRotation })
   const context = canvas.getContext('2d')
   if (!context) {
     throw new Error('Could not acquire canvas 2D context')
