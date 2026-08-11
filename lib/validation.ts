@@ -330,11 +330,29 @@ const nullableOptionalString = (max: number) =>
     .nullable()
     .transform((v) => (v == null || v === '' ? null : v))
 
+const nullableOptionalEmail = z.preprocess(
+  (val) => (val === '' || val === undefined ? null : val),
+  z.string().email('Invalid email address').max(200).trim().toLowerCase().nullable().optional()
+)
+
+/**
+ * `pharmacy.phone_number` is `character varying(20)`, so anything longer used to pass
+ * validation and then fail in Postgres as an unhandled 500. Cap to the column width and
+ * reject characters that are never part of a phone number so callers get a 400 instead.
+ */
+const nullableOptionalPhone = z
+  .string()
+  .max(20, 'Phone number must be 20 characters or fewer')
+  .regex(/^[0-9+()\-.\s]*$/, 'Invalid phone number')
+  .optional()
+  .nullable()
+  .transform((v) => (v == null || v === '' ? null : v))
+
 export const pharmacyCreateSchema = z.object({
   name: z.string().min(1).max(200),
   address: nullableOptionalString(1000),
-  phone: nullableOptionalString(50),
-  email: nullableOptionalString(200),
+  phone: nullableOptionalPhone,
+  email: nullableOptionalEmail,
 })
 
 export type PharmacyCreateInput = z.infer<typeof pharmacyCreateSchema>
@@ -348,16 +366,11 @@ export type PharmacyRegistryCreateInput = z.infer<typeof pharmacyRegistryCreateS
 export const pharmacyUpdateSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   address: nullableOptionalString(1000),
-  phone: nullableOptionalString(50),
-  email: nullableOptionalString(200),
+  phone: nullableOptionalPhone,
+  email: nullableOptionalEmail,
 })
 
 export type PharmacyUpdateInput = z.infer<typeof pharmacyUpdateSchema>
-
-const nullableOptionalEmail = z.preprocess(
-  (val) => (val === '' || val === undefined ? null : val),
-  z.string().email('Invalid email address').max(200).trim().toLowerCase().nullable().optional()
-)
 
 const nullableTenantId = z.preprocess(
   (val) => (val === '' || val === undefined || val === null ? null : val),

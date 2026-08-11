@@ -4,6 +4,7 @@ export type I693SplitViewItem = {
   file?: File
   url?: string
   mimeType?: string
+  saved?: boolean
 }
 
 export type I693SplitViewSource = 'supporting' | 'patient_chart'

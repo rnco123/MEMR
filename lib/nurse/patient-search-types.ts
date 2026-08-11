@@ -9,7 +9,7 @@ export type PatientSearchDobFilter = {
 }
 
 export type ParsedPatientSearch = {
-  source: 'openai' | 'local'
+  source: 'local'
   raw: string
   dobFilter: PatientSearchDobFilter | null
   patientId: number | null

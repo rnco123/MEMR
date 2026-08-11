@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
+import { formatCalendarDate } from '@/lib/datetime/date-input'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
@@ -119,6 +120,16 @@ function fitPdfFormWidgetFont(el: HTMLInputElement | HTMLTextAreaElement): void 
   const height = el.clientHeight || el.getBoundingClientRect().height
   if (!width || !height) return
 
+  if (el.name && el.name.includes('Remarks')) {
+    el.style.boxSizing = 'border-box'
+    el.style.fontSize = '11.5px'
+    el.style.lineHeight = '14px'
+    el.style.padding = '2px'
+    el.style.overflow = 'hidden'
+    el.style.whiteSpace = 'pre-wrap'
+    return
+  }
+
   const valueLength = Math.max((el.value || el.placeholder || '').length, 1)
   const baseFontSize = Math.max(6, Math.min(10, height * 0.72))
   const fittedFontSize = Math.max(5, Math.min(baseFontSize, (width - 4) / (valueLength * 0.54)))
@@ -137,6 +148,34 @@ function fitPdfFormLayerFonts(root: HTMLElement): void {
   root.querySelectorAll('input, textarea').forEach((node) => {
     if (isTextFormWidget(node)) fitPdfFormWidgetFont(node)
   })
+}
+
+type TbClassification = 'Positive' | 'Negative' | 'Indeterminate' | 'Unable to Determine'
+
+type TbFlagResult = {
+  classification: TbClassification
+  confidence: number
+  borderline: boolean
+  reasons: string[]
+  values: {
+    nil: number | null
+    tb1_nil: number | null
+    tb2_nil: number | null
+    mitogen_nil: number | null
+  }
+  document?: { file_name?: string | null } | null
+}
+
+/** Solid fill so the classification reads at a glance from across the toolbar. */
+const TB_FLAG_STYLES: Record<TbClassification, string> = {
+  Positive: 'border-red-700 bg-red-600 text-white hover:bg-red-700',
+  Negative: 'border-emerald-700 bg-emerald-600 text-white hover:bg-emerald-700',
+  Indeterminate: 'border-amber-600 bg-amber-500 text-white hover:bg-amber-600',
+  'Unable to Determine': 'border-slate-500 bg-slate-500 text-white hover:bg-slate-600',
+}
+
+function formatTbValue(value: number | null): string {
+  return value == null ? '—' : String(value)
 }
 
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
@@ -161,11 +200,16 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(null)
   const [splitResizing, setSplitResizing] = useState(false)
   const [patientId, setPatientId] = useState<number | null>(null)
+  const [lastVisitDate, setLastVisitDate] = useState<string | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
   const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
   const [locationAutofillLoading, setLocationAutofillLoading] = useState(false)
   const [aiChartLoading, setAiChartLoading] = useState(false)
+  const [tbFlagLoading, setTbFlagLoading] = useState(false)
+  const [tbFlag, setTbFlag] = useState<TbFlagResult | null>(null)
+  const [tbFileName, setTbFileName] = useState<string | null>(null)
+  const tbFileInputRef = useRef<HTMLInputElement>(null)
   const editorHostRef = useRef<HTMLDivElement>(null)
   const pdfRef = useRef<import('pdfjs-dist').PDFDocumentProxy | null>(null)
   const pageHostsRef = useRef<PagePortalHost[]>([])
@@ -369,6 +413,70 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       setAiChartLoading(false)
     }
   }, [encounterId, t])
+
+  const flagTb = useCallback(async (file: File) => {
+    setTbFlagLoading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch(`/api/encounters/${encounterId}/i693/tb-analysis`, {
+        method: 'POST',
+        credentials: 'include',
+        cache: 'no-store',
+        body: formData,
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || json.message || t('i693.tb_flag_failed'))
+
+      const result = json as TbFlagResult
+      setTbFlag(result)
+
+      if (result.classification === 'Positive') {
+        toast.error(t('i693.tb_flag_positive'))
+      } else if (result.classification === 'Negative') {
+        toast.success(t('i693.tb_flag_negative'))
+      } else {
+        toast.warning(t('i693.tb_flag_inconclusive', { result: result.classification }))
+      }
+    } catch (e) {
+      setTbFlag(null)
+      toast.error(e instanceof Error ? e.message : t('i693.tb_flag_failed'))
+    } finally {
+      setTbFlagLoading(false)
+    }
+  }, [encounterId, t])
+
+  const handleTbFileSelected = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = '' // allow re-picking the same file
+      if (!file) return
+      const name = file.name.toLowerCase()
+      if (file.type.toLowerCase() !== 'application/pdf' && !name.endsWith('.pdf')) {
+        toast.error(t('i693.tb_flag_pdf_only'))
+        return
+      }
+      setTbFileName(file.name)
+      void flagTb(file)
+    },
+    [flagTb, t]
+  )
+
+  const tbFlagTitle = useMemo(() => {
+    if (!tbFlag) return t('i693.tb_flag_hint')
+    const { values } = tbFlag
+    const lines = [
+      `${tbFlag.classification} — ${Math.round(tbFlag.confidence * 100)}% ${t('i693.tb_confidence')}`,
+      `Nil ${formatTbValue(values.nil)} · TB1-Nil ${formatTbValue(values.tb1_nil)} · TB2-Nil ${formatTbValue(
+        values.tb2_nil
+      )} · Mitogen-Nil ${formatTbValue(values.mitogen_nil)}`,
+      ...(tbFlag.reasons ?? []),
+    ]
+    if (tbFlag.borderline) lines.push(t('i693.tb_borderline'))
+    if (tbFlag.document?.file_name) lines.push(tbFlag.document.file_name)
+    return lines.join('\n')
+  }, [tbFlag, t])
 
   const renderEditorPdf = useCallback(
     async (data: I693FormData) => {
@@ -687,6 +795,50 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     }
   }, [patientId, t])
 
+  const loadLastVisit = useCallback(async () => {
+    if (patientId == null) {
+      setLastVisitDate(null)
+      return
+    }
+    try {
+      const res = await fetch(`/api/patients/${patientId}/encounters`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const json = await res.json()
+      if (!res.ok) return
+
+      const rows = (json.encounters ?? []) as {
+        created_at?: string | null
+        updated_at?: string | null
+        appointments?: { appointment_date?: string | null } | null
+      }[]
+
+      // Latest visit across every encounter, including the one being documented, taking the
+      // later of the appointment date and the encounter's own activity — the same definition
+      // the Patients History "Last visit" column uses, so the two screens agree.
+      // Compare on the YYYY-MM-DD prefix since appointment dates carry no timezone.
+      let latest: string | null = null
+      for (const row of rows) {
+        for (const candidate of [
+          row.appointments?.appointment_date,
+          row.updated_at,
+          row.created_at,
+        ]) {
+          if (!candidate) continue
+          if (!latest || candidate.slice(0, 10) > latest.slice(0, 10)) latest = candidate
+        }
+      }
+      setLastVisitDate(latest)
+    } catch {
+      setLastVisitDate(null)
+    }
+  }, [patientId])
+
+  useEffect(() => {
+    void loadLastVisit()
+  }, [loadLastVisit])
+
   const openSplitView = useCallback(async () => {
     if (patientId != null) {
       await loadPatientChartDocuments()
@@ -734,6 +886,38 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       return current
     })
   }, [])
+
+  const saveSupportingSplitItem = useCallback(async (index: number) => {
+    if (!patientId) return
+    const item = supportingSplitItems[index]
+    if (!item?.file) return
+
+    const formData = new FormData()
+    formData.append('file', item.file)
+    formData.append('document_label', 'other')
+    formData.append('document_name', item.file.name)
+
+    const loadingId = toast.loading(t('i693.splitview_loading'))
+
+    try {
+      const res = await fetch(`/api/patients/${patientId}/documents`, {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      })
+      if (!res.ok) throw new Error('Upload failed')
+      
+      toast.success('Saved to patient file', { id: loadingId })
+      setSupportingSplitItems((current) => {
+        const next = [...current]
+        if (next[index]) next[index].saved = true
+        return next
+      })
+      void loadPatientChartDocuments()
+    } catch (e) {
+      toast.error('Failed to save document', { id: loadingId })
+    }
+  }, [patientId, supportingSplitItems, t, loadPatientChartDocuments])
 
   const splitViewItems = useMemo(() => {
     if (splitViewSource === 'supporting') return supportingSplitItems
@@ -800,6 +984,15 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     return parts.length > 0 ? parts.join(' ') : null
   }, [form.applicant, patientName])
 
+  const displayDate = useMemo(() => {
+    const examDate = form.civil_surgeon?.date_signed || form.applicant_contact?.applicant_signature_date
+    const dateStr = examDate || lastVisitDate
+    if (!dateStr) return null
+
+    const isIso = /^\d{4}-\d{2}-\d{2}/.test(dateStr)
+    return isIso ? formatCalendarDate(dateStr, 'en-US', { month: 'short' }) : dateStr
+  }, [form.civil_surgeon?.date_signed, form.applicant_contact?.applicant_signature_date, lastVisitDate])
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -810,152 +1003,186 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden text-slate-900">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-bold text-slate-900">{t('i693.immigration_heading')}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            {displayPatientName || patientId != null ? (
-              <span>
-                <span className="text-slate-500">{t('i693.selected_patient')}:</span>{' '}
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md px-3 py-2 shadow-sm">
+        <div className="flex items-center gap-3 min-w-0">
+          {onBack ? (
+            <>
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm"
+                aria-label={t('i693.back_to_workflow')}
+                title={`${t('i693.pdf_editor_title_short')}${patientName ? ` · ${patientName}` : ''} · #${encounterId}`}
+              >
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div className="hidden sm:block h-6 w-px bg-slate-200" aria-hidden />
+            </>
+          ) : null}
+          <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap justify-between items-start gap-4">
+            <div className="min-w-0">
+              <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{t('i693.immigration_heading')}</h1>
+              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 min-w-0">
                 {displayPatientName ? (
-                  <span className="font-medium text-slate-900">{displayPatientName}</span>
+                  <div className="flex items-center gap-1.5 shrink-0" title={displayPatientName}>
+                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span className="font-medium text-slate-700">{displayPatientName}</span>
+                  </div>
                 ) : null}
-                {patientId != null ? (
-                  <span className="ml-1.5 text-xs text-slate-400">
-                    {t('i693.patient_id')} #{patientId}
-                  </span>
+                {displayDate ? (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span>{displayDate}</span>
+                  </div>
                 ) : null}
-              </span>
-            ) : null}
-            <span>
-              <span className="text-slate-500">{t('i693.encounter_label')}:</span>{' '}
-              <span className="font-medium text-slate-900">#{encounterId}</span>
-            </span>
-            {clinicLocationLabel ? (
-              <span>
-                <span className="text-slate-500">{t('i693.clinic_location')}:</span>{' '}
-                <span className="font-medium text-slate-900">{clinicLocationLabel}</span>
-              </span>
-            ) : null}
+                {clinicLocationLabel ? (
+                  <div className="flex items-center gap-1.5">
+                    <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span>{clinicLocationLabel}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
           </div>
         </div>
-        <ImmigrationWorkflowStatusBadge caseRow={workflowCase} loading={workflowCaseLoading} />
-      </div>
 
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
-        {onBack ? (
-          <>
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {locationAutofill ? (
             <button
               type="button"
-              onClick={onBack}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
-              aria-label={t('i693.back_to_workflow')}
-              title={`${t('i693.pdf_editor_title_short')}${patientName ? ` · ${patientName}` : ''} · #${encounterId}`}
+              onClick={() => void applyLocationAutofill()}
+              disabled={locationAutofillLoading || saving || printing || !locationAutofill.available}
+              title={locationAutofill.available ? t('i693.location_autofill_hint') : locationAutofill.reason ?? t('i693.location_autofill_unavailable')}
+              className="inline-flex items-center rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M15 19l-7-7 7-7" />
-              </svg>
+              {locationAutofillLoading ? t('common.loading') : t('i693.location_autofill_button')}
             </button>
-            <div className="hidden sm:block h-6 w-px bg-slate-200" aria-hidden />
-          </>
-        ) : null}
-
-        {locationAutofill ? (
+          ) : null}
+          
           <button
             type="button"
-            onClick={() => void applyLocationAutofill()}
-            disabled={
-              locationAutofillLoading ||
-              saving ||
-              printing ||
-              !locationAutofill.available
-            }
-            title={
-              locationAutofill.available
-                ? t('i693.location_autofill_hint')
-                : locationAutofill.reason ?? t('i693.location_autofill_unavailable')
-            }
-            className="inline-flex items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+            onClick={() => void aiFillFromChart()}
+            disabled={aiChartLoading || saving || printing}
+            title={t('i693.ai_fill_hint')}
+            className="inline-flex items-center rounded-lg bg-violet-600 px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50 transition-colors shadow-sm"
           >
-            {locationAutofillLoading ? t('common.loading') : t('i693.location_autofill_button')}
+            {aiChartLoading ? t('i693.ai_running') : t('i693.ai_fill')}
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => void aiFillFromChart()}
-          disabled={aiChartLoading || saving || printing}
-          title={t('i693.ai_fill_hint')}
-          className="inline-flex items-center rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-50"
-        >
-          {aiChartLoading ? t('i693.ai_running') : t('i693.ai_fill')}
-        </button>
-        <button
-          type="button"
-          onClick={() => void openSplitView()}
-          disabled={patientChartDocsLoading || saving || printing}
-          title={t('i693.splitview_hint')}
-          className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50"
-        >
-          {patientChartDocsLoading
-            ? t('i693.splitview_patient_chart_loading')
-            : t('i693.splitview_btn')}
-          {(patientChartDocs.length > 0 || supportingSplitItems.length > 0) && (
-            <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-semibold leading-none text-white">
-              {Math.max(patientChartDocs.length, supportingSplitItems.length)}
+          
+          <button
+            type="button"
+            onClick={() => void openSplitView()}
+            disabled={patientChartDocsLoading || saving || printing}
+            title={t('i693.splitview_hint')}
+            className="inline-flex items-center rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-[11px] font-medium text-violet-800 hover:bg-violet-100 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {patientChartDocsLoading ? t('i693.splitview_patient_chart_loading') : t('i693.splitview_btn')}
+            {(patientChartDocs.length > 0 || supportingSplitItems.length > 0) && (
+              <span className="ml-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-violet-600 px-1 text-[10px] font-semibold leading-none text-white">
+                {Math.max(patientChartDocs.length, supportingSplitItems.length)}
+              </span>
+            )}
+          </button>
+          
+          <input
+            ref={tbFileInputRef}
+            type="file"
+            accept=".pdf,application/pdf"
+            className="hidden"
+            onChange={handleTbFileSelected}
+          />
+          <button
+            type="button"
+            onClick={() => tbFileInputRef.current?.click()}
+            disabled={tbFlagLoading || saving || printing}
+            title={tbFlagTitle}
+            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-medium disabled:opacity-50 transition-colors shadow-sm ${
+              tbFlag
+                ? TB_FLAG_STYLES[tbFlag.classification]
+                : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {!tbFlagLoading && !tbFlag && (
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95l-9.2 9.19a2 2 0 0 1-2.82-2.83l8.49-8.48" />
+              </svg>
+            )}
+            {tbFlagLoading
+              ? t('i693.tb_flag_running')
+              : tbFlag
+                ? `${t('i693.tb_flag')}: ${tbFlag.classification}`
+                : t('i693.tb_flag')}
+          </button>
+          {tbFileName && (
+            <span className="max-w-[6rem] truncate text-[10px] text-slate-400" title={tbFileName}>
+              {tbFileName}
             </span>
           )}
-        </button>
 
-        <div className="flex-1 min-w-2" />
+          <div className="hidden sm:block h-5 w-px bg-slate-200 mx-1" aria-hidden />
 
-        {(saving || printing || downloadLoading) && (
-          <LoadingSpinner
-            compact
-            size="xs"
-            message={
-              printing
-                ? t('i693.pdf_printing')
-                : downloadLoading
-                  ? t('i693.pdf_running')
-                  : t('i693.pdf_saving_editor')
-            }
-          />
-        )}
-        <button
-          type="button"
-          onClick={() => void saveCurrent(true)}
-          disabled={!dirty || saving || printing || downloadLoading || !pdfReady}
-          title={dirty ? t('common.save') : t('i693.nothing_to_save')}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {saving ? t('common.saving') : t('common.save')}
-          {dirty && !saving ? (
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-hidden="true" />
-          ) : null}
-        </button>
-        <button
-          type="button"
-          onClick={onPrintClick}
-          disabled={printing || saving || downloadLoading || !pdfReady}
-          className="inline-flex items-center rounded-lg bg-[#2E6EF3] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#1f5ad2] disabled:opacity-50"
-        >
-          {printing ? t('i693.pdf_printing') : t('common.print')}
-        </button>
-        <button
-          type="button"
-          onClick={() => void downloadPdf()}
-          disabled={printing || saving || downloadLoading || !pdfReady}
-          className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-        >
-          {downloadLoading ? t('i693.pdf_running') : t('i693.download_pdf')}
-        </button>
+          {(saving || printing || downloadLoading) && (
+            <LoadingSpinner
+              compact
+              size="xs"
+              message={
+                printing
+                  ? t('i693.pdf_printing')
+                  : downloadLoading
+                    ? t('i693.pdf_running')
+                    : t('i693.pdf_saving_editor')
+              }
+            />
+          )}
+          
+          <button
+            type="button"
+            onClick={() => void saveCurrent(true)}
+            disabled={!dirty || saving || printing || downloadLoading || !pdfReady}
+            title={dirty ? t('common.save') : t('i693.nothing_to_save')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {saving ? t('common.saving') : t('common.save')}
+            {dirty && !saving ? (
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.6)]" aria-hidden="true" />
+            ) : null}
+          </button>
+          <button
+            type="button"
+            onClick={onPrintClick}
+            disabled={printing || saving || downloadLoading || !pdfReady}
+            className="inline-flex items-center rounded-lg bg-[#2E6EF3] px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-[#1f5ad2] disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {printing ? t('i693.pdf_printing') : t('common.print')}
+          </button>
+          <button
+            type="button"
+            onClick={() => void downloadPdf()}
+            disabled={printing || saving || downloadLoading || !pdfReady}
+            className="inline-flex items-center rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {downloadLoading ? t('i693.pdf_running') : t('i693.download_pdf')}
+          </button>
+          
+          <div className="hidden sm:block h-5 w-px bg-slate-200 mx-1" aria-hidden />
+          <ImmigrationWorkflowStatusBadge caseRow={workflowCase} loading={workflowCaseLoading} />
+        </div>
       </div>
 
       <div
         ref={splitRowRef}
         className={`w-full min-w-0 max-w-full overflow-hidden ${
           splitViewOpen
-            ? `flex flex-col gap-4 md:flex-row md:items-stretch md:gap-0 ${
+            ? `flex flex-col gap-4 xl:flex-row xl:items-stretch xl:gap-0 ${
                 splitResizing ? 'select-none' : ''
               }`
             : ''
@@ -972,7 +1199,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         <div
           className={`min-w-0 space-y-3 ${
             splitViewOpen
-              ? `w-full md:w-[var(--i693-split-form)] md:max-w-[var(--i693-split-form)] md:shrink-0 ${
+              ? `w-full xl:w-[var(--i693-split-form)] xl:max-w-[var(--i693-split-form)] xl:shrink-0 ${
                   splitResizing ? 'pointer-events-none' : ''
                 }`
               : ''
@@ -1008,7 +1235,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
               aria-valuenow={Math.round(splitFormRatio * 100)}
               tabIndex={0}
               title={t('i693.splitview_resize_hint')}
-              className={`group relative hidden shrink-0 touch-none md:flex md:items-stretch md:cursor-col-resize md:focus-visible:outline md:focus-visible:outline-2 md:focus-visible:outline-offset-0 md:focus-visible:outline-violet-400 ${
+              className={`group relative hidden shrink-0 touch-none xl:flex xl:items-stretch xl:cursor-col-resize xl:focus-visible:outline xl:focus-visible:outline-2 xl:focus-visible:outline-offset-0 xl:focus-visible:outline-violet-400 ${
                 splitResizing ? 'z-30' : 'z-10'
               }`}
               style={{ width: SPLIT_SASH_WIDTH_PX }}
@@ -1057,7 +1284,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
               ) : null}
             </div>
             <div
-              className={`flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden md:min-w-[var(--i693-split-doc-min)] ${
+              className={`flex min-h-[calc(100vh-10rem)] w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden xl:min-w-[var(--i693-split-doc-min)] ${
                 splitResizing ? 'pointer-events-none' : ''
               }`}
             >
@@ -1072,6 +1299,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
                 allowUpload={splitViewSource === 'supporting'}
                 onFilesSelected={handleSupportingUpload}
                 removable={splitViewSource === 'supporting'}
+                onSaveDocument={splitViewSource === 'supporting' ? saveSupportingSplitItem : undefined}
                 onRemoveDocument={removeSupportingSplitItem}
                 emptyHint={splitViewEmptyHint}
               />

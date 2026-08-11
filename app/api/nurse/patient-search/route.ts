@@ -8,7 +8,7 @@ import {
   type LocationScope,
 } from '@/lib/locations/scope'
 import { applyParsedPatientSearchToQuery } from '@/lib/nurse/patient-search-apply'
-import { resolvePatientSearch } from '@/lib/nurse/patient-search-openai'
+import { parsePatientSearchLocally } from '@/lib/nurse/patient-search-local'
 import { buildPatientDobFilter } from '@/lib/nurse/patient-search-query'
 import { emptyParsedPatientSearch } from '@/lib/nurse/patient-search-types'
 import { listPatientIdsVisibleInScope } from '@/lib/patients/patient-location-visibility'
@@ -66,7 +66,7 @@ export async function GET(req: NextRequest) {
 
     let searchParse: string | null = null
     if (rawSearch) {
-      const parsedSearch = await resolvePatientSearch(rawSearch)
+      const parsedSearch = parsePatientSearchLocally(rawSearch)
       query = applyParsedPatientSearchToQuery(query, parsedSearch)
       searchParse = parsedSearch.source
     } else if (dobFilter) {

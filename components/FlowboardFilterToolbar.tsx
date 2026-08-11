@@ -56,7 +56,7 @@ export function FlowboardFilterField({
         dob
           ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden lg:basis-auto lg:w-auto'
           : wide
-            ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden sm:basis-auto sm:w-[min(100%,14rem)]'
+            ? 'flex w-full min-w-0 max-w-full shrink-0 basis-full items-center gap-2 overflow-hidden sm:basis-auto sm:w-[min(100%,20rem)]'
             : 'flex w-full min-w-0 max-w-full shrink-0 basis-[calc(50%-0.375rem)] items-center gap-2 overflow-hidden sm:basis-auto sm:w-auto sm:max-w-[14rem]'
       }
     >

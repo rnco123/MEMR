@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useT } from '@/lib/i18n'
 import { SmartPatientSearchInput } from '@/components/SmartPatientSearchInput'
-import { useAiPatientSearchParse } from '@/lib/hooks/use-ai-patient-search-parse'
+import { usePatientSearchParse } from '@/lib/hooks/use-patient-search-parse'
 import { patientMatchesParsedSearch } from '@/lib/nurse/patient-search-apply'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
@@ -34,7 +34,7 @@ export default function AdminPatientsHistoryPage() {
   const [page, setPage] = useState(1)
   const [searchQuery, setSearchQuery] = useState('')
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
-    useAiPatientSearchParse(searchQuery)
+    usePatientSearchParse(searchQuery)
 
   const fetchPatients = async () => {
     setLoading(true)

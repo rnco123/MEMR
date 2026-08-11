@@ -55,7 +55,6 @@ function parsePersonName(trimmed: string): { first: string; last: string } | nul
 export function parsedPatientSearchFromFields(
   raw: string,
   output: LocalParseInput,
-  source: 'openai' | 'local',
   includeProvider: boolean
 ): ParsedPatientSearch {
   const dobFilter = buildPatientDobFilter(
@@ -95,7 +94,7 @@ export function parsedPatientSearchFromFields(
   }
 
   return {
-    source,
+    source: 'local',
     raw,
     dobFilter,
     patientId,
@@ -135,7 +134,6 @@ export function parsePatientSearchLocally(
         provider_name: null,
         general_query: null,
       },
-      'local',
       includeProvider
     )
   }
@@ -156,7 +154,6 @@ export function parsePatientSearchLocally(
         provider_name: null,
         general_query: null,
       },
-      'local',
       includeProvider
     )
   }
@@ -177,7 +174,6 @@ export function parsePatientSearchLocally(
         provider_name: null,
         general_query: null,
       },
-      'local',
       includeProvider
     )
   }
@@ -199,7 +195,6 @@ export function parsePatientSearchLocally(
         provider_name: null,
         general_query: null,
       },
-      'local',
       includeProvider
     )
   }
@@ -221,7 +216,6 @@ export function parsePatientSearchLocally(
         provider_name: null,
         general_query: null,
       },
-      'local',
       includeProvider
     )
   }
@@ -241,9 +235,6 @@ export function parsePatientSearchLocally(
       provider_name: null,
       general_query: trimmed,
     },
-    'local',
     includeProvider
   )
 }
-
-export type { LocalParseInput as PatientSearchToolInput }
