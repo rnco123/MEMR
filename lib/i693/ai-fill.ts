@@ -309,7 +309,7 @@ export function prefillFromPatient(
   applyPassportToPart5Identification(form)
 
   if (patient.phone && !form.applicant_contact.day_phone) {
-    form.applicant_contact.day_phone = String(patient.phone)
+    form.applicant_contact.day_phone = String(patient.phone).replace(/^\+1/, '')
   }
   if (patient.email && !form.applicant_contact.email) {
     form.applicant_contact.email = String(patient.email)
