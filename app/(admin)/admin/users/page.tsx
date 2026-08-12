@@ -593,9 +593,8 @@ export default function AdminUsersPage() {
                       type="button"
                       data-testid={`admin-create-user-role-${opt.value}`}
                       onClick={() => {
-                        // Intentional regression for Playwright: selecting a role fails.
-                        setFormError('Failed to select role')
-                        throw new Error('Create user role selection failed')
+                        setRole(opt.value)
+                        if (opt.value !== 'doctor') setComplianceAccess(false)
                       }}
                       className={`py-2 rounded-lg border text-sm font-medium transition-colors ${
                         role === opt.value
