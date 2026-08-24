@@ -63,6 +63,7 @@ async function completeSoapWithOpenAI(args: {
   needSubjective: boolean
   needObjective: boolean
   medicalStyle: boolean
+  hasTranscript: boolean
 }): Promise<{ assessment: string; plan: string; subjective: string; objective: string; model: string }> {
   const key = (process.env.OPENAI_API_KEY || config.openai.apiKey || '').trim()
   if (!key) throw new Error('OPENAI_API_KEY is not configured')
@@ -72,17 +73,22 @@ async function completeSoapWithOpenAI(args: {
     'Rewrite it in standard medical documentation language (accepted clinical terminology and abbreviations). Preserve every fact exactly — do not add, remove, or reinterpret anything.'
   const wants = [
     'Write the ASSESSMENT and PLAN.',
+    args.hasTranscript
+      ? 'A CALL TRANSCRIPT is included below. Prefer it over the intake form for clinical reasoning — it is what was actually discussed. Speaker labels in the transcript (Speaker 1, Speaker 2, ...) are generic and not reliably mapped to doctor/patient; infer roles from context.'
+      : '',
     args.needSubjective
-      ? 'The chart has no intake data: also draft the SUBJECTIVE from whatever patient-reported information appears in the context.'
+      ? 'The chart has no intake data: draft the SUBJECTIVE from whatever patient-reported information appears in the context (transcript included, if present).'
       : args.medicalStyle
         ? `The SUBJECTIVE in the context is the patient's own words. ${restyle}`
         : 'Subjective is already documented from the chart — return "" for subjective.',
     args.needObjective
-      ? 'The chart has no vitals/exam data: also draft the OBJECTIVE from whatever measured information appears in the context.'
+      ? 'The chart has no vitals/exam data: draft the OBJECTIVE from whatever measured information appears in the context.'
       : args.medicalStyle
         ? 'Rewrite the OBJECTIVE in the context in standard medical documentation format. Preserve every measurement and finding exactly — do not add, remove, or reinterpret anything.'
         : 'Objective is already documented from the chart — return "" for objective.',
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -132,9 +138,10 @@ async function completeSoapWithOpenAI(args: {
 export async function generateSoapNoteForEncounter(
   admin: SupabaseClient,
   encounterId: number,
-  opts?: { medicalStyle?: boolean }
+  opts?: { medicalStyle?: boolean; transcriptText?: string }
 ): Promise<GeneratedSoapNote> {
   const medicalStyle = Boolean(opts?.medicalStyle)
+  const transcriptText = opts?.transcriptText?.trim() || ''
   const { data: enc, error: encErr } = await admin
     .from('encounters')
     .select('id, patient_id, intake_id, appointment_id')
@@ -165,15 +172,16 @@ export async function generateSoapNoteForEncounter(
     rosExamText,
   })
 
-  if (!subjective && !objective) {
+  if (!subjective && !objective && !transcriptText) {
     throw new ValidationError(
-      'No intake, vitals, or physical examination data available for this encounter yet.'
+      'No intake, vitals, physical examination, or call transcript available for this encounter yet.'
     )
   }
 
   const context = [
     subjective && `SUBJECTIVE (from intake):\n${subjective}`,
     objective && `OBJECTIVE (from vitals/exam):\n${objective}`,
+    transcriptText && `CALL TRANSCRIPT (speaker labels are generic, not identity-mapped):\n${transcriptText}`,
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -193,6 +201,7 @@ export async function generateSoapNoteForEncounter(
       needSubjective: !subjective,
       needObjective: !objective,
       medicalStyle,
+      hasTranscript: Boolean(transcriptText),
     })
     // medicalStyle (explicit clinician request) prefers the AI restyle;
     // otherwise chart-derived text always wins. Empty AI output falls back.

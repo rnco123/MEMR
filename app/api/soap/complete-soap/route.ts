@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden: clinical role required' }, { status: 403 })
     }
 
-    let body: { encounter_id?: string | number; style?: string } = {}
+    let body: { encounter_id?: string | number; style?: string; transcript_text?: string } = {}
     try {
       body = await request.json().catch(() => ({}))
     } catch {
@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
     // 'medical' = clinician pressed "Reset from AI": restyle all sections
     // into standard medical documentation language (facts unchanged).
     const medicalStyle = body.style === 'medical'
+    const transcriptText = typeof body.transcript_text === 'string' ? body.transcript_text : undefined
 
     const encounterId = body.encounter_id
     if (encounterId == null || encounterId === '') {
@@ -63,7 +64,10 @@ export async function POST(request: NextRequest) {
     await assertEncounterAccess(admin, user.id, encounterIdNum, ENCOUNTER_WRITE_ACCESS)
 
     try {
-      const note = await generateSoapNoteForEncounter(admin, encounterIdNum, { medicalStyle })
+      const note = await generateSoapNoteForEncounter(admin, encounterIdNum, {
+        medicalStyle,
+        transcriptText,
+      })
 
       auditPhi({
         user,
@@ -71,7 +75,13 @@ export async function POST(request: NextRequest) {
         action: 'encounter_updated',
         resourceType: 'encounter',
         resourceId: encounterIdNum,
-        metadata: { section: 'ai_soap', engine: 'in_app', mode: note.mode, style: medicalStyle ? 'medical' : 'default' },
+        metadata: {
+          section: 'ai_soap',
+          engine: 'in_app',
+          mode: note.mode,
+          style: medicalStyle ? 'medical' : 'default',
+          usedTranscript: Boolean(transcriptText),
+        },
         request,
       })
 

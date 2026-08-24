@@ -1,17 +1,24 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { DailyCall, DailyParticipantsObject } from '@daily-co/daily-js'
+import {
+  Room,
+  RoomEvent,
+  Track,
+  type RemoteTrack,
+  type RemoteParticipant,
+} from 'livekit-client'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { getRoleLabel, isPhysicianRole, CLINICAL_DASHBOARD_ROLES } from '@/lib/roles'
 import { getStatusInfo, type EncounterStatus } from '@/lib/encounter-status'
-import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
 import { PreVisitSummary } from '@/components/PreVisitSummary'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
+
+const CHAT_TOPIC = 'chat'
 
 interface Patient {
   id: number
@@ -115,81 +122,36 @@ function calculateAge(dob: string | null) {
   return age != null ? `${age} years` : 'N/A'
 }
 
-function mergeParticipantsIntoNames(
-  participants: DailyParticipantsObject,
-  map: Record<string, string>
-) {
-  for (const p of Object.values(participants)) {
-    if (!p || typeof p !== 'object') continue
-    if (p.session_id && p.user_name) {
-      map[p.session_id] = p.user_name
-      if (p.user_id) map[p.user_id] = p.user_name
-    }
-  }
+interface ChatMessage {
+  id?: string
+  messageId?: string
+  senderIdentity: string
+  senderRole?: string
+  body: string
+  sentAt: string
 }
 
-/** Deepgram / Daily may omit rawResponse; treat as final unless explicitly interim. */
-function isFinalTranscriptionSegment(rawResponse: Record<string, unknown> | undefined): boolean {
-  if (rawResponse == null) return true
-  if (typeof rawResponse.is_final === 'boolean') return rawResponse.is_final
-  if (typeof rawResponse.speech_final === 'boolean') return rawResponse.speech_final
-  return true
+/** REST responses use `id` in some paths and `messageId` in others; data-channel echoes may repeat either. */
+function chatMessageKey(msg: ChatMessage): string | undefined {
+  return msg.id ?? msg.messageId
 }
 
-/** Global theme (not light/dark pair) — ignores OS dark mode so Prebuilt stays on-brand. */
-const MEMR_DAILY_THEME = {
-  colors: {
-    accent: '#2E6EF3',
-    accentText: '#FFFFFF',
-    background: '#FFFFFF',
-    backgroundAccent: '#EEF4FF',
-    baseText: '#1e293b',
-    border: '#e2e8f0',
-    mainAreaBg: '#EEF4FF',
-    mainAreaBgAccent: '#DCE8FD',
-    mainAreaText: '#1e293b',
-    supportiveText: '#64748b',
-  },
-} as const
-
-/** Hide Daily top chrome that overlaps MEMR header; bottom tray keeps People/Chat/mic controls. */
-const MEMR_DAILY_HIDE_TOP_CONTROLS_CSS = `
-  [class*="LeaveButton"],
-  [class*="FullscreenButton"],
-  [class*="TopBar"],
-  [data-testid="leave-button"],
-  [data-testid="fullscreen-button"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-  @media (max-width: 1023px) {
-    [class*="Sidebar"] [role="tablist"],
-    [class*="SidePanel"] [role="tablist"],
-    [class*="SidebarHeader"],
-    [class*="sidebar-header"],
-    [data-testid="sidebar-tab-list"] {
-      display: none !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
-      height: 0 !important;
-      overflow: hidden !important;
-    }
-  }
-`
-
-async function destroyDailyCallInstance(call: DailyCall | null | undefined) {
-  if (!call || call.isDestroyed()) return
-  await call.destroy().catch(() => {})
+interface VonLinkageRecording {
+  recordingId: string
+  status: 'STARTING' | 'RECORDING' | 'STOPPING' | 'COMPLETED' | 'FAILED'
+  durationSeconds: number | null
+  error: string | null
 }
 
-async function destroyOrphanDailyFrame(
-  Daily: typeof import('@daily-co/daily-js').default
-) {
-  const global = Daily.getCallInstance()
-  if (global && !global.isDestroyed()) {
-    await global.destroy().catch(() => {})
-  }
+interface TranscriptSegment {
+  speakerLabel: string
+  text: string
+  startedAtSeconds: number
+}
+
+async function destroyLivekitRoom(room: Room | null | undefined) {
+  if (!room) return
+  await room.disconnect().catch(() => {})
 }
 
 function VideoPage() {
@@ -201,10 +163,25 @@ function VideoPage() {
   const [roomToken, setRoomToken] = useState<string | null>(null)
   const [roomName, setRoomName] = useState<string | null>(null)
   const [roomUrl, setRoomUrl] = useState<string | null>(null)
+  const [patientJoinUrl, setPatientJoinUrl] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [showConnectionModal, setShowConnectionModal] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
-  const [dailyJoinUrl, setDailyJoinUrl] = useState<string | null>(null)
+  const [livekitJoinUrl, setLivekitJoinUrl] = useState<string | null>(null)
+  // Start muted/off (matches the old Daily behavior: start_video_off/start_audio_off) —
+  // no track is actually published until the user clicks to enable it, so the default
+  // must be false or the toggle buttons' first click would be backwards.
+  const [micOn, setMicOn] = useState(false)
+  const [camOn, setCamOn] = useState(false)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [recordings, setRecordings] = useState<VonLinkageRecording[]>([])
+  const [recordingStarting, setRecordingStarting] = useState(false)
+  const [recordingError, setRecordingError] = useState<string | null>(null)
+  const [transcripts, setTranscripts] = useState<Record<string, TranscriptSegment[] | string>>({})
+  const [soapAutoFillLoading, setSoapAutoFillLoading] = useState(false)
+  const [soapAutoFillNotice, setSoapAutoFillNotice] = useState<string | null>(null)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
@@ -214,7 +191,7 @@ function VideoPage() {
   const [doctorSoap, setDoctorSoap] = useState<DoctorSOAPNotes | null>(null)
   const [doctorId, setDoctorId] = useState<number | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(true)
-  const [detailsTab, setDetailsTab] = useState<'patient' | 'intake' | 'vitals' | 'soap'>('patient')
+  const [detailsTab, setDetailsTab] = useState<'patient' | 'intake' | 'vitals' | 'soap' | 'recording'>('patient')
   const [mobileDetailsOpen, setMobileDetailsOpen] = useState(false)
   const [soapForm, setSoapForm] = useState<DoctorSOAPNotes>({
     subjective_text: '',
@@ -228,7 +205,6 @@ function VideoPage() {
   const [userName, setUserName] = useState<string>('')
   const transcriptBufferRef = useRef<Array<{ speaker_role: string; speaker_name: string; message: string; created_at: string }>>([])
   const [transcriptCount, setTranscriptCount] = useState(0)
-  const participantNamesRef = useRef<Record<string, string>>({})
   // AI summary after consultation
   const [aiSummary, setAiSummary] = useState<Record<string, unknown> | null>(null)
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
@@ -262,12 +238,12 @@ function VideoPage() {
         ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
         : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
     skipLeaveCleanupRef.current = true
-    const call = dailyCallRef.current
-    if (call?.meetingState() === 'joined-meeting') {
-      await call.leave().catch(() => {})
+    const room = livekitRoomRef.current
+    if (room && room.state === 'connected') {
+      await room.disconnect().catch(() => {})
     }
-    dailyCallRef.current = null
-    setDailyJoinUrl(null)
+    livekitRoomRef.current = null
+    setLivekitJoinUrl(null)
     setIsConnected(false)
     window.setTimeout(() => router.push(dest), 0)
   }, [role, encounterId, router])
@@ -299,15 +275,17 @@ function VideoPage() {
   const [transcriptReviewShowAi, setTranscriptReviewShowAi] = useState(false)
   const transcriptReviewOnCloseRef = useRef<(() => void) | null>(null)
 
-  const dailyCallRef = useRef<DailyCall | null>(null)
-  const dailyTeardownRef = useRef<Promise<void>>(Promise.resolve())
-  const dailySetupGenerationRef = useRef(0)
+  const livekitRoomRef = useRef<Room | null>(null)
+  const livekitTeardownRef = useRef<Promise<void>>(Promise.resolve())
+  const livekitSetupGenerationRef = useRef(0)
   const leaveInProgressRef = useRef(false)
   const skipLeaveCleanupRef = useRef(false)
   const runEndCallCleanupRef = useRef<() => Promise<void>>(async () => {})
-  const dailyFrameContainerRef = useRef<HTMLDivElement | null>(null)
+  const remoteVideoContainerRef = useRef<HTMLDivElement | null>(null)
+  const localVideoContainerRef = useRef<HTMLDivElement | null>(null)
   const roleRef = useRef(role)
   const userNameRef = useRef(userName)
+  const identityRef = useRef(user?.id ?? '')
 
   useEffect(() => {
     roleRef.current = role
@@ -315,6 +293,9 @@ function VideoPage() {
   useEffect(() => {
     userNameRef.current = userName
   }, [userName])
+  useEffect(() => {
+    identityRef.current = user?.id ?? ''
+  }, [user?.id])
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)')
@@ -326,7 +307,7 @@ function VideoPage() {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  /** Prevents re-fetching Daily room on Supabase session refresh (new `user` object) — a common cause of mid-call timeouts and full-screen errors. */
+  /** Prevents re-fetching the VonLinkage room on Supabase session refresh (new `user` object) — a common cause of mid-call timeouts and full-screen errors. */
   const roomFetchCompletedForEncounterRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -363,7 +344,7 @@ function VideoPage() {
       })
 
       const work = async () => {
-        const response = await fetch('/api/daily/room', {
+        const response = await fetch('/api/vonlinkage/room', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -386,7 +367,7 @@ function VideoPage() {
           throw new Error(room?.error || 'Failed to join video room')
         }
 
-        if (!room?.name) {
+        if (!room?.roomName) {
           throw new Error('Invalid room data')
         }
 
@@ -395,9 +376,10 @@ function VideoPage() {
         }
 
         roomFetchCompletedForEncounterRef.current = encounterId
-        setRoomName(room.name)
+        setRoomName(room.roomName)
         setRoomToken(room.token)
-        setRoomUrl(room.room_url ?? null)
+        setRoomUrl(room.joinUrl ?? null)
+        setPatientJoinUrl(room.patientJoinUrl ?? null)
         setIsLoading(false)
       } catch (err) {
         if (timeoutId) {
@@ -534,152 +516,92 @@ function VideoPage() {
     setTranscriptCount(transcriptBufferRef.current.length)
   }, [])
 
-  // Daily call object receives transcription + app-message; raw iframe embed does not post these to window.
+  // VonLinkage (LiveKit) has no built-in transcription or UI chrome — chat rides the
+  // room's data channel + the /messages history endpoint; there is no live transcript.
   useEffect(() => {
-    if (!dailyJoinUrl || !isConnected) {
-      const existing = dailyCallRef.current
-      dailyCallRef.current = null
+    if (!livekitJoinUrl || !isConnected || !roomToken) {
+      const existing = livekitRoomRef.current
+      livekitRoomRef.current = null
       if (existing) {
         skipLeaveCleanupRef.current = true
-        dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
-          destroyDailyCallInstance(existing)
+        livekitTeardownRef.current = livekitTeardownRef.current.then(() =>
+          destroyLivekitRoom(existing)
         )
       }
       return
     }
 
-    const container = dailyFrameContainerRef.current
-    if (!container) return
+    const remoteContainer = remoteVideoContainerRef.current
+    if (!remoteContainer) return
 
-    const setupGeneration = ++dailySetupGenerationRef.current
+    const setupGeneration = ++livekitSetupGenerationRef.current
     let cancelled = false
     skipLeaveCleanupRef.current = false
     leaveInProgressRef.current = false
 
     const setup = async () => {
-      await dailyTeardownRef.current
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
+      await livekitTeardownRef.current
+      if (cancelled || setupGeneration !== livekitSetupGenerationRef.current) return
 
-      const { default: Daily } = await import('@daily-co/daily-js')
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
+      await destroyLivekitRoom(livekitRoomRef.current)
+      livekitRoomRef.current = null
+      if (cancelled || setupGeneration !== livekitSetupGenerationRef.current) return
 
-      await destroyDailyCallInstance(dailyCallRef.current)
-      dailyCallRef.current = null
-      await destroyOrphanDailyFrame(Daily)
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
+      remoteContainer.replaceChildren()
 
-      container.replaceChildren()
+      const room = new Room()
 
-      const call = Daily.createFrame(container, {
-        iframeStyle: {
-          width: '100%',
-          height: '100%',
-          border: '0',
-          position: 'absolute',
-          top: '0',
-          left: '0',
-        },
-        showLeaveButton: false,
-        showFullscreenButton: false,
-        showParticipantsBar: false,
-        userName: userNameRef.current || undefined,
-        theme: MEMR_DAILY_THEME,
-        cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS,
-        dailyConfig: {
-          alwaysIncludeMicInPermissionPrompt: true,
-          alwaysIncludeCamInPermissionPrompt: true,
-        },
+      room.on(
+        RoomEvent.TrackSubscribed,
+        (track: RemoteTrack, _pub: unknown, participant: RemoteParticipant) => {
+          if (track.kind === Track.Kind.Video || track.kind === Track.Kind.Audio) {
+            const el = track.attach()
+            el.dataset.participant = participant.identity
+            if (el instanceof HTMLVideoElement) el.playsInline = true
+            remoteContainer.appendChild(el)
+            el.play().catch(() => {})
+          }
+        }
+      )
+
+      room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
+        track.detach().forEach((el: HTMLMediaElement) => el.remove())
       })
 
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) {
-        await destroyDailyCallInstance(call)
-        return
-      }
-
-      dailyCallRef.current = call
-
-      const onJoinedMeeting = (ev: { participants: DailyParticipantsObject }) => {
-        mergeParticipantsIntoNames(ev.participants, participantNamesRef.current)
-        try {
-          call.startTranscription({ includeRawResponse: true })
-        } catch (err) {
-          console.warn('Daily startTranscription:', err)
-        }
-      }
-
-      const onParticipant = (ev: {
-        participant: { session_id: string; user_id: string; user_name: string }
-      }) => {
-        const p = ev.participant
-        if (p.session_id && p.user_name) {
-          participantNamesRef.current[p.session_id] = p.user_name
-          if (p.user_id) participantNamesRef.current[p.user_id] = p.user_name
-        }
-      }
-
-      const onTranscriptionMessage = (ev: {
-        participantId: string
-        text: string
-        rawResponse?: Record<string, unknown>
-      }) => {
-        const text = ev.text?.trim()
-        if (!text) return
-        if (!isFinalTranscriptionSegment(ev.rawResponse)) return
-        const pid = ev.participantId ?? ''
-        const uname = userNameRef.current
-        const r = roleRef.current
-        const resolvedName = participantNamesRef.current[pid] || uname || 'Participant'
-        const speakerRole =
-          isPhysicianRole(r) && resolvedName === uname
-            ? 'doctor'
-            : r === 'nurse' && resolvedName === uname
-              ? 'nurse'
-              : 'patient'
-        addTranscriptEntry(speakerRole, resolvedName, text)
-      }
-
-      const onAppMessage = (ev: {
-        fromId: string
-        data: { message?: string; name?: string }
-      }) => {
-        const text = ev.data?.message?.trim()
-        if (!text) return
-        const uname = userNameRef.current
-        const r = roleRef.current
-        const resolvedName = participantNamesRef.current[ev.fromId] || ev.data?.name || 'Participant'
-        const speakerRole = resolvedName === uname ? (r ?? 'staff') : 'patient'
-        addTranscriptEntry(speakerRole, resolvedName, `[chat] ${text}`)
-      }
-
-      call.on('joined-meeting', onJoinedMeeting)
-      call.on('left-meeting', () => {
+      room.on(RoomEvent.Disconnected, () => {
         if (cancelled || skipLeaveCleanupRef.current) return
         void runEndCallCleanupRef.current()
       })
-      call.on('participant-joined', onParticipant)
-      call.on('participant-updated', onParticipant)
-      call.on('transcription-message', onTranscriptionMessage)
-      call.on('app-message', onAppMessage)
-      call.on('transcription-error', (ev) => console.warn('Daily transcription-error:', ev))
-      call.on('camera-error', (ev) => console.warn('Daily camera-error:', ev))
+
+      room.on(RoomEvent.DataReceived, (payload: Uint8Array) => {
+        try {
+          const msg = JSON.parse(new TextDecoder().decode(payload)) as ChatMessage
+          const key = chatMessageKey(msg)
+          setChatMessages((prev) => (key && prev.some((m) => chatMessageKey(m) === key) ? prev : [...prev, msg]))
+          if (msg.senderIdentity === identityRef.current) return
+          addTranscriptEntry('patient', msg.senderIdentity || 'Participant', `[chat] ${msg.body}`)
+        } catch {
+          // ignore malformed data payloads
+        }
+      })
+
+      if (cancelled || setupGeneration !== livekitSetupGenerationRef.current) {
+        await destroyLivekitRoom(room)
+        return
+      }
+
+      livekitRoomRef.current = room
 
       try {
-        await call.setTheme(MEMR_DAILY_THEME)
-        call.loadCss({ cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS })
-        try {
-          await call.startCamera({ startAudioOff: true, startVideoOff: true })
-        } catch (camErr) {
-          console.warn('Daily startCamera:', camErr)
-        }
-        await call.join({ url: dailyJoinUrl, theme: MEMR_DAILY_THEME })
+        await room.connect(livekitJoinUrl, roomToken)
       } catch (e) {
-        console.error('Daily join failed:', e)
-        if (!cancelled && setupGeneration === dailySetupGenerationRef.current) {
-          dailyCallRef.current = null
-          dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
-            destroyDailyCallInstance(call)
+        console.error('VonLinkage join failed:', e)
+        if (!cancelled && setupGeneration === livekitSetupGenerationRef.current) {
+          livekitRoomRef.current = null
+          livekitTeardownRef.current = livekitTeardownRef.current.then(() =>
+            destroyLivekitRoom(room)
           )
-          setDailyJoinUrl(null)
+          setLivekitJoinUrl(null)
           setIsConnected(false)
           setError(e instanceof Error ? e.message : 'Failed to join video call')
         }
@@ -691,15 +613,180 @@ function VideoPage() {
     return () => {
       cancelled = true
       skipLeaveCleanupRef.current = true
-      const c = dailyCallRef.current
-      dailyCallRef.current = null
-      dailyTeardownRef.current = dailyTeardownRef.current.then(async () => {
-        await destroyDailyCallInstance(c)
-        const { default: Daily } = await import('@daily-co/daily-js')
-        await destroyOrphanDailyFrame(Daily)
-      })
+      const r = livekitRoomRef.current
+      livekitRoomRef.current = null
+      livekitTeardownRef.current = livekitTeardownRef.current.then(() => destroyLivekitRoom(r))
     }
-  }, [dailyJoinUrl, isConnected, addTranscriptEntry])
+  }, [livekitJoinUrl, isConnected, roomToken, addTranscriptEntry])
+
+  const toggleCam = useCallback(async () => {
+    const room = livekitRoomRef.current
+    if (!room) return
+    const next = !camOn
+    try {
+      await room.localParticipant.setCameraEnabled(next)
+    } catch (err) {
+      console.warn('VonLinkage setCameraEnabled:', err)
+      return
+    }
+    const container = localVideoContainerRef.current
+    if (container) {
+      container.replaceChildren()
+      const pub = room.localParticipant.getTrackPublication(Track.Source.Camera)
+      if (next && pub?.track) {
+        const el = pub.track.attach()
+        el.muted = true
+        if (el instanceof HTMLVideoElement) el.playsInline = true
+        container.appendChild(el)
+        el.play().catch(() => {})
+      }
+    }
+    setCamOn(next)
+  }, [camOn])
+
+  const toggleMic = useCallback(async () => {
+    const room = livekitRoomRef.current
+    if (!room) return
+    const next = !micOn
+    try {
+      await room.localParticipant.setMicrophoneEnabled(next)
+    } catch (err) {
+      console.warn('VonLinkage setMicrophoneEnabled:', err)
+      return
+    }
+    setMicOn(next)
+  }, [micOn])
+
+  const sendChat = useCallback(async () => {
+    const text = chatInput.trim()
+    if (!text || !roomName) return
+    setChatInput('')
+    try {
+      const res = await fetch(`/api/vonlinkage/rooms/${encodeURIComponent(roomName)}/messages`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ senderIdentity: identityRef.current, body: text }),
+      })
+      const json = await res.json()
+      if (json.ok && json.data) {
+        const msg = json.data as ChatMessage
+        const key = chatMessageKey(msg)
+        setChatMessages((prev) => (key && prev.some((m) => chatMessageKey(m) === key) ? prev : [...prev, msg]))
+        addTranscriptEntry(roleRef.current ?? 'staff', userNameRef.current || 'You', `[chat] ${text}`)
+      }
+    } catch (err) {
+      console.warn('Failed to send chat message:', err)
+    }
+  }, [chatInput, roomName, addTranscriptEntry])
+
+  const refreshRecordings = useCallback(async () => {
+    if (!roomName) return
+    try {
+      const res = await fetch(`/api/vonlinkage/rooms/${encodeURIComponent(roomName)}/recordings`, {
+        credentials: 'include',
+      })
+      const json = await res.json()
+      if (json.ok) setRecordings(json.data ?? [])
+    } catch (err) {
+      console.warn('Failed to load recordings:', err)
+    }
+  }, [roomName])
+
+  useEffect(() => {
+    if (!isConnected || !roomName) return
+    void refreshRecordings()
+    const interval = setInterval(refreshRecordings, 4000)
+    return () => clearInterval(interval)
+  }, [isConnected, roomName, refreshRecordings])
+
+  const startRecording = useCallback(async () => {
+    if (!roomName) return
+    setRecordingError(null)
+    setRecordingStarting(true)
+    try {
+      const res = await fetch(`/api/vonlinkage/rooms/${encodeURIComponent(roomName)}/recordings`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: 'grid' }),
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        setRecordingError(json.error?.message ?? 'Could not start recording')
+      } else {
+        await refreshRecordings()
+      }
+    } finally {
+      setRecordingStarting(false)
+    }
+  }, [roomName, refreshRecordings])
+
+  const stopRecording = useCallback(async (recordingId: string) => {
+    const res = await fetch(`/api/vonlinkage/recordings/${recordingId}/stop`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    const json = await res.json()
+    if (!json.ok) setRecordingError(json.error?.message ?? 'Could not stop recording')
+    await refreshRecordings()
+  }, [refreshRecordings])
+
+  const viewTranscript = useCallback(async (recordingId: string) => {
+    const res = await fetch(`/api/vonlinkage/recordings/${recordingId}/transcript`, {
+      credentials: 'include',
+    })
+    const json = await res.json()
+    if (json.ok) {
+      const segments = json.data.segments as TranscriptSegment[]
+      setTranscripts((prev) => ({ ...prev, [recordingId]: segments }))
+
+      // Regenerate the AI SOAP draft using the transcript, alongside intake + physical exam
+      // (existing lib/soap/generate-soap.ts pipeline) — per lead's request to auto-fill.
+      if (encounterId && segments.length > 0) {
+        setSoapAutoFillLoading(true)
+        setSoapAutoFillNotice(null)
+        try {
+          const transcriptText = segments.map((seg) => `${seg.speakerLabel}: ${seg.text}`).join('\n')
+          const soapRes = await fetch('/api/soap/complete-soap', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ encounter_id: Number(encounterId), transcript_text: transcriptText }),
+          })
+          const soapJson = await soapRes.json()
+          if (soapRes.ok && soapJson.note) {
+            setSoapNotes(soapJson.note as SOAPNotes)
+            setSoapAutoFillNotice('SOAP notes updated using the call transcript — check the SOAP tab.')
+          } else {
+            setSoapAutoFillNotice(soapJson.message ?? soapJson.error ?? 'Could not auto-fill SOAP notes from transcript.')
+          }
+        } catch (err) {
+          console.warn('Failed to auto-fill SOAP notes from transcript:', err)
+          setSoapAutoFillNotice('Could not auto-fill SOAP notes from transcript.')
+        } finally {
+          setSoapAutoFillLoading(false)
+        }
+      }
+    } else {
+      setTranscripts((prev) => ({
+        ...prev,
+        [recordingId]: json.error?.message ?? 'Transcript not available yet',
+      }))
+    }
+  }, [encounterId])
+
+  const downloadRecording = useCallback(async (recordingId: string) => {
+    const res = await fetch(`/api/vonlinkage/recordings/${recordingId}/download`, {
+      credentials: 'include',
+    })
+    const json = await res.json()
+    if (json.ok) {
+      window.open(json.data.url, '_blank')
+    } else {
+      setRecordingError(json.error?.message ?? 'Download not available yet')
+    }
+  }, [])
 
   /** Saves buffered transcript lines; returns inserted row ids in order, or null on failure. */
   const flushTranscript = async (encounterIdNum: number): Promise<number[] | null> => {
@@ -858,14 +945,8 @@ function VideoPage() {
   }
 
   const handleConnect = () => {
-    if (!roomToken) return
-    const baseUrl = roomUrl || (() => {
-      const rawDomain = (config.daily.domain || '').trim() || 'demo.daily.co'
-      const d = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
-      return `https://${d}/${roomName}`
-    })()
-    const sep = baseUrl.includes('?') ? '&' : '?'
-    setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    if (!roomToken || !roomUrl) return
+    setLivekitJoinUrl(roomUrl)
     setShowConnectionModal(false)
     setError(null)
     skipLeaveCleanupRef.current = false
@@ -960,13 +1041,13 @@ function VideoPage() {
 
       const endRoomAndGo = async () => {
         try {
-          await fetch('/api/daily/end-room', {
+          await fetch('/api/vonlinkage/end-room', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ encounterId: encounterIdNum }),
           })
         } catch (endRoomError) {
-          console.error('Failed to end Daily.co room:', endRoomError)
+          console.error('Failed to end VonLinkage room:', endRoomError)
         }
         window.setTimeout(
           () => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard'),
@@ -996,7 +1077,7 @@ function VideoPage() {
   const runEndCallCleanup = useCallback(async () => {
     if (leaveInProgressRef.current) return
     leaveInProgressRef.current = true
-    setDailyJoinUrl(null)
+    setLivekitJoinUrl(null)
     setIsConnected(false)
     if (isPhysicianRole(role) && encounterId && doctorId) {
       await handleEndConsultation()
@@ -1031,9 +1112,9 @@ function VideoPage() {
   runEndCallCleanupRef.current = runEndCallCleanup
 
   const handleEndCall = useCallback(async () => {
-    const call = dailyCallRef.current
-    if (call?.meetingState() === 'joined-meeting') {
-      await call.leave().catch(() => {})
+    const room = livekitRoomRef.current
+    if (room && room.state === 'connected') {
+      await room.disconnect().catch(() => {})
       return
     }
     await runEndCallCleanup()
@@ -1091,8 +1172,8 @@ function VideoPage() {
 
   if (!user) return null
 
-  // Do not replace the whole page while the Daily iframe is active (avoids kicking users out mid-call if a late error fires).
-  if (error && !showConnectionModal && !dailyJoinUrl) {
+  // Do not replace the whole page while the call is active (avoids kicking users out mid-call if a late error fires).
+  if (error && !showConnectionModal && !livekitJoinUrl) {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center p-6 sm:p-12">
         <div className="text-red-500 mb-4 text-center max-w-md px-4">Error: {error}</div>
@@ -1258,7 +1339,7 @@ function VideoPage() {
               {aiSummaryError && (
                 <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 text-red-300 text-sm">
                   {aiSummaryError === 'No transcript available for this encounter'
-                    ? 'No transcript was captured for this session. Transcript capture requires Daily.co captioning to be active during the call.'
+                    ? 'No transcript was captured for this session. Spoken-word transcription is not yet available on VonLinkage during a live call — only in-call chat messages are captured for now.'
                     : aiSummaryError}
                 </div>
               )}
@@ -1423,8 +1504,8 @@ function VideoPage() {
           onClick={() => setMobileDetailsOpen(false)}
         />
 
-        {/* Video — Daily.co full bleed with floating controls */}
-        <div className="relative flex-1 min-h-0 w-full min-w-0 bg-[#EEF4FF]">
+        {/* Video — VonLinkage (LiveKit) full bleed with floating controls */}
+        <div className="relative flex-1 min-h-0 w-full min-w-0 bg-[#0b1220]">
           {isLoading && (
             <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-[#EEF4FF] px-4">
               <LoadingSpinner message="Loading video call..." />
@@ -1435,14 +1516,104 @@ function VideoPage() {
               <p className="text-base sm:text-lg text-slate-700">Preparing video call...</p>
             </div>
           )}
-          {isConnected && dailyJoinUrl && (
-            <div
-              ref={dailyFrameContainerRef}
-              className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 lg:inset-0 lg:top-0 h-auto lg:h-full w-full pb-[env(safe-area-inset-bottom)] [&_iframe]:!absolute [&_iframe]:!inset-0 [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
-            />
+          {isConnected && livekitJoinUrl && (
+            <>
+              <div
+                ref={remoteVideoContainerRef}
+                className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 lg:inset-0 lg:top-0 h-auto lg:h-full w-full grid grid-cols-1 place-items-center gap-1 pb-[env(safe-area-inset-bottom)] [&>video]:h-full [&>video]:w-full [&>video]:object-cover [&>audio]:hidden"
+              />
+
+              {/* Local self-view */}
+              <div
+                ref={localVideoContainerRef}
+                className="absolute bottom-24 right-3 z-10 h-28 w-20 overflow-hidden rounded-xl border border-white/20 bg-slate-800 shadow-lg sm:h-36 sm:w-24 lg:bottom-6 [&>video]:h-full [&>video]:w-full [&>video]:object-cover"
+              />
+
+              {/* Floating call controls */}
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-slate-900/80 px-4 py-2.5 shadow-xl backdrop-blur">
+                  <button
+                    type="button"
+                    onClick={() => void toggleMic()}
+                    aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${micOn ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                  >
+                    {micOn ? (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M9 9v3.75a3 3 0 004.6 2.54M15 9V4.5a3 3 0 00-5.94-.6M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5" /></svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleCam()}
+                    aria-label={camOn ? 'Turn camera off' : 'Turn camera on'}
+                    className={`flex h-10 w-10 items-center justify-center rounded-full transition-colors ${camOn ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-red-500 text-white hover:bg-red-600'}`}
+                  >
+                    {camOn ? (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.75 10.5l4.72-2.36A.75.75 0 0121.5 8.8v6.4a.75.75 0 01-1.03.65L15.75 13.5m-9-9h6.75a1.5 1.5 0 011.5 1.5v8.25a1.5 1.5 0 01-1.5 1.5H6.75a1.5 1.5 0 01-1.5-1.5V6a1.5 1.5 0 011.5-1.5z" /></svg>
+                    ) : (
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3l18 18M15.75 10.5l4.72-2.36A.75.75 0 0121.5 8.8v6.4a.75.75 0 01-.53.71M6.75 4.5H12a1.5 1.5 0 011.5 1.5v.75M5.25 6c-.414 0-.75.336-.75.75v8.25a1.5 1.5 0 001.5 1.5h6.75" /></svg>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setChatOpen((v) => !v)}
+                    aria-label="Toggle chat"
+                    className={`relative flex h-10 w-10 items-center justify-center rounded-full transition-colors ${chatOpen ? 'bg-[#2E6EF3] text-white' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm3.75 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" /></svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat panel */}
+              {chatOpen && (
+                <div className="absolute bottom-24 left-3 right-3 z-20 flex max-h-[50%] flex-col overflow-hidden rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl sm:left-auto sm:right-3 sm:w-80 lg:bottom-6">
+                  <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                    <p className="text-sm font-semibold text-white">Chat</p>
+                    <button type="button" onClick={() => setChatOpen(false)} className="text-slate-400 hover:text-white" aria-label="Close chat">
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                  <div className="flex-1 space-y-2 overflow-y-auto px-3 py-2">
+                    {chatMessages.length === 0 && (
+                      <p className="text-xs text-slate-500">No messages yet.</p>
+                    )}
+                    {chatMessages.map((m, i) => (
+                      <div key={chatMessageKey(m) ?? i} className="text-sm">
+                        <span className="font-medium text-[#8ab4ff]">{m.senderIdentity === identityRef.current ? 'You' : m.senderIdentity}: </span>
+                        <span className="text-slate-200">{m.body}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void sendChat()
+                    }}
+                    className="flex items-center gap-2 border-t border-white/10 p-2"
+                  >
+                    <input
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder="Message..."
+                      className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white outline-none placeholder:text-slate-500 focus:border-[#2E6EF3]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!chatInput.trim()}
+                      className="rounded-lg bg-[#2E6EF3] px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+                    >
+                      Send
+                    </button>
+                  </form>
+                </div>
+              )}
+            </>
           )}
 
-          {/* MEMR header — sits above Daily iframe on mobile (iframe starts below this row) */}
+          {/* MEMR header — sits above the video on mobile (video starts below this row) */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:z-10">
             <div className="mx-auto grid w-full max-w-3xl grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 lg:grid-cols-[2.75rem_minmax(0,1fr)_auto]">
               <button
@@ -1545,8 +1716,8 @@ function VideoPage() {
             </div>
           </div>
           {!detailsLoading && (
-            <div className="grid shrink-0 grid-cols-4 border-b border-slate-200 bg-white">
-              {(['patient', 'intake', 'vitals', 'soap'] as const).map((tab) => (
+            <div className="grid shrink-0 grid-cols-5 border-b border-slate-200 bg-white">
+              {(['patient', 'intake', 'vitals', 'soap', 'recording'] as const).map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -1807,6 +1978,114 @@ function VideoPage() {
                     )}
                   </div>
                 )}
+                {detailsTab === 'recording' && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-slate-500">
+                      Recording captures video and audio for this call. A transcript becomes available
+                      a minute or more after you stop recording — it labels speakers generically
+                      (Speaker 1 / Speaker 2), not by name or role. Viewing a transcript automatically
+                      updates the AI-drafted SOAP notes (SOAP tab) using it, plus intake and physical exam.
+                    </p>
+
+                    {soapAutoFillLoading && (
+                      <p className="rounded-lg bg-[#EEF4FF] px-3 py-2 text-xs text-[#2E6EF3]">
+                        Updating AI SOAP draft from transcript…
+                      </p>
+                    )}
+                    {soapAutoFillNotice && !soapAutoFillLoading && (
+                      <p className="rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                        {soapAutoFillNotice}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void startRecording()}
+                      disabled={recordingStarting || recordings.some((r) => r.status === 'STARTING' || r.status === 'RECORDING')}
+                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full bg-white ${recordings.some((r) => r.status === 'RECORDING') ? 'animate-pulse' : ''}`}
+                      />
+                      {recordings.some((r) => r.status === 'STARTING' || r.status === 'RECORDING')
+                        ? 'Recording…'
+                        : recordingStarting
+                          ? 'Starting…'
+                          : 'Start recording'}
+                    </button>
+
+                    {recordingError && (
+                      <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{recordingError}</p>
+                    )}
+
+                    {recordings.length === 0 && (
+                      <p className="text-xs text-slate-400">No recordings yet for this call.</p>
+                    )}
+
+                    <ul className="space-y-2">
+                      {recordings.map((r) => (
+                        <li key={r.recordingId} className="rounded-xl border border-slate-200 bg-white p-3 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span
+                              className={`rounded-full px-2 py-0.5 font-medium ${
+                                r.status === 'COMPLETED'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : r.status === 'FAILED'
+                                    ? 'bg-red-50 text-red-700'
+                                    : 'bg-amber-50 text-amber-700'
+                              }`}
+                            >
+                              {r.status}
+                            </span>
+                            {(r.status === 'STARTING' || r.status === 'RECORDING') && (
+                              <button
+                                type="button"
+                                onClick={() => void stopRecording(r.recordingId)}
+                                className="text-slate-500 hover:text-slate-800"
+                              >
+                                Stop
+                              </button>
+                            )}
+                            {r.status === 'COMPLETED' && (
+                              <div className="flex gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => void downloadRecording(r.recordingId)}
+                                  className="text-[#2E6EF3] hover:text-[#256ae8]"
+                                >
+                                  Download
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void viewTranscript(r.recordingId)}
+                                  className="text-[#2E6EF3] hover:text-[#256ae8]"
+                                >
+                                  Transcript
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {r.durationSeconds != null && (
+                            <p className="mt-1.5 text-slate-500">{r.durationSeconds}s</p>
+                          )}
+                          {r.error && <p className="mt-1.5 text-red-600">{r.error}</p>}
+                          {transcripts[r.recordingId] && (
+                            <div className="mt-2 max-h-40 space-y-1 overflow-y-auto border-t border-slate-200 pt-2">
+                              {typeof transcripts[r.recordingId] === 'string' ? (
+                                <p className="text-slate-500">{transcripts[r.recordingId] as string}</p>
+                              ) : (
+                                (transcripts[r.recordingId] as TranscriptSegment[]).map((seg, i) => (
+                                  <p key={i} className="text-slate-600">
+                                    <span className="font-medium text-slate-800">{seg.speakerLabel}:</span> {seg.text}
+                                  </p>
+                                ))
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -1818,11 +2097,11 @@ function VideoPage() {
             >
               ← Back to waiting room
             </button>
-            {roomUrl && (
+            {patientJoinUrl && (
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(roomUrl).catch(() => {})
+                  navigator.clipboard.writeText(patientJoinUrl).catch(() => {})
                 }}
                 title="Copy patient join link"
                 className="shrink-0 text-xs font-medium text-teal-600 hover:text-teal-700"

@@ -1,24 +1,25 @@
 /**
- * H-10 Security tests: Daily API key not in client bundle
+ * H-10 Security tests: VonLinkage API key not in client bundle
+ * (Video provider migrated from Daily.co to VonLinkage; same guarantee, new provider.)
  */
 
 import * as fs from 'fs'
 import * as path from 'path'
 import * as glob from 'glob'
 
-describe('H-10 — Daily API key not in client bundle', () => {
+describe('H-10 — VonLinkage API key not in client bundle', () => {
   // Only run this test if the .next/static folder exists (post-build)
   const staticDir = path.join(process.cwd(), '.next', 'static')
   const staticExists = fs.existsSync(staticDir)
 
-  it('H-10-T01 Daily API key string not in .next/static chunks', () => {
+  it('H-10-T01 VonLinkage API key string not in .next/static chunks', () => {
     if (!staticExists) {
       console.log('Skipping: .next/static does not exist (run npm run build first)')
       return
     }
-    const apiKey = process.env.DAILY_API_KEY || process.env.NEXT_PUBLIC_DAILY_API_KEY
+    const apiKey = process.env.VONLINKAGE_API_KEY
     if (!apiKey || apiKey.length < 8) {
-      console.log('Skipping: DAILY_API_KEY not set in env')
+      console.log('Skipping: VONLINKAGE_API_KEY not set in env')
       return
     }
 
@@ -29,11 +30,11 @@ describe('H-10 — Daily API key not in client bundle', () => {
     }
   })
 
-  // H-10-T02: env var name should not be NEXT_PUBLIC_DAILY_API_KEY in config
-  it('H-10-T02 config.ts uses server-only DAILY_API_KEY env var', () => {
+  // H-10-T02: env var name should not be NEXT_PUBLIC_VONLINKAGE_API_KEY in config
+  it('H-10-T02 config.ts uses server-only VONLINKAGE_API_KEY env var', () => {
     const configPath = path.join(process.cwd(), 'lib', 'config.ts')
     const configContent = fs.readFileSync(configPath, 'utf-8')
-    // Should prefer DAILY_API_KEY over NEXT_PUBLIC_DAILY_API_KEY
-    expect(configContent).toContain("'DAILY_API_KEY'")
+    // Should reference the server-only env var name
+    expect(configContent).toContain("'VONLINKAGE_API_KEY'")
   })
 })

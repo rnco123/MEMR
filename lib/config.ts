@@ -33,10 +33,10 @@ export const config = {
     /** @deprecated use secretKey */
     serviceRoleKey: supabaseSecret,
   },
-  daily: {
+  vonlinkage: {
     /** Server-only. Never expose via NEXT_PUBLIC_* — would leak into client bundle (H-10). */
-    apiKey: getEnvVar('DAILY_API_KEY', false) || getEnvVar('NEXT_PUBLIC_DAILY_API_KEY', false),
-    domain: getEnvVar('NEXT_PUBLIC_DAILY_DOMAIN'),
+    apiKey: getEnvVar('VONLINKAGE_API_KEY', false),
+    baseUrl: getEnvVar('VONLINKAGE_API_BASE_URL', false),
   },
   app: {
     nodeEnv: process.env.NODE_ENV || 'development',
@@ -77,11 +77,11 @@ if (config.app.isProduction && !isBuildTime && isServer) {
   if (!supabaseSecret) {
     missing.push('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY')
   }
-  if (!process.env.DAILY_API_KEY) {
-    missing.push('DAILY_API_KEY')
+  if (!process.env.VONLINKAGE_API_KEY) {
+    missing.push('VONLINKAGE_API_KEY')
   }
-  if (!process.env.NEXT_PUBLIC_DAILY_DOMAIN) {
-    missing.push('NEXT_PUBLIC_DAILY_DOMAIN')
+  if (!process.env.VONLINKAGE_API_BASE_URL) {
+    missing.push('VONLINKAGE_API_BASE_URL')
   }
   if (missing.length > 0) {
     console.error(`[config] Missing required environment variables: ${missing.join(', ')}`)

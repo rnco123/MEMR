@@ -120,7 +120,7 @@ export function canTransitionTo(from: EncounterStatus, to: EncounterStatus): boo
   return toStep === fromStep + 1 || toStep === fromStep
 }
 
-/** Statuses that allow doctor and nurse to join telemedicine (Daily.co) */
+/** Statuses that allow doctor and nurse to join telemedicine (VonLinkage) */
 const TELEMEDICINE_ELIGIBLE_STATUSES: EncounterStatus[] = [
   'vitals_assessed',
   'in_consultation',

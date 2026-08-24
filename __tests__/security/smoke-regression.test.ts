@@ -20,16 +20,22 @@ describe('M-10 — Test endpoints blocked in production', () => {
   })
 })
 
-describe('H-10 — Daily API key source', () => {
-  it('daily/room route uses server-only env var', () => {
-    const route = readFile('app/api/daily/room/route.ts')
-    expect(route).toContain('DAILY_API_KEY')
-    // Must not reference NEXT_PUBLIC_DAILY_API_KEY as the only source
+describe('H-10 — VonLinkage API key source', () => {
+  it('lib/vonlinkage.ts uses server-only env var', () => {
+    const lib = readFile('lib/vonlinkage.ts')
+    expect(lib).toContain('VONLINKAGE_API_KEY')
+    // Must not reference a NEXT_PUBLIC_* variant as the key source
+    expect(lib).not.toContain('NEXT_PUBLIC_VONLINKAGE_API_KEY')
   })
 
-  it('daily/end-room route uses server-only env var', () => {
-    const route = readFile('app/api/daily/end-room/route.ts')
-    expect(route).toContain('DAILY_API_KEY')
+  it('vonlinkage/room route goes through the server-only client, not a hand-rolled fetch', () => {
+    const route = readFile('app/api/vonlinkage/room/route.ts')
+    expect(route).toContain("from '@/lib/vonlinkage'")
+  })
+
+  it('vonlinkage/end-room route goes through the server-only client, not a hand-rolled fetch', () => {
+    const route = readFile('app/api/vonlinkage/end-room/route.ts')
+    expect(route).toContain("from '@/lib/vonlinkage'")
   })
 })
 
@@ -86,7 +92,7 @@ describe('H-12 — Audit log uses server-side user_id', () => {
 describe('M-04 — getSession not used for auth gates', () => {
   const filesToCheck = [
     'app/api/soap/complete-soap/route.ts',
-    'app/api/daily/end-room/route.ts',
+    'app/api/vonlinkage/end-room/route.ts',
     'app/api/chat/sync-profiles/route.ts',
   ]
 
