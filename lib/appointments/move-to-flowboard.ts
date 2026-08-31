@@ -33,7 +33,14 @@ export async function moveAppointmentToFlowboardToday(
   if (apptErr) throw apptErr
   if (!appointment) throw new NotFoundError('Appointment not found')
 
-  if (!isFutureFlowboardRow(appointment.appointment_date)) {
+  const today = getClinicTodayDateString()
+  const previousDate = appointment.appointment_date
+  const dateKey = previousDate?.trim().slice(0, 10) ?? ''
+  const alreadyToday = dateKey === today
+
+  // A visit dated today is already on the flowboard, so the click has nothing
+  // left to do. Only genuinely past-dated visits are a real error.
+  if (!alreadyToday && !isFutureFlowboardRow(previousDate, today)) {
     throw new ValidationError('Only future appointments can be moved to the waiting room')
   }
 
@@ -48,12 +55,19 @@ export async function moveAppointmentToFlowboardToday(
     appointment.location_id
   )
 
+  // Checked before the no-op return below so an out-of-scope caller can never
+  // probe an appointment by reading a success back.
   if (!isAllowedByLocationScope(scope, effectiveLocationId)) {
     throw new AuthorizationError()
   }
 
-  const today = getClinicTodayDateString()
-  const previousDate = appointment.appointment_date
+  if (alreadyToday) {
+    return {
+      appointment_id: appointmentId,
+      appointment_date: today,
+      previous_appointment_date: previousDate,
+    }
+  }
 
   const { error: updateErr } = await admin
     .from('appointments')
