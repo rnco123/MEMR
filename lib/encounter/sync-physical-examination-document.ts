@@ -191,6 +191,7 @@ export async function syncLatestPhysicalExaminationToPatientChart(
     encounterId: latest.encounter.id,
     encounterCode: latest.encounter.encounter_code,
     encounterDate: appointmentDateFromEncounter(latest.encounter),
+    examRecordedAt: latest.lastAudit?.recorded_at ?? null,
     lastAudit: latest.lastAudit,
     rosExam: latest.rosExam,
     legacyExam: latest.legacyExam,
