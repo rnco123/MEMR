@@ -207,6 +207,8 @@ export type PhysicalExamAuditSummary = {
   editor_name: string | null
   editor_role: string | null
   updated_at: string
+  /** When the exam was first recorded — the row's insert time, not the appointment. */
+  recorded_at?: string | null
 } | null
 
 export const PHYSICAL_EXAM_ROW_SELECT =
@@ -357,5 +359,6 @@ export function physicalExamAuditFromRow(row: Record<string, unknown> | null): P
     editor_name: (row.editor_name as string | null) ?? null,
     editor_role: (row.editor_role as string | null) ?? null,
     updated_at: String(row.updated_at),
+    recorded_at: row.created_at ? String(row.created_at) : null,
   }
 }
