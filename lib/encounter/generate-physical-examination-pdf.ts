@@ -167,11 +167,9 @@ class PhysicalExamPdfLayout {
     this.setInk(10, 'normal')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
     if (ctx.patientDob) this.doc.text(`DOB ${formatUsDate(ctx.patientDob)}`, innerX, innerY + 34)
-    // The appointment date is when the visit was booked; the exam is filed under
-    // the day it was actually recorded, which can differ from the booking.
-    const examDate = ctx.examRecordedAt ?? ctx.encounterDate
+    const examDate = ctx.encounterDate ?? ctx.examRecordedAt
     if (examDate) {
-      this.doc.text(`Examination date ${formatUsDate(examDate)}`, innerX + colW, innerY + 34)
+      this.doc.text(`First visit date ${formatUsDate(examDate)}`, innerX + colW, innerY + 34)
     }
 
     if (ctx.lastAudit) {

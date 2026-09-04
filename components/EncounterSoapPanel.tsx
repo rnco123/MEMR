@@ -103,6 +103,7 @@ export function EncounterSoapPanel({
   const [emailing, setEmailing] = useState(false)
   const [editing, setEditing] = useState(false)
   const [doctorSoap, setDoctorSoap] = useState<DoctorSoap | null>(null)
+  const [localAiSoap, setLocalAiSoap] = useState<AiSoap | null>(aiSoap)
   const [lastAudit, setLastAudit] = useState<SoapAudit | null>(null)
   const [editable, setEditable] = useState(canEdit)
   const [form, setForm] = useState<SoapFields>(blankForm)
@@ -118,6 +119,10 @@ export function EncounterSoapPanel({
 
   const isCompleted = encounterStatus === 'completed'
 
+  useEffect(() => {
+    if (aiSoap) setLocalAiSoap(aiSoap)
+  }, [aiSoap])
+
   const loadDoctorSoap = useCallback(async () => {
     setLoading(true)
     try {
@@ -132,16 +137,24 @@ export function EncounterSoapPanel({
       }
 
       const doc = (json.doctor_soap as DoctorSoap | null) ?? null
+      const fetchedAi = (json.ai_soap as AiSoap | null) ?? aiSoap
+      if (fetchedAi) setLocalAiSoap(fetchedAi)
+
       setDoctorSoap(doc)
       setLastAudit((json.last_audit as SoapAudit | null) ?? null)
       setEditable(Boolean(json.editable) && canEdit)
-      setForm(soapFromDoctor(doc))
+
+      if (doc) {
+        setForm(soapFromDoctor(doc))
+      } else {
+        setForm(soapFromAi(fetchedAi))
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('encounter_modal.soap_load_failed'))
     } finally {
       setLoading(false)
     }
-  }, [encounterId, canEdit, t])
+  }, [encounterId, canEdit, aiSoap, t])
 
   const loadAmendments = useCallback(async () => {
     if (encounterStatus !== 'completed') {
@@ -177,14 +190,16 @@ export function EncounterSoapPanel({
     void loadAmendments()
   }, [loadAmendments])
 
+  const effectiveAiSoap = localAiSoap ?? aiSoap
+
   const displaySoap = useMemo(() => {
     if (doctorSoap) return soapFromDoctor(doctorSoap)
-    return soapFromAi(aiSoap)
-  }, [doctorSoap, aiSoap])
+    return soapFromAi(effectiveAiSoap)
+  }, [doctorSoap, effectiveAiSoap])
 
   const hasDoctorSoap = Boolean(doctorSoap)
-  const showingAiDraft = !hasDoctorSoap && Boolean(aiSoap)
-  const hasAnySoap = hasDoctorSoap || Boolean(aiSoap)
+  const showingAiDraft = !hasDoctorSoap && Boolean(effectiveAiSoap)
+  const hasAnySoap = hasDoctorSoap || Boolean(effectiveAiSoap)
 
   const startEdit = () => {
     setForm(displaySoap)
@@ -438,7 +453,11 @@ export function EncounterSoapPanel({
       <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-lg font-bold text-slate-900">{t('encounter_modal.doctor_soap_notes')}</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              {showingAiDraft
+                ? t('encounter_modal.ai_soap_notes')
+                : t('encounter_modal.doctor_soap_notes')}
+            </h3>
             {showingAiDraft && !editing ? (
               <span className="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700 border border-sky-100">
                 {t('encounter_modal.soap_ai_draft_badge')}

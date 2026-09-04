@@ -25,11 +25,11 @@ export function isActiveFlowboardRow(
   encounterStatus: string | null | undefined,
   todayDate = getClinicTodayDateString()
 ): boolean {
+  if (encounterStatus === 'completed') return false
   const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
   if (!dateKey) return true
   if (isFutureFlowboardRow(dateKey, todayDate)) return false
-  if (dateKey >= todayDate) return true
-  return encounterStatus !== 'completed'
+  return true
 }
 
 export type FlowboardRow = {
