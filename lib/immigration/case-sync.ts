@@ -420,6 +420,10 @@ export async function syncImmigrationCase(
 
   const caseRow = await saveImmigrationCaseRow(admin, row)
 
+  if (caseRow.status === 'completed') {
+    await admin.from('encounters').update({ status: 'completed' }).eq('id', encounterId)
+  }
+
   await syncTasks(admin, caseRow.id, missing_items, flags)
   return caseRow
 }

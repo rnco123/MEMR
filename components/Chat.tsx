@@ -9,7 +9,6 @@ import { formatClinicDateTimeForLanguage, formatClinicChatTime } from '@/lib/dat
 import { useUserProfile } from '@/lib/hooks/use-user-profile'
 import { resolveDisplayName } from '@/lib/display-name'
 
-
 interface User {
   uid: string
   full_name: string | null
@@ -72,32 +71,40 @@ function isAttachmentOnlyContent(content: string | undefined, hasAttachments: bo
 
 function ChatAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 'lg' }) {
   const sizes = {
-    sm: 'h-10 w-10 text-sm',
-    md: 'h-12 w-12 text-base',
-    lg: 'h-14 w-14 text-lg',
+    sm: 'h-9 w-9 text-xs',
+    md: 'h-11 w-11 text-sm',
+    lg: 'h-14 w-14 text-base',
   }
+  const initial = (name || '?').charAt(0).toUpperCase()
   return (
     <div
-      className={`${sizes[size]} flex shrink-0 items-center justify-center rounded-full bg-violet-500 font-semibold text-white shadow-sm`}
+      className={`${sizes[size]} flex shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 font-semibold text-white shadow-sm ring-2 ring-white`}
     >
-      {name.charAt(0).toUpperCase()}
+      {initial}
     </div>
   )
 }
 
-function ChatWaveDivider() {
+function RoleBadge({ role }: { role: string }) {
+  const r = (role || '').toLowerCase()
+  if (r === 'admin') {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200/80">
+        Admin
+      </span>
+    )
+  }
+  if (r === 'doctor' || r === 'fnp' || r === 'pa') {
+    return (
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200/80">
+        Doctor
+      </span>
+    )
+  }
   return (
-    <svg
-      className="block h-5 w-full text-[#F4F4F8]"
-      viewBox="0 0 1440 48"
-      preserveAspectRatio="none"
-      aria-hidden
-    >
-      <path
-        fill="currentColor"
-        d="M0,24 C240,44 480,4 720,24 C960,44 1200,4 1440,24 L1440,48 L0,48 Z"
-      />
-    </svg>
+    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200/80 capitalize">
+      {role}
+    </span>
   )
 }
 
@@ -125,7 +132,7 @@ function ChatMessageAttachments({
           >
             {isImage && att.file_url ? (
               <a href={att.file_url} target="_blank" rel="noopener noreferrer" className="block">
-                {/* eslint-disable-next-line @next/next/no-img-element -- time-limited Supabase signed URL; not a next/image-eligible remote host */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={att.file_url}
                   alt={att.file_name}
@@ -182,7 +189,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   const { profile } = useUserProfile()
   const supabase = createClient()
   const [activeView, setActiveView] = useState<'conversations' | 'new-chat'>('conversations')
-  const [searchOpen, setSearchOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -213,7 +219,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } finally {
       setLoading(false)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
   }, [user?.id])
 
   // Fetch users for new chat
@@ -234,7 +239,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error fetching users:', error)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
   }, [user?.id])
 
   // Fetch messages for a conversation
@@ -252,7 +256,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error fetching messages:', error)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
   }, [user?.id])
 
   const addPendingFiles = useCallback((fileList: FileList | null) => {
@@ -268,7 +271,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     if (next.length) setPendingFiles((prev) => [...prev, ...next])
   }, [])
 
-  // Send message (text and/or attachments)
+  // Send message
   const sendMessage = useCallback(async () => {
     if (!selectedConversation || sending) return
     if (!messageText.trim() && pendingFiles.length === 0) return
@@ -311,7 +314,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       } else {
         const err = await response.json().catch(() => ({}))
         alert(err.error || 'Failed to send message')
-        console.error('Error sending message:', err.error || response.statusText)
       }
     } catch (error) {
       console.error('Error sending message:', error)
@@ -343,10 +345,7 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       })
 
       const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        console.error('Error starting conversation:', data.error || response.statusText)
-        return
-      }
+      if (!response.ok) return
 
       const conv = data.conversation as Conversation | undefined
       if (!conv?.id) return
@@ -363,10 +362,8 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     } catch (error) {
       console.error('Error starting conversation:', error)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids recreating this callback on every auth-context re-render that yields a new user object with the same id.
   }, [user?.id, conversations, fetchMessages, fetchConversations])
 
-  // Scroll to bottom of messages
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
@@ -376,7 +373,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
       fetchConversations()
       fetchUsers()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
   }, [isOpen, user?.id, fetchConversations, fetchUsers])
 
   useEffect(() => {
@@ -389,7 +385,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     scrollToBottom()
   }, [messages])
 
-  // Set up realtime subscription for new messages
   useEffect(() => {
     if (!selectedConversation || !user) return
 
@@ -429,7 +424,6 @@ export function Chat({ isOpen, onClose }: ChatProps) {
     return () => {
       supabase.removeChannel(channel)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids resubscribing on every auth-context re-render that yields a new user object with the same id.
   }, [selectedConversation, user?.id, supabase, fetchMessages, fetchConversations])
 
   const formatTime = (dateString: string) => formatClinicChatTime(dateString, language)
@@ -457,222 +451,198 @@ export function Chat({ isOpen, onClose }: ChatProps) {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#F4F4F8] sm:flex sm:items-center sm:justify-center sm:bg-slate-900/45 sm:p-4 sm:backdrop-blur-sm">
-      <div className="flex h-full w-full flex-col overflow-hidden bg-[#F4F4F8] sm:h-[min(90vh,820px)] sm:max-w-md sm:rounded-[2rem] sm:shadow-2xl">
-        {!selectedConversation ? (
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            {/* List screen header */}
-            <div className="shrink-0 bg-[#F4F4F8] px-5 pb-3 pt-[max(1rem,env(safe-area-inset-top))]">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm text-slate-500">{t('chat.hello')}</p>
-                  <h2 className="text-2xl font-bold text-slate-900">{displayName}</h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchOpen((open) => {
-                        if (open) setSearchQuery('')
-                        return !open
-                      })
-                    }}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
-                    aria-label={t('chat.search')}
-                    title={t('chat.search')}
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm"
-                    aria-label="Close"
-                  >
-                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-0 md:p-6 backdrop-blur-sm transition-opacity">
+      <div className="flex h-full w-full flex-col overflow-hidden bg-white md:h-[88vh] md:max-w-5xl md:flex-row md:rounded-3xl md:shadow-2xl border border-slate-200/80">
+        
+        {/* Left Sidebar / Directory Panel */}
+        <div
+          className={`${
+            selectedConversation ? 'hidden md:flex' : 'flex'
+          } w-full md:w-80 lg:w-96 flex-col border-r border-slate-200/80 bg-[#f8f9fe] shrink-0 min-h-0`}
+        >
+          {/* Sidebar Header */}
+          <div className="shrink-0 bg-[#f8f9fe] p-4 border-b border-slate-200/60">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{t('chat.hello')}</p>
+                <h2 className="text-lg font-bold text-slate-900 truncate">{displayName}</h2>
               </div>
-
-              {searchOpen && (
-                <div className="mb-3">
-                  <input
-                    type="search"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder={t('chat.search')}
-                    autoFocus
-                    className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:outline-none focus:ring-2 focus:ring-violet-400/25"
-                  />
-                </div>
-              )}
-
-              <div className="flex rounded-2xl bg-white p-1 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => setActiveView('conversations')}
-                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
-                    activeView === 'conversations'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {t('chat.tab_all')}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView('new-chat')}
-                  className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold transition-colors ${
-                    activeView === 'new-chat'
-                      ? 'bg-violet-600 text-white shadow-sm'
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  {t('chat.tab_contacts')}
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-sm"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
             </div>
 
-            {/* List content */}
-            <div className="relative min-h-0 flex-1 overflow-y-auto px-4 pb-24">
-              {loading ? (
-                <div className="flex items-center justify-center py-16">
-                  <LoadingSpinner message={t('common.loading')} />
-                </div>
-              ) : activeView === 'conversations' ? (
-                filteredConversations.length === 0 ? (
-                  <div className="rounded-3xl bg-white px-6 py-12 text-center shadow-sm">
-                    <p className="font-semibold text-slate-800">{t('chat.empty_conversations')}</p>
-                    <p className="mt-1 text-sm text-slate-500">{t('chat.start_new')}</p>
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {filteredConversations.map((conv) => (
-                      <li key={conv.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedConversation(conv)
-                            fetchMessages(conv.id)
-                          }}
-                          className="flex w-full items-center gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm transition-transform active:scale-[0.99]"
-                        >
-                          <ChatAvatar name={conv.other_participant.full_name} />
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="truncate font-semibold text-slate-900">
-                                {conv.other_participant.full_name}
-                              </p>
-                              <span className="shrink-0 text-xs text-slate-400">
-                                {formatTime(conv.last_message_at)}
-                              </span>
-                            </div>
-                            <p className="truncate text-sm capitalize text-slate-500">
-                              {conv.other_participant.role}
-                            </p>
-                          </div>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )
-              ) : filteredUsers.length === 0 ? (
-                <div className="rounded-3xl bg-white px-6 py-12 text-center shadow-sm">
-                  <p className="font-semibold text-slate-800">{t('chat.no_users')}</p>
-                  <p className="mt-1 text-sm text-slate-500">{t('chat.no_users_hint')}</p>
+            {/* Search Input */}
+            <div className="relative mb-3">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('chat.search')}
+                className="w-full h-9 pl-9 pr-3 rounded-xl border border-slate-200 bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:border-violet-500 focus:outline-none focus:ring-2 focus:ring-violet-500/20"
+              />
+            </div>
+
+            {/* Tab Controls */}
+            <div className="flex rounded-xl bg-slate-200/60 p-1">
+              <button
+                type="button"
+                onClick={() => setActiveView('conversations')}
+                className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                  activeView === 'conversations'
+                    ? 'bg-white text-violet-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t('chat.tab_all')} ({conversations.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveView('new-chat')}
+                className={`flex-1 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                  activeView === 'new-chat'
+                    ? 'bg-white text-violet-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t('chat.tab_contacts')} ({filteredUsers.length})
+              </button>
+            </div>
+          </div>
+
+          {/* List Content */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-1.5 min-h-0">
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <LoadingSpinner message={t('common.loading')} variant="light" />
+              </div>
+            ) : activeView === 'conversations' ? (
+              filteredConversations.length === 0 ? (
+                <div className="rounded-2xl bg-white p-8 text-center border border-slate-200/60 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-800">{t('chat.empty_conversations')}</p>
+                  <p className="mt-1 text-xs text-slate-500">{t('chat.start_new')}</p>
                   <button
                     type="button"
-                    onClick={async () => {
-                      try {
-                        const response = await fetch('/api/chat/sync-profiles', {
-                          method: 'POST',
-                          credentials: 'include',
-                          headers: { 'Content-Type': 'application/json' },
-                        })
-                        const data = await response.json()
-                        if (response.ok) {
-                          alert(data.message || 'Profiles synced successfully!')
-                          fetchUsers()
-                        } else {
-                          alert(data.error || 'Failed to sync profiles')
-                        }
-                      } catch (error) {
-                        console.error('Error syncing profiles:', error)
-                        alert('Error syncing profiles: ' + (error instanceof Error ? error.message : 'Unknown error'))
-                      }
-                    }}
-                    className="mt-4 rounded-xl bg-violet-50 px-4 py-2 text-xs font-semibold text-violet-700 hover:bg-violet-100"
+                    onClick={() => setActiveView('new-chat')}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-600 text-white text-xs font-medium hover:bg-violet-700 shadow-sm"
                   >
-                    {t('chat.sync_profiles')}
+                    {t('chat.tab_contacts')}
                   </button>
                 </div>
               ) : (
-                <ul className="space-y-2">
-                  {filteredUsers.map((userItem) => (
-                    <li key={userItem.uid}>
-                      <button
-                        type="button"
-                        onClick={() => startConversation(userItem.uid)}
-                        className="flex w-full items-center gap-3 rounded-2xl bg-white px-3 py-3 text-left shadow-sm transition-transform active:scale-[0.99]"
-                      >
-                        <ChatAvatar name={userItem.full_name || t('chat.unknown')} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate font-semibold text-slate-900">
-                            {userItem.full_name || t('chat.unknown')}
+                filteredConversations.map((conv) => {
+                  const isSelected = selectedConversation?.id === conv.id
+                  return (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedConversation(conv)
+                        fetchMessages(conv.id)
+                      }}
+                      className={`flex w-full items-center gap-3 rounded-2xl p-3 text-left transition-all ${
+                        isSelected
+                          ? 'bg-violet-600 text-white shadow-md ring-2 ring-violet-500/30'
+                          : 'bg-white text-slate-900 hover:bg-violet-50/60 border border-slate-200/60 shadow-sm'
+                      }`}
+                    >
+                      <ChatAvatar name={conv.other_participant.full_name} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-1.5">
+                          <p className={`truncate font-semibold text-sm ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                            {conv.other_participant.full_name}
                           </p>
-                          <p className="truncate text-sm capitalize text-slate-500">{userItem.role}</p>
+                          <span className={`shrink-0 text-[11px] ${isSelected ? 'text-violet-200' : 'text-slate-400'}`}>
+                            {formatTime(conv.last_message_at)}
+                          </span>
                         </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* FAB */}
-            <button
-              type="button"
-              onClick={() => setActiveView('new-chat')}
-              className="absolute bottom-6 right-5 z-10 flex h-14 w-14 items-center justify-center rounded-full bg-violet-600 text-white shadow-lg shadow-violet-600/35 transition-transform active:scale-95"
-              aria-label={t('chat.new_message')}
-              title={t('chat.new_message')}
-            >
-              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Conversation header */}
-            <div className="relative shrink-0 bg-violet-600 pb-0 pt-[max(0.75rem,env(safe-area-inset-top))] text-white">
-              <div className="flex items-center gap-3 px-4 py-3">
+                        <div className="flex items-center gap-2 mt-1">
+                          <RoleBadge role={conv.other_participant.role} />
+                        </div>
+                      </div>
+                    </button>
+                  )
+                })
+              )
+            ) : filteredUsers.length === 0 ? (
+              <div className="rounded-2xl bg-white p-8 text-center border border-slate-200/60 shadow-sm">
+                <p className="text-sm font-semibold text-slate-800">{t('chat.no_users')}</p>
+                <p className="mt-1 text-xs text-slate-500">{t('chat.no_users_hint')}</p>
+              </div>
+            ) : (
+              filteredUsers.map((userItem) => (
                 <button
+                  key={userItem.uid}
                   type="button"
-                  onClick={() => {
-                    setSelectedConversation(null)
-                    setActiveView('conversations')
-                  }}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-white/90 hover:bg-white/10"
-                  aria-label="Back"
+                  onClick={() => startConversation(userItem.uid)}
+                  className="flex w-full items-center gap-3 rounded-2xl bg-white p-3 text-left border border-slate-200/60 shadow-sm hover:bg-violet-50/60 transition-all"
                 >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                  </svg>
+                  <ChatAvatar name={userItem.full_name || t('chat.unknown')} size="md" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-sm text-slate-900">
+                      {userItem.full_name || t('chat.unknown')}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <RoleBadge role={userItem.role} />
+                    </div>
+                  </div>
                 </button>
-                <ChatAvatar name={selectedConversation.other_participant.full_name} size="sm" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-semibold">{selectedConversation.other_participant.full_name}</p>
-                  <p className="text-xs capitalize text-violet-200">{t('chat.online')}</p>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Main Chat Panel */}
+        <div
+          className={`${
+            !selectedConversation ? 'hidden md:flex' : 'flex'
+          } flex-1 flex-col min-h-0 bg-white`}
+        >
+          {selectedConversation ? (
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-[#fbfcfd] shrink-0">
+                <div className="flex items-center gap-3 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedConversation(null)
+                      setActiveView('conversations')
+                    }}
+                    className="md:hidden flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                    aria-label="Back"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  <ChatAvatar name={selectedConversation.other_participant.full_name} size="md" />
+                  <div className="min-w-0">
+                    <h3 className="truncate font-bold text-slate-900 text-base">
+                      {selectedConversation.other_participant.full_name}
+                    </h3>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <RoleBadge role={selectedConversation.other_participant.role} />
+                    </div>
+                  </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={onClose}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/25 text-white/90 hover:bg-white/10"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors"
                   aria-label="Close"
                 >
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -680,139 +650,155 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                   </svg>
                 </button>
               </div>
-              <ChatWaveDivider />
-            </div>
 
-            {/* Messages */}
-            <div ref={messagesContainerRef} className="min-h-0 flex-1 overflow-y-auto bg-[#F4F4F8] px-4 py-4">
-              <div className="space-y-3">
-                {messages.map((message) => {
-                  const isOwn = message.sender_id === user?.id
-                  const attachments = message.attachments ?? []
-                  const showText = !isAttachmentOnlyContent(message.content, attachments.length > 0)
-                  return (
-                    <div key={message.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                      <div
-                        className={`max-w-[min(82%,320px)] rounded-[1.25rem] px-4 py-2.5 shadow-sm ${
-                          isOwn
-                            ? 'rounded-br-md bg-white text-slate-800'
-                            : 'rounded-bl-md bg-violet-500 text-white'
-                        }`}
-                      >
-                        {showText && message.content?.trim() && (
-                          <p className="text-sm leading-relaxed">{message.content}</p>
-                        )}
-                        {!showText && attachments.length > 0 && (
-                          <p className={`text-sm ${isOwn ? 'text-slate-600' : 'text-white/90'}`}>
-                            {t('chat.attachment_only')}
-                          </p>
-                        )}
-                        <ChatMessageAttachments
-                          attachments={attachments}
-                          downloadLabel={t('chat.download_attachment')}
-                          isOwn={isOwn}
-                        />
-                        <div className={`mt-1 flex items-center gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}>
-                          <span
-                            className={`text-[10px] ${isOwn ? 'text-slate-400' : 'text-white/70'}`}
-                            title={formatClinicDateTimeForLanguage(message.created_at, language)}
-                          >
-                            {formatTime(message.created_at)}
-                          </span>
-                          {isOwn && message.read_at && (
-                            <span className="text-[10px] text-violet-500" title="Read">
-                              ✓✓
-                            </span>
+              {/* Messages Container */}
+              <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-[#f8f9fc]">
+                {messages.length === 0 ? (
+                  <div className="flex h-full items-center justify-center py-16 text-center text-slate-400 text-sm">
+                    {t('chat.start_new')}
+                  </div>
+                ) : (
+                  messages.map((message) => {
+                    const isOwn = message.sender_id === user?.id
+                    const attachments = message.attachments ?? []
+                    const showText = !isAttachmentOnlyContent(message.content, attachments.length > 0)
+                    return (
+                      <div key={message.id} className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className={`max-w-[min(80%,440px)] rounded-2xl px-4 py-3 shadow-sm ${
+                            isOwn
+                              ? 'rounded-br-xs bg-violet-600 text-white'
+                              : 'rounded-bl-xs bg-white text-slate-900 border border-slate-200/80'
+                          }`}
+                        >
+                          {showText && message.content?.trim() && (
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
                           )}
+                          {!showText && attachments.length > 0 && (
+                            <p className={`text-sm ${isOwn ? 'text-violet-100' : 'text-slate-600'}`}>
+                              {t('chat.attachment_only')}
+                            </p>
+                          )}
+                          <ChatMessageAttachments
+                            attachments={attachments}
+                            downloadLabel={t('chat.download_attachment')}
+                            isOwn={isOwn}
+                          />
+                          <div className={`mt-1.5 flex items-center gap-1.5 ${isOwn ? 'justify-end' : 'justify-start'}`}>
+                            <span
+                              className={`text-[10px] ${isOwn ? 'text-violet-200' : 'text-slate-400'}`}
+                              title={formatClinicDateTimeForLanguage(message.created_at, language)}
+                            >
+                              {formatTime(message.created_at)}
+                            </span>
+                            {isOwn && message.read_at && (
+                              <span className="text-[10px] text-violet-200 font-bold" title="Read">
+                                ✓✓
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
+                    )
+                  })
+                )}
+                <div ref={messagesEndRef} />
               </div>
-              <div ref={messagesEndRef} />
-            </div>
 
-            {/* Composer */}
-            <div className="shrink-0 bg-[#F4F4F8] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-2">
-              {pendingFiles.length > 0 && (
-                <div className="mb-2 flex flex-wrap gap-2">
-                  {pendingFiles.map((file, index) => (
-                    <div
-                      key={`${file.name}-${index}`}
-                      className="inline-flex max-w-full items-center gap-2 rounded-full border border-violet-200 bg-white px-3 py-1.5 text-xs text-slate-700 shadow-sm"
-                    >
-                      <span className="max-w-[180px] truncate">{file.name}</span>
-                      <span className="shrink-0 text-slate-400">({formatChatFileSize(file.size)})</span>
-                      <button
-                        type="button"
-                        onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
-                        className="shrink-0 text-slate-500 hover:text-red-600"
-                        aria-label={t('chat.remove_attachment')}
+              {/* Message Composer */}
+              <div className="p-4 border-t border-slate-100 bg-white shrink-0">
+                {pendingFiles.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {pendingFiles.map((file, index) => (
+                      <div
+                        key={`${file.name}-${index}`}
+                        className="inline-flex items-center gap-2 rounded-xl border border-violet-200 bg-violet-50/70 px-3 py-1.5 text-xs text-slate-700 shadow-sm"
                       >
-                        ×
-                      </button>
-                    </div>
-                  ))}
+                        <span className="max-w-[200px] truncate font-medium">{file.name}</span>
+                        <span className="text-slate-400">({formatChatFileSize(file.size)})</span>
+                        <button
+                          type="button"
+                          onClick={() => setPendingFiles((prev) => prev.filter((_, i) => i !== index))}
+                          className="text-slate-400 hover:text-rose-600 ml-1 font-bold text-sm"
+                          aria-label={t('chat.remove_attachment')}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50/60 p-2 focus-within:border-violet-500 focus-within:ring-2 focus-within:ring-violet-500/20 transition-all">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={CHAT_FILE_ACCEPT}
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      addPendingFiles(e.target.files)
+                      e.target.value = ''
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={sending}
+                    title={t('chat.attach_file')}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-200/60 hover:text-violet-600 disabled:opacity-50 transition-colors"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
+                      />
+                    </svg>
+                  </button>
+                  <input
+                    type="text"
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        sendMessage()
+                      }
+                    }}
+                    placeholder={t('chat.placeholder')}
+                    className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
+                    disabled={sending}
+                  />
+                  <button
+                    type="button"
+                    onClick={sendMessage}
+                    disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm hover:bg-violet-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    aria-label={t('common.send')}
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
                 </div>
-              )}
-              <div className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-2 py-2 shadow-md">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={CHAT_FILE_ACCEPT}
-                  multiple
-                  className="sr-only"
-                  onChange={(e) => {
-                    addPendingFiles(e.target.files)
-                    e.target.value = ''
-                  }}
-                />
-                <input
-                  type="text"
-                  value={messageText}
-                  onChange={(e) => setMessageText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      sendMessage()
-                    }
-                  }}
-                  placeholder={t('chat.placeholder')}
-                  className="min-w-0 flex-1 bg-transparent px-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none"
-                  disabled={sending}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={sending}
-                  title={t('chat.attach_file')}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-slate-500 hover:bg-slate-50 hover:text-violet-600 disabled:opacity-50"
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"
-                    />
-                  </svg>
-                </button>
-                <button
-                  type="button"
-                  onClick={sendMessage}
-                  disabled={(!messageText.trim() && pendingFiles.length === 0) || sending}
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-600 text-white shadow-sm transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
-                  aria-label={t('common.send')}
-                >
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
-                </button>
               </div>
+            </>
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center p-12 text-center bg-[#f8f9fc]">
+              <div className="h-16 w-16 rounded-3xl bg-violet-100 text-violet-600 flex items-center justify-center mb-4 shadow-sm">
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                </svg>
+              </div>
+              <h3 className="text-lg font-bold text-slate-900 mb-1">MyClinicMD Internal Chat</h3>
+              <p className="text-sm text-slate-500 max-w-sm">
+                Select a conversation from the left sidebar or start a new chat with your clinic staff and administrators.
+              </p>
             </div>
-          </>
-        )}
+          )}
+        </div>
+
       </div>
     </div>
   )
