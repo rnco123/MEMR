@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useDeferredValue, type DragEvent } from 'react'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
@@ -63,6 +63,34 @@ const COLOR_DOT: Record<string, string> = {
   purple: 'bg-purple-500',
   green: 'bg-emerald-500',
   blue: 'bg-blue-500',
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const trimmed = query.trim()
+  if (!trimmed) return <>{text}</>
+
+  const tokens = trimmed
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  if (tokens.length === 0) return <>{text}</>
+
+  const regex = new RegExp(`(${tokens.join('|')})`, 'gi')
+  const parts = text.split(regex)
+
+  return (
+    <>
+      {parts.map((part, i) =>
+        tokens.some((t) => t.toLowerCase() === part.toLowerCase()) ? (
+          <mark key={i} className="bg-amber-200 text-slate-900 rounded-[2px] px-0.5 font-semibold">
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  )
 }
 
 type Props = {
@@ -139,21 +167,31 @@ export function I693WorkflowBoard({
     })
   }, [locationsLoading, selectedLocationIds.length, userLocations])
 
+  const deferredSearch = useDeferredValue(patientSearch)
+
   const filtered = useMemo(() => {
-    const q = patientSearch.trim().toLowerCase()
+    const q = deferredSearch.trim().toLowerCase()
     return rows.filter((r) => {
       if (!r.case) return false
-      // List view: optional status tab. Kanban always shows all columns.
+      // List view: optional status tab filter. Kanban view always shows all workflow columns.
       if (view === 'list' && statusFilter !== 'all' && r.case.status !== statusFilter) return false
-      if (view === 'list' && q) {
-        const nameMatch = r.patient_name.toLowerCase().includes(q)
-        const encounterMatch = String(r.encounter_id).includes(q)
-        const patientIdMatch = String(r.patient_id).includes(q)
-        if (!nameMatch && !encounterMatch && !patientIdMatch) return false
+      if (q) {
+        const queryClean = q.startsWith('#') ? q.slice(1) : q
+        const tokens = q.split(/\s+/).filter(Boolean)
+        const nameLower = r.patient_name.toLowerCase()
+        const nameMatch = tokens.length > 0 && tokens.every((token) => nameLower.includes(token))
+        const encounterMatch = String(r.encounter_id).includes(queryClean)
+        const patientIdMatch = String(r.patient_id).includes(queryClean)
+        const locationMatch = r.location_title ? r.location_title.toLowerCase().includes(q) : false
+        const apptMatch = r.appointment_date ? r.appointment_date.toLowerCase().includes(q) : false
+        const statusMatch = (r.i693_status || r.case.status).replaceAll('_', ' ').toLowerCase().includes(q)
+        if (!nameMatch && !encounterMatch && !patientIdMatch && !locationMatch && !apptMatch && !statusMatch) {
+          return false
+        }
       }
       return true
     })
-  }, [rows, statusFilter, patientSearch, view])
+  }, [rows, statusFilter, deferredSearch, view])
 
   const byColumn = useMemo(() => {
     const map: Record<ImmigrationWorkflowStatus, ApiRow[]> = {
@@ -359,7 +397,9 @@ export function I693WorkflowBoard({
           onClick={() => onSelectEncounter(row.encounter_id, row.patient_name)}
           className={`w-full text-left ${c.status === 'delivered' ? 'pr-8' : ''}`}
         >
-          <p className="font-semibold text-slate-900 text-sm">{row.patient_name}</p>
+          <p className="font-semibold text-slate-900 text-sm">
+            <HighlightedText text={row.patient_name} query={patientSearch} />
+          </p>
           {appt && (
             <p className="text-xs text-slate-500 mt-1">
               {t('i693.wf_appt')}: {appt}
@@ -409,38 +449,70 @@ export function I693WorkflowBoard({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
-          {(['all', ...WORKFLOW_COLUMNS.map((c) => c.status)] as StatusFilter[]).map((s) => {
-            const col = WORKFLOW_COLUMNS.find((c) => c.status === s)
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => setStatusFilter(s)}
-                className={`px-3 py-1.5 text-xs font-medium ${
-                  statusFilter === s ? 'bg-[#eef3ff] text-[#2E6EF3]' : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {s === 'all' ? t('common.all') : `${col?.emoji ?? ''} ${t(col?.labelKey ?? s)}`}
-              </button>
-            )
-          })}
-        </div>
-        {showLocationFilter && (
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
-              {t('location.filter_label')}
-            </span>
-            <LocationCheckboxDropdown
-              locations={userLocations}
-              selectedIds={selectedLocationIds}
-              onChange={setSelectedLocationIds}
-              unrestricted={locationsUnrestricted}
-            />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+            {(['all', ...WORKFLOW_COLUMNS.map((c) => c.status)] as StatusFilter[]).map((s) => {
+              const col = WORKFLOW_COLUMNS.find((c) => c.status === s)
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => setStatusFilter(s)}
+                  className={`px-3 py-1.5 text-xs font-medium ${
+                    statusFilter === s ? 'bg-[#eef3ff] text-[#2E6EF3]' : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {s === 'all' ? t('common.all') : `${col?.emoji ?? ''} ${t(col?.labelKey ?? s)}`}
+                </button>
+              )
+            })}
           </div>
-        )}
-        <div className="ml-auto flex gap-2">
+          {showLocationFilter && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium text-slate-500 whitespace-nowrap">
+                {t('location.filter_label')}
+              </span>
+              <LocationCheckboxDropdown
+                locations={userLocations}
+                selectedIds={selectedLocationIds}
+                onChange={setSelectedLocationIds}
+                unrestricted={locationsUnrestricted}
+              />
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 min-w-[240px] flex-1 max-w-md">
+          <div className="relative w-full">
+            <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+              </svg>
+            </span>
+            <input
+              type="search"
+              value={patientSearch}
+              onChange={(e) => setPatientSearch(e.target.value)}
+              placeholder={t('i693.wf_search_patient')}
+              className="w-full h-9 pl-9 pr-8 border border-slate-200 rounded-xl bg-white text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/30"
+            />
+            {patientSearch && (
+              <button
+                type="button"
+                onClick={() => setPatientSearch('')}
+                className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-slate-400 hover:text-slate-600"
+                aria-label="Clear search"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setView('list')}
@@ -537,13 +609,6 @@ export function I693WorkflowBoard({
         </div>
       ) : view === 'list' ? (
         <div className="space-y-3">
-          <input
-            type="search"
-            value={patientSearch}
-            onChange={(e) => setPatientSearch(e.target.value)}
-            placeholder={t('i693.wf_search_patient')}
-            className="w-full h-10 px-4 border border-slate-200 rounded-xl bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/30"
-          />
           {filtered.length === 0 ? (
             <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center text-slate-500 text-sm">
               {t('i693.wf_no_search_results')}
@@ -576,7 +641,9 @@ export function I693WorkflowBoard({
                   >
                     <span className={`mt-1.5 w-3 h-3 rounded-full shrink-0 ${dot}`} />
                     <div className="min-w-0 flex-1">
-                      <p className="font-medium text-slate-900">{row.patient_name}</p>
+                      <p className="font-medium text-slate-900">
+                        <HighlightedText text={row.patient_name} query={patientSearch} />
+                      </p>
                       {row.appointment_date && (
                         <p className="text-xs text-slate-500 mt-0.5">
                           {t('i693.wf_appt')}: {row.appointment_date}
@@ -645,7 +712,13 @@ export function I693WorkflowBoard({
                 onDrop={(event) => handleColumnDrop(event, col.status)}
                 className="p-2 space-y-2 flex-1 overflow-y-auto max-h-[calc(100vh-16rem)]"
               >
-                {byColumn[col.status].map((row) => renderCard(row))}
+                {byColumn[col.status].length === 0 && patientSearch.trim().length > 0 ? (
+                  <div className="py-6 text-center text-xs text-slate-400 italic">
+                    {t('i693.wf_no_search_results')}
+                  </div>
+                ) : (
+                  byColumn[col.status].map((row) => renderCard(row))
+                )}
               </div>
             </div>
           ))}

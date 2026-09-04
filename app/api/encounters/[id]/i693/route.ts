@@ -17,8 +17,8 @@ import { logI693Audit } from '@/lib/i693/audit-log'
 import { syncI693PdfToPatientFileAfterSave } from '@/lib/i693/save-patient-document'
 import { resolveEncounterPatientId } from '@/lib/encounters/resolve-patient-id'
 import { resolvePatientI693ForEncounter } from '@/lib/i693/patient-form'
-
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
+
 export const dynamic = 'force-dynamic'
 
 async function requireStaff(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
@@ -70,9 +70,12 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         `
         id,
         patient_id,
+        created_at,
         consent_ack,
         program_type,
         appointments:appointment_id (
+          appointment_date,
+          appointment_time,
           services:service_id ( title_en, title_es )
         )
       `
@@ -110,9 +113,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       source: role === 'admin' ? 'admin' : 'clinical',
     })
 
+    const apptRow = Array.isArray(enc.appointments) ? enc.appointments[0] : enc.appointments
+    const appointmentDate =
+      (apptRow as { appointment_date?: string | null })?.appointment_date ??
+      (enc as { created_at?: string | null }).created_at ??
+      null
+
     return NextResponse.json({
       encounter_id: encounterId,
       patient_id: enc.patient_id,
+      appointment_date: appointmentDate,
       form_owner_encounter_id: formOwnerEncounterId,
       is_immigration: isImmigrationEncounterForI693(enc),
       submission: existing ?? null,
@@ -161,59 +171,61 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       throw new ValidationError('Patient is not linked to this encounter')
     }
 
-    const { submission: existing } = await resolvePatientI693ForEncounter(admin, patientId)
-
     const now = new Date().toISOString()
-    const row = {
-      form_data: formData,
+    const submissionPayload = {
+      patient_id: patientId,
+      form_data: formData as unknown as Record<string, unknown>,
       status,
       updated_at: now,
     }
 
-    if (existing?.id) {
-      const { data, error } = await admin
+    const { data: existingSub } = await admin
+      .from('i693_submissions')
+      .select('id')
+      .eq('patient_id', patientId)
+      .maybeSingle()
+
+    let submissionId: number
+    if (existingSub?.id) {
+      const { error: updateErr } = await admin
         .from('i693_submissions')
-        .update(row)
-        .eq('id', existing.id)
-        .select()
+        .update(submissionPayload)
+        .eq('id', existingSub.id)
+      if (updateErr) throw updateErr
+      submissionId = existingSub.id
+    } else {
+      const { data: inserted, error: insertErr } = await admin
+        .from('i693_submissions')
+        .insert({
+          ...submissionPayload,
+          encounter_id: encounterId,
+          created_at: now,
+        })
+        .select('id')
         .single()
-      if (error) throw error
-      await maybeSyncImmigrationCase(admin, encounterId)
-      await logI693Audit('saved', encounterId, {
-        patient_id: enc.patient_id,
-        status,
-        role,
-        source: role === 'admin' ? 'admin' : 'clinical',
-      })
-      const ownerEncounterId = existing.encounter_id
-      await syncI693PatientFile(admin, ownerEncounterId, patientId, formData, user.id)
-      return NextResponse.json({
-        success: true,
-        data: { ...data, form_data: mergeI693Form(data.form_data as Partial<I693FormData>) },
-      })
+      if (insertErr) throw insertErr
+      submissionId = inserted.id
     }
 
-    const { data, error } = await admin
-      .from('i693_submissions')
-      .insert({
-        ...row,
-        encounter_id: encounterId,
-        patient_id: patientId,
-      })
-      .select()
-      .single()
-    if (error) throw error
+    await syncI693PatientFile(admin, encounterId, patientId, formData, user.id)
     await maybeSyncImmigrationCase(admin, encounterId)
+
     await logI693Audit('saved', encounterId, {
-      patient_id: enc.patient_id,
+      patient_id: patientId,
       status,
       role,
       source: role === 'admin' ? 'admin' : 'clinical',
     })
-    await syncI693PatientFile(admin, encounterId, patientId, formData, user.id)
+
     return NextResponse.json({
       success: true,
-      data,
+      data: {
+        id: submissionId,
+        encounter_id: encounterId,
+        patient_id: patientId,
+        form_data: formData,
+        status,
+      },
     })
   } catch (e) {
     return handleApiError(e)

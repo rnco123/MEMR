@@ -1,8 +1,15 @@
 {
   "mcpServers": {
     "supabase": {
-      "type": "http",
-      "url": "https://mcp.supabase.com/mcp"
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest"
+      ],
+      "env": {
+        "SUPABASE_PROJECT_REF": "bssjlpqdgmtgaxvadwdh",
+        "SUPABASE_ACCESS_TOKEN": "sbp_placeholder"
+      }
     }
   }
 }

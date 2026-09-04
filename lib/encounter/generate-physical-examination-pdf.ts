@@ -20,6 +20,8 @@ export type PhysicalExaminationPdfContext = {
   encounterId: number
   encounterCode?: string | null
   encounterDate?: string | null
+  /** When the exam was first recorded; preferred over the scheduled appointment date. */
+  examRecordedAt?: string | null
   lastAudit: PhysicalExamAuditSummary
   rosExam: RosExamData
   legacyExam?: PhysicalExaminationData
@@ -165,8 +167,9 @@ class PhysicalExamPdfLayout {
     this.setInk(10, 'normal')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
     if (ctx.patientDob) this.doc.text(`DOB ${formatUsDate(ctx.patientDob)}`, innerX, innerY + 34)
-    if (ctx.encounterDate) {
-      this.doc.text(`Visit date ${formatUsDate(ctx.encounterDate)}`, innerX + colW, innerY + 34)
+    const examDate = ctx.encounterDate ?? ctx.examRecordedAt
+    if (examDate) {
+      this.doc.text(`First visit date ${formatUsDate(examDate)}`, innerX + colW, innerY + 34)
     }
 
     if (ctx.lastAudit) {
