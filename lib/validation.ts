@@ -213,7 +213,10 @@ export const roomingPatchSchema = z.object({
   ma_supervision_ack: z.boolean().optional(),
   ready_for_doctor: z.boolean().optional(),
   ma_exam_findings: z.string().max(8000).optional().nullable(),
-  consent_ack: z.record(z.string(), z.string()).optional(),
+  // Values are ISO timestamps; booleans are tolerated because the patient
+  // signing flow historically wrote {key: true} — the rooming route normalizes
+  // them to timestamps before storing (see migration 131 for the backfill).
+  consent_ack: z.record(z.string(), z.union([z.string().max(64), z.boolean()])).optional(),
   pharmacy_id: z.number().int().positive().optional().nullable(),
 })
 
