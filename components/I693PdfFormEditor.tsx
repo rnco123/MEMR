@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { formatCalendarDate } from '@/lib/datetime/date-input'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
+import type { ImmigrationWorkflowStatus } from '@/lib/immigration/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
 import { extractFormDataFromApi, parseFormDataFromApi, countFilledI693Fields } from '@/lib/i693/form-api'
 import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
@@ -180,7 +181,7 @@ function formatTbValue(value: number | null): string {
 
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const { t } = useT()
-  const { caseRow: workflowCase, loading: workflowCaseLoading } = useImmigrationWorkflowCase(encounterId)
+  const { caseRow: workflowCase, loading: workflowCaseLoading, reload: reloadWorkflowCase } = useImmigrationWorkflowCase(encounterId)
   const [loading, setLoading] = useState(true)
   const [pdfReady, setPdfReady] = useState(false)
   const [printing, setPrinting] = useState(false)
@@ -360,6 +361,26 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       setCompletingEncounter(false)
     }
   }, [completingEncounter, encounterId, saveCurrent, t])
+
+  const updateWorkflowStatus = useCallback(
+    async (nextStatus: ImmigrationWorkflowStatus) => {
+      try {
+        const res = await fetch(`/api/i693/cases/${encounterId}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to update status')
+        toast.success(t('i693.saved'))
+        await reloadWorkflowCase()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to update status')
+      }
+    },
+    [encounterId, reloadWorkflowCase, t]
+  )
 
   // Auto-save on every change after 800ms debounce
   useEffect(() => {
@@ -1241,7 +1262,11 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
           )}
 
           <div className="hidden sm:block h-5 w-px bg-slate-200 mx-1" aria-hidden />
-          <ImmigrationWorkflowStatusBadge caseRow={workflowCase} loading={workflowCaseLoading} />
+          <ImmigrationWorkflowStatusBadge
+            caseRow={workflowCase}
+            loading={workflowCaseLoading}
+            onStatusChange={(nextStatus) => void updateWorkflowStatus(nextStatus)}
+          />
         </div>
       </div>
 
