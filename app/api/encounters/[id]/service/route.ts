@@ -1,10 +1,17 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { AuthenticationError, ValidationError, handleApiError } from '@/lib/api-error-handler'
+import {
+  AuthenticationError,
+  AuthorizationError,
+  ValidationError,
+  handleApiError,
+} from '@/lib/api-error-handler'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { auditPhi } from '@/lib/audit-phi'
 import { fetchUserRole } from '@/lib/fetch-user-role'
+import { LOOP_TENANT_ID, isImmigrationOnlyTenant } from '@/lib/tenants'
+import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,6 +66,28 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (encErr) throw encErr
     if (!encRow || !encRow.appointment_id) {
       throw new ValidationError('Encounter or linked appointment not found')
+    }
+
+    // The Loop tenant doesn't allow changing the treatment type
+    const { data: apptRow, error: apptFetchErr } = await admin
+      .from('appointments')
+      .select('id, locations:location_id ( tenant_id )')
+      .eq('id', encRow.appointment_id)
+      .maybeSingle()
+
+    if (apptFetchErr) throw apptFetchErr
+    const apptLocation = Array.isArray(apptRow?.locations) ? apptRow?.locations[0] : apptRow?.locations
+    const tenantId = (apptLocation as { tenant_id?: number | null } | null | undefined)?.tenant_id
+    if (tenantId === LOOP_TENANT_ID) {
+      throw new AuthorizationError('Treatment type cannot be changed for this location')
+    }
+    // Immigration-only tenants (CSM, Loop) may only switch between immigration services.
+    if (
+      isImmigrationOnlyTenant(tenantId) &&
+      !isImmigrationServiceTitle(serviceRow.title_en) &&
+      !isImmigrationServiceTitle(serviceRow.title_es)
+    ) {
+      throw new ValidationError('Only immigration services are available at this location')
     }
 
     // Update appointment's service_id

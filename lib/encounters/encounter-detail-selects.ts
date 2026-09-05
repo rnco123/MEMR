@@ -15,7 +15,7 @@ export const PATIENT_FILE_SELECT =
   'id, first_name, last_name, email, phone, gender, date_of_birth, zip_code, state, street_address, patient_code, location_id, created_at, created_by_source, emergency_contact_name, emergency_contact_phone, emergency_contact_relationship, locations(title, location_code)'
 
 export const APPOINTMENT_DETAIL_SELECT =
-  'id, appointment_date, appointment_time, onsite_type, patient_id, service_id, location_id, services:service_id ( title_en, title_es ), locations:location_id ( title, location_code )'
+  'id, appointment_date, appointment_time, onsite_type, patient_id, service_id, location_id, services:service_id ( title_en, title_es ), locations:location_id ( title, location_code, tenant_id )'
 
 export const INTAKE_FORM_DETAIL_SELECT =
   'id, appointment_id, chief_complaint, location, severity, symptoms_description, medical_conditions, surgeries, allergies, current_medications, fh_diabetes, fh_hypertension, fh_cancer, fh_heart_disease, tobacco_use, alcohol_use, drug_use, onset, relieving_factors, cancer_type, number_of_pregnancies, birth_control, last_pap_smear_status, last_pap_smear_month_year, mammography_status, mammography_month_year, last_prostate_exam_status, last_prostate_exam_month_year, occupation, created_at, updated_at, edited_by, editor_role, editor_name'
