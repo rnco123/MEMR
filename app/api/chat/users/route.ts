@@ -71,9 +71,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
     }
 
-    // Filter users: Admins see all users; Non-admins see Admins + users in their same location(s)
+    // Filter users: Admins see all users; Non-admins see Admins + users in their same location(s).
+    // Other admin accounts still exist in the DB but only this one belongs in the chat directory.
+    const VISIBLE_ADMIN_EMAIL = 'mack@myclinicmd.com'
     const filteredUsers = (profiles || []).filter((p) => {
-      if (scope.unrestricted || p.role === 'admin') return true
+      if (p.role === 'admin') {
+        return (p.email ?? '').toLowerCase() === VISIBLE_ADMIN_EMAIL
+      }
+      if (scope.unrestricted) return true
       return allowedUserIds ? allowedUserIds.has(p.uid) : false
     })
 

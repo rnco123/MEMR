@@ -6,6 +6,8 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
+import { LOOP_TENANT_ID, isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { LoadingSpinner } from './LoadingSpinner'
@@ -14,6 +16,7 @@ import { EncounterRoomingPanel } from './EncounterRoomingPanel'
 import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
 import { EncounterIntakePanel } from './EncounterIntakePanel'
+import { EncounterImmigrationIntakePanel } from './EncounterImmigrationIntakePanel'
 import { EncounterVitalsPanel } from './EncounterVitalsPanel'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
@@ -150,7 +153,7 @@ interface Appointment {
   onsite_type: string
   service_id?: number | null
   services?: { id?: number; title_en?: string | null; title_es?: string | null } | null
-  locations?: { title?: string | null; location_code?: string | null } | null
+  locations?: { title?: string | null; location_code?: string | null; tenant_id?: number | null } | null
 }
 
 interface Pharmacy {
@@ -230,6 +233,19 @@ export function EncounterDetailModal({
     }
   }, [allServices.length])
 
+  // The Loop tenant doesn't allow changing the treatment type (also enforced
+  // in the /service PATCH endpoint).
+  const serviceEditHiddenForTenant = appointment?.locations?.tenant_id === LOOP_TENANT_ID
+
+  // Only Kempwood offers the full services list; immigration-only tenants
+  // (CSM, Loop) may only switch between immigration services.
+  const serviceOptions = useMemo(() => {
+    if (!isImmigrationOnlyTenant(appointment?.locations?.tenant_id)) return allServices
+    return allServices.filter(
+      (svc) => isImmigrationServiceTitle(svc.title_en) || isImmigrationServiceTitle(svc.title_es)
+    )
+  }, [allServices, appointment?.locations?.tenant_id])
+
   const handleStartEditService = () => {
     void loadServices()
     const currentId = appointment?.services?.id ?? appointment?.service_id
@@ -302,9 +318,10 @@ export function EncounterDetailModal({
   const appointmentServiceTitle = useMemo(() => {
     const svc = appointment?.services
     if (!svc) return t('common.na')
-    if (language === 'es' && svc.title_es) return svc.title_es
-    return svc.title_en || t('common.na')
-  }, [appointment?.services, language, t])
+    const title = (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) || ''
+    if (!title) return t('common.na')
+    return stripServiceFeeForTenant(title, appointment?.locations?.tenant_id)
+  }, [appointment?.services, appointment?.locations?.tenant_id, language, t])
 
   const appointmentLocationTitle = useMemo(() => {
     return appointment?.locations?.title?.trim() || t('common.na')
@@ -1071,7 +1088,7 @@ export function EncounterDetailModal({
                         <div className="min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <p className="text-slate-500 text-sm">{t('nurse_walkin.service')}</p>
-                            {canEditWorkflow && !encounterLocked && !editingService && (
+                            {canEditWorkflow && !encounterLocked && !editingService && !serviceEditHiddenForTenant && (
                               <button
                                 type="button"
                                 onClick={handleStartEditService}
@@ -1093,9 +1110,12 @@ export function EncounterDetailModal({
                                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
                               >
                                 <option value="">{t('patient_register.treatment_type_ph')}</option>
-                                {allServices.map((svc) => (
+                                {serviceOptions.map((svc) => (
                                   <option key={svc.id} value={svc.id}>
-                                    {language === 'es' && svc.title_es ? svc.title_es : svc.title_en}
+                                    {stripServiceFeeForTenant(
+                                      (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? '',
+                                      appointment?.locations?.tenant_id
+                                    )}
                                   </option>
                                 ))}
                               </select>
@@ -1186,14 +1206,23 @@ export function EncounterDetailModal({
                   />
                 )}
 
-                <EncounterIntakePanel
-                  encounterId={encounterId}
-                  intake={intake}
-                  canEdit={intakeEditable}
-                  onUpdated={() => {
-                    void refreshEncounterFromApi()
-                  }}
-                />
+                {showI693Form ? (
+                  <EncounterImmigrationIntakePanel
+                    encounterId={encounterId}
+                    canEdit={intakeEditable}
+                    patientGender={patient?.gender}
+                    patientAge={patientAgeYears}
+                  />
+                ) : (
+                  <EncounterIntakePanel
+                    encounterId={encounterId}
+                    intake={intake}
+                    canEdit={intakeEditable}
+                    onUpdated={() => {
+                      void refreshEncounterFromApi()
+                    }}
+                  />
+                )}
 
                 <EncounterVitalsPanel
                   encounterId={encounterId}

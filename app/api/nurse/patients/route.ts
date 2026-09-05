@@ -98,6 +98,9 @@ export async function POST(request: Request) {
         state: emptyToNull(v.state),
         zip_code: emptyToNull(v.zip_code),
         location_id: v.location_id,
+        emergency_contact_name: emptyToNull(v.emergency_contact_name),
+        emergency_contact_phone: emptyToNull(v.emergency_contact_phone),
+        emergency_contact_relationship: emptyToNull(v.emergency_contact_relationship),
         is_text_opt_in: v.is_text_opt_in ?? false,
         is_check_opt_in: v.is_check_opt_in ?? false,
         // Direct = EMR manual registration. Do not sync this row to external Supabase.

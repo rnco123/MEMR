@@ -8,6 +8,8 @@ import { AddressLookupFields } from '@/components/AddressLookupFields'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
+import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
   PATIENT_DOCUMENT_ACCEPT,
@@ -104,6 +106,9 @@ export function NurseRegisterPatientModal({
   const [streetAddress, setStreetAddress] = useState('')
   const [state, setState] = useState('')
   const [zipCode, setZipCode] = useState('')
+  const [emergencyName, setEmergencyName] = useState('')
+  const [emergencyPhone, setEmergencyPhone] = useState('')
+  const [emergencyRelationship, setEmergencyRelationship] = useState('')
   const [locationId, setLocationId] = useState('')
   const [locationQuery, setLocationQuery] = useState('')
   const [textOptIn, setTextOptIn] = useState(false)
@@ -132,6 +137,9 @@ export function NurseRegisterPatientModal({
     setStreetAddress('')
     setState('')
     setZipCode('')
+    setEmergencyName('')
+    setEmergencyPhone('')
+    setEmergencyRelationship('')
     setLocationId('')
     setLocationQuery('')
     setTextOptIn(false)
@@ -192,9 +200,13 @@ export function NurseRegisterPatientModal({
     () => assignedLocations.find((loc) => String(loc.id) === locationId) ?? null,
     [assignedLocations, locationId]
   )
-  const isKempwoodTenant = selectedLocation?.tenant_id === 3
-
-  const availableServices = services
+  // CSM and Loop tenants offer only immigration services; Kempwood keeps the full list.
+  const availableServices = useMemo(() => {
+    if (!isImmigrationOnlyTenant(selectedLocation?.tenant_id)) return services
+    return services.filter(
+      (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
+    )
+  }, [services, selectedLocation?.tenant_id])
 
   useEffect(() => {
     setServiceId((current) => {
@@ -207,7 +219,7 @@ export function NurseRegisterPatientModal({
     const title = language === 'es' && service.title_es
       ? service.title_es
       : service.title_en
-    return isKempwoodTenant ? title.replace(/\s*\$220\s*$/, '') : title
+    return stripServiceFeeForTenant(title, selectedLocation?.tenant_id)
   }
 
   const filteredLocations = useMemo(() => {
@@ -287,6 +299,9 @@ export function NurseRegisterPatientModal({
           street_address: streetAddress.trim() || null,
           state: state.trim() || null,
           zip_code: zipCode.trim() || null,
+          emergency_contact_name: emergencyName.trim() || null,
+          emergency_contact_phone: emergencyPhone.trim() || null,
+          emergency_contact_relationship: emergencyRelationship.trim() || null,
           location_id: Number(locationId),
           is_text_opt_in: textOptIn,
           is_check_opt_in: checkOptIn,
@@ -707,6 +722,41 @@ export function NurseRegisterPatientModal({
                       streetPlaceholder={t('encounter_modal.patient_street_placeholder')}
                       inputClassName={INPUT}
                     />
+                  </div>
+                  <div className="md:col-span-2 pt-1">
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                      {t('patient_register.emergency_contact')}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_name')}</label>
+                        <input
+                          value={emergencyName}
+                          onChange={(e) => setEmergencyName(e.target.value)}
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_phone')}</label>
+                        <input
+                          value={emergencyPhone}
+                          onChange={(e) => setEmergencyPhone(phoneDigitsOnly(e.target.value).slice(0, 10))}
+                          inputMode="numeric"
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_relationship')}</label>
+                        <input
+                          value={emergencyRelationship}
+                          onChange={(e) => setEmergencyRelationship(e.target.value)}
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <label className="flex items-center gap-2.5 text-sm text-slate-700 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 cursor-pointer hover:border-violet-200">
                     <input

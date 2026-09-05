@@ -141,6 +141,9 @@ export const nursePatientCreateSchema = z.object({
   state: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
   zip_code: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),
   location_id: z.number().int().positive(),
+  emergency_contact_name: z.union([z.string().max(200), z.literal(''), z.null()]).optional(),
+  emergency_contact_phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
+  emergency_contact_relationship: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
   is_text_opt_in: z.boolean().optional(),
   is_check_opt_in: z.boolean().optional(),
   /** Direct registration always opens as on-site; telemedicine is not selected here. */

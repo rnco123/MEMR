@@ -191,6 +191,12 @@ export type I693FormData = {
     summary_overall: string
   }
   /**
+   * Structured intake screening answers (Form A clinical sections) captured by
+   * the nurse walk-in flow or the patient booking app. Preserved verbatim
+   * across merges so the encounter modal can display and edit them.
+   */
+  intake_screening?: Record<string, unknown>
+  /**
    * @deprecated Legacy blob — merged into parts above on load. AI may still return this key.
    */
   medical_examination?: {
@@ -485,6 +491,12 @@ export function mergeI693Form(partial: Partial<I693FormData> | null | undefined)
     vaccination_grid: mergeVaccinationGrid(migrated.vaccination_grid),
     civil_surgeon: mergeSection(EMPTY_I693_FORM.civil_surgeon, migrated.civil_surgeon),
     pdf_widget_values: mergePdfWidgetValues(migrated.pdf_widget_values),
+    intake_screening:
+      partial.intake_screening &&
+      typeof partial.intake_screening === 'object' &&
+      !Array.isArray(partial.intake_screening)
+        ? partial.intake_screening
+        : undefined,
   }
 }
 
