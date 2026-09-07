@@ -11,6 +11,7 @@ import { IntakeFormFields } from '@/components/IntakeFormFields'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { AddressLookupInput } from '@/components/AddressLookupInput'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
@@ -750,9 +751,9 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                       placeholder={t('pharmacies.name_req')}
                       className={INPUT}
                     />
-                    <input
+                    <AddressLookupInput
                       value={manualPharmacy.address}
-                      onChange={e => setManualPharmacy(f => ({ ...f, address: e.target.value }))}
+                      onChange={address => setManualPharmacy(f => ({ ...f, address }))}
                       placeholder={t('pharmacies.address')}
                       className={INPUT}
                     />

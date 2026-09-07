@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { findPharmacyById, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { AddressLookupInput } from '@/components/AddressLookupInput'
 
 type PharmacyForm = {
   name: string
@@ -436,9 +437,9 @@ export function EncounterPharmacyEditor({
               </div>
               <div className="sm:col-span-2">
                 <label className="text-xs font-medium text-slate-600">{t('pharmacies.address')}</label>
-                <input
+                <AddressLookupInput
                   value={createForm.address}
-                  onChange={(e) => setCreateForm((f) => ({ ...f, address: e.target.value }))}
+                  onChange={(address) => setCreateForm((f) => ({ ...f, address }))}
                   className={`${inputClass} mt-1`}
                 />
               </div>
