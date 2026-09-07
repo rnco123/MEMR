@@ -21,6 +21,19 @@ const supabasePublishable =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 const supabaseSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
 
+/**
+ * VonLinkage's base URL and API key are deliberately absent from this file.
+ *
+ * This module is imported by client components, so every env var name it
+ * mentions ends up in the browser bundle. Next.js only inlines the *values* of
+ * `NEXT_PUBLIC_*` variables, so a secret read through `getEnvVar` would not leak
+ * today — but that safety rests on the lookup staying dynamic, which is one
+ * refactor away from being untrue.
+ *
+ * `lib/vonlinkage.ts` reads both directly instead. It is server-only and throws
+ * if it is ever imported into a client bundle, so the credential has no path to
+ * the browser at all rather than merely not taking one.
+ */
 export const config = {
   supabase: {
     url: getEnvVar('NEXT_PUBLIC_SUPABASE_URL'),
@@ -33,39 +46,6 @@ export const config = {
     /** @deprecated use secretKey */
     serviceRoleKey: supabaseSecret,
   },
-  daily: {
-    /** Server-only. Never expose via NEXT_PUBLIC_* — would leak into client bundle (H-10). */
-    apiKey: getEnvVar('DAILY_API_KEY', false) || getEnvVar('NEXT_PUBLIC_DAILY_API_KEY', false),
-    domain: getEnvVar('NEXT_PUBLIC_DAILY_DOMAIN'),
-  },
-  telemedicine: {
-    /**
-     * Which video platform serves telemedicine. `vonlinkage` is the migration
-     * target — the patient app (MCM-Go) is already there, and a patient on
-     * VonLinkage cannot share a call with a doctor on Daily.
-     *
-     * Read at request time so a failing call can be rolled back by flipping the
-     * variable, without a deploy. Daily stays wired until a real doctor–patient
-     * call has succeeded end to end.
-     */
-    get provider(): 'daily' | 'vonlinkage' {
-      return process.env.TELEMEDICINE_PROVIDER === 'vonlinkage' ? 'vonlinkage' : 'daily'
-    },
-  },
-  /**
-   * VonLinkage's base URL and API key are deliberately NOT here.
-   *
-   * This module is imported by client components, so every env var name it
-   * mentions ends up in the browser bundle. Next.js only inlines the *values*
-   * of `NEXT_PUBLIC_*` variables, so a secret read through `getEnvVar` does not
-   * leak today — but that safety rests on the lookup staying dynamic, which is
-   * one refactor away from being untrue. The Daily key above already sits on
-   * that edge; the replacement should not join it.
-   *
-   * `lib/vonlinkage.ts` reads both directly instead. It is server-only and
-   * throws if it is ever imported into a client bundle, so the credential has
-   * no path to the browser at all rather than merely not taking one.
-   */
   app: {
     nodeEnv: process.env.NODE_ENV || 'development',
     isProduction: process.env.NODE_ENV === 'production',
@@ -104,23 +84,6 @@ if (config.app.isProduction && !isBuildTime && isServer) {
   }
   if (!supabaseSecret) {
     missing.push('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY')
-  }
-  // Daily's variables are only required while Daily is the active provider — a
-  // deployment that has finished the migration should not be held to
-  // credentials it no longer uses.
-  //
-  // VonLinkage's own variables are deliberately not checked here: naming them
-  // in this client-imported module is what would put them in the browser
-  // bundle. `lib/vonlinkage.ts` validates them instead, and the telemedicine
-  // routes fail closed with an explicit error rather than falling back to
-  // Daily.
-  if (config.telemedicine.provider === 'daily') {
-    if (!process.env.DAILY_API_KEY) {
-      missing.push('DAILY_API_KEY')
-    }
-    if (!process.env.NEXT_PUBLIC_DAILY_DOMAIN) {
-      missing.push('NEXT_PUBLIC_DAILY_DOMAIN')
-    }
   }
   if (missing.length > 0) {
     console.error(`[config] Missing required environment variables: ${missing.join(', ')}`)

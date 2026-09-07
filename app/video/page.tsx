@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
-import type { DailyCall, DailyParticipantsObject } from '@daily-co/daily-js'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
@@ -15,7 +14,7 @@ import { PreVisitSummary } from '@/components/PreVisitSummary'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 
 // LiveKit needs real browser media APIs, and the whole bundle is dead weight on
-// the Daily path — so it is loaded only when a VonLinkage call actually renders.
+// server-rendered, so it is loaded only when the call surface actually renders.
 const VonLinkageCall = dynamic(() => import('@/components/VonLinkageCall'), {
   ssr: false,
   loading: () => <LoadingSpinner message="Loading video call..." />,
@@ -123,89 +122,6 @@ function calculateAge(dob: string | null) {
   return age != null ? `${age} years` : 'N/A'
 }
 
-function mergeParticipantsIntoNames(
-  participants: DailyParticipantsObject,
-  map: Record<string, string>
-) {
-  for (const p of Object.values(participants)) {
-    if (!p || typeof p !== 'object') continue
-    if (p.session_id && p.user_name) {
-      map[p.session_id] = p.user_name
-      if (p.user_id) map[p.user_id] = p.user_name
-    }
-  }
-}
-
-/** Deepgram / Daily may omit rawResponse; treat as final unless explicitly interim. */
-function isFinalTranscriptionSegment(rawResponse: Record<string, unknown> | undefined): boolean {
-  if (rawResponse == null) return true
-  if (typeof rawResponse.is_final === 'boolean') return rawResponse.is_final
-  if (typeof rawResponse.speech_final === 'boolean') return rawResponse.speech_final
-  return true
-}
-
-/**
- * Which platform serves the call. Daily is the legacy path, kept until a real
- * doctor-patient call has succeeded on VonLinkage end to end; VonLinkage is
- * where the patient app already is.
- */
-type TelemedicineProvider = 'daily' | 'vonlinkage'
-
-/** Global theme (not light/dark pair) — ignores OS dark mode so Prebuilt stays on-brand. */
-const MEMR_DAILY_THEME = {
-  colors: {
-    accent: '#2E6EF3',
-    accentText: '#FFFFFF',
-    background: '#FFFFFF',
-    backgroundAccent: '#EEF4FF',
-    baseText: '#1e293b',
-    border: '#e2e8f0',
-    mainAreaBg: '#EEF4FF',
-    mainAreaBgAccent: '#DCE8FD',
-    mainAreaText: '#1e293b',
-    supportiveText: '#64748b',
-  },
-} as const
-
-/** Hide Daily top chrome that overlaps MEMR header; bottom tray keeps People/Chat/mic controls. */
-const MEMR_DAILY_HIDE_TOP_CONTROLS_CSS = `
-  [class*="LeaveButton"],
-  [class*="FullscreenButton"],
-  [class*="TopBar"],
-  [data-testid="leave-button"],
-  [data-testid="fullscreen-button"] {
-    display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
-  }
-  @media (max-width: 1023px) {
-    [class*="Sidebar"] [role="tablist"],
-    [class*="SidePanel"] [role="tablist"],
-    [class*="SidebarHeader"],
-    [class*="sidebar-header"],
-    [data-testid="sidebar-tab-list"] {
-      display: none !important;
-      visibility: hidden !important;
-      pointer-events: none !important;
-      height: 0 !important;
-      overflow: hidden !important;
-    }
-  }
-`
-
-async function destroyDailyCallInstance(call: DailyCall | null | undefined) {
-  if (!call || call.isDestroyed()) return
-  await call.destroy().catch(() => {})
-}
-
-async function destroyOrphanDailyFrame(
-  Daily: typeof import('@daily-co/daily-js').default
-) {
-  const global = Daily.getCallInstance()
-  if (global && !global.isDestroyed()) {
-    await global.destroy().catch(() => {})
-  }
-}
 
 function VideoPage() {
   const { user, loading: authLoading, role } = useAuth()
@@ -219,9 +135,6 @@ function VideoPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showConnectionModal, setShowConnectionModal] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
-  const [dailyJoinUrl, setDailyJoinUrl] = useState<string | null>(null)
-  /** Which video platform this session is on, as told by the server. */
-  const [provider, setProvider] = useState<TelemedicineProvider>('daily')
   /** False when VonLinkage could not start recording — meaning no transcript. */
   const [recordingStarted, setRecordingStarted] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
@@ -281,12 +194,6 @@ function VideoPage() {
         ? (encounterId ? `/dashboard/nurse-flowboard?encounter=${encounterId}` : '/dashboard')
         : (encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard')
     skipLeaveCleanupRef.current = true
-    const call = dailyCallRef.current
-    if (call?.meetingState() === 'joined-meeting') {
-      await call.leave().catch(() => {})
-    }
-    dailyCallRef.current = null
-    setDailyJoinUrl(null)
     setIsConnected(false)
     window.setTimeout(() => router.push(dest), 0)
   }, [role, encounterId, router])
@@ -318,13 +225,9 @@ function VideoPage() {
   const [transcriptReviewShowAi, setTranscriptReviewShowAi] = useState(false)
   const transcriptReviewOnCloseRef = useRef<(() => void) | null>(null)
 
-  const dailyCallRef = useRef<DailyCall | null>(null)
-  const dailyTeardownRef = useRef<Promise<void>>(Promise.resolve())
-  const dailySetupGenerationRef = useRef(0)
   const leaveInProgressRef = useRef(false)
   const skipLeaveCleanupRef = useRef(false)
   const runEndCallCleanupRef = useRef<() => Promise<void>>(async () => {})
-  const dailyFrameContainerRef = useRef<HTMLDivElement | null>(null)
   const roleRef = useRef(role)
   const userNameRef = useRef(userName)
 
@@ -345,7 +248,7 @@ function VideoPage() {
     return () => mq.removeEventListener('change', onChange)
   }, [])
 
-  /** Prevents re-fetching Daily room on Supabase session refresh (new `user` object) — a common cause of mid-call timeouts and full-screen errors. */
+  /** Prevents re-fetching the room on Supabase session refresh (new `user` object) — a common cause of mid-call timeouts and full-screen errors. */
   const roomFetchCompletedForEncounterRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -382,9 +285,6 @@ function VideoPage() {
       })
 
       const work = async () => {
-        // One entry point for both providers. The server decides which is live
-        // from TELEMEDICINE_PROVIDER and says so in `provider`, so the client
-        // never needs its own copy of the flag to disagree with.
         const response = await fetch('/api/telemedicine/room', {
           method: 'POST',
           credentials: 'include',
@@ -408,13 +308,10 @@ function VideoPage() {
           throw new Error(room?.error || 'Failed to join video room')
         }
 
-        // Daily names the room `name` and the URL `room_url`; VonLinkage names
-        // them `roomName` and `url` (its token response carries no URL at all,
-        // so the server takes it off the room).
-        const activeProvider: TelemedicineProvider =
-          room?.provider === 'vonlinkage' ? 'vonlinkage' : 'daily'
-        const resolvedRoomName = activeProvider === 'vonlinkage' ? room?.roomName : room?.name
-        const resolvedRoomUrl = activeProvider === 'vonlinkage' ? room?.url : room?.room_url
+        // The token response carries no URL of its own — the server takes the
+        // realtime URL off the room and returns it as `url`.
+        const resolvedRoomName = room?.roomName
+        const resolvedRoomUrl = room?.url
 
         if (!resolvedRoomName) {
           throw new Error('Invalid room data')
@@ -424,21 +321,18 @@ function VideoPage() {
           throw new Error('Could not get join token. Please try again.')
         }
 
-        if (activeProvider === 'vonlinkage' && !resolvedRoomUrl) {
+        if (!resolvedRoomUrl) {
           throw new Error('Could not get the video server address. Please try again.')
         }
 
         roomFetchCompletedForEncounterRef.current = encounterId
-        setProvider(activeProvider)
         setRoomName(resolvedRoomName)
         setRoomToken(room.token)
         setRoomUrl(resolvedRoomUrl ?? null)
         // VonLinkage transcribes a finished recording — there is no live
         // transcription — so a visit that failed to start recording will have
         // no transcript at all. Surface that now, not afterwards.
-        setRecordingStarted(
-          activeProvider === 'vonlinkage' ? room?.recordingStarted !== false : true
-        )
+        setRecordingStarted(room?.recordingStarted !== false)
         setIsLoading(false)
       } catch (err) {
         if (timeoutId) {
@@ -564,183 +458,6 @@ function VideoPage() {
 
     return () => clearInterval(interval)
   }, [encounterId, role, sessionEnded, router])
-
-  const addTranscriptEntry = useCallback((speakerRole: string, speakerName: string, message: string) => {
-    transcriptBufferRef.current.push({
-      speaker_role: speakerRole,
-      speaker_name: speakerName,
-      message,
-      created_at: new Date().toISOString(),
-    })
-    setTranscriptCount(transcriptBufferRef.current.length)
-  }, [])
-
-  // Daily call object receives transcription + app-message; raw iframe embed does not post these to window.
-  useEffect(() => {
-    if (!dailyJoinUrl || !isConnected) {
-      const existing = dailyCallRef.current
-      dailyCallRef.current = null
-      if (existing) {
-        skipLeaveCleanupRef.current = true
-        dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
-          destroyDailyCallInstance(existing)
-        )
-      }
-      return
-    }
-
-    const container = dailyFrameContainerRef.current
-    if (!container) return
-
-    const setupGeneration = ++dailySetupGenerationRef.current
-    let cancelled = false
-    skipLeaveCleanupRef.current = false
-    leaveInProgressRef.current = false
-
-    const setup = async () => {
-      await dailyTeardownRef.current
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
-
-      const { default: Daily } = await import('@daily-co/daily-js')
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
-
-      await destroyDailyCallInstance(dailyCallRef.current)
-      dailyCallRef.current = null
-      await destroyOrphanDailyFrame(Daily)
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) return
-
-      container.replaceChildren()
-
-      const call = Daily.createFrame(container, {
-        iframeStyle: {
-          width: '100%',
-          height: '100%',
-          border: '0',
-          position: 'absolute',
-          top: '0',
-          left: '0',
-        },
-        showLeaveButton: false,
-        showFullscreenButton: false,
-        showParticipantsBar: false,
-        userName: userNameRef.current || undefined,
-        theme: MEMR_DAILY_THEME,
-        cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS,
-        dailyConfig: {
-          alwaysIncludeMicInPermissionPrompt: true,
-          alwaysIncludeCamInPermissionPrompt: true,
-        },
-      })
-
-      if (cancelled || setupGeneration !== dailySetupGenerationRef.current) {
-        await destroyDailyCallInstance(call)
-        return
-      }
-
-      dailyCallRef.current = call
-
-      const onJoinedMeeting = (ev: { participants: DailyParticipantsObject }) => {
-        mergeParticipantsIntoNames(ev.participants, participantNamesRef.current)
-        try {
-          call.startTranscription({ includeRawResponse: true })
-        } catch (err) {
-          console.warn('Daily startTranscription:', err)
-        }
-      }
-
-      const onParticipant = (ev: {
-        participant: { session_id: string; user_id: string; user_name: string }
-      }) => {
-        const p = ev.participant
-        if (p.session_id && p.user_name) {
-          participantNamesRef.current[p.session_id] = p.user_name
-          if (p.user_id) participantNamesRef.current[p.user_id] = p.user_name
-        }
-      }
-
-      const onTranscriptionMessage = (ev: {
-        participantId: string
-        text: string
-        rawResponse?: Record<string, unknown>
-      }) => {
-        const text = ev.text?.trim()
-        if (!text) return
-        if (!isFinalTranscriptionSegment(ev.rawResponse)) return
-        const pid = ev.participantId ?? ''
-        const uname = userNameRef.current
-        const r = roleRef.current
-        const resolvedName = participantNamesRef.current[pid] || uname || 'Participant'
-        const speakerRole =
-          isPhysicianRole(r) && resolvedName === uname
-            ? 'doctor'
-            : r === 'nurse' && resolvedName === uname
-              ? 'nurse'
-              : 'patient'
-        addTranscriptEntry(speakerRole, resolvedName, text)
-      }
-
-      const onAppMessage = (ev: {
-        fromId: string
-        data: { message?: string; name?: string }
-      }) => {
-        const text = ev.data?.message?.trim()
-        if (!text) return
-        const uname = userNameRef.current
-        const r = roleRef.current
-        const resolvedName = participantNamesRef.current[ev.fromId] || ev.data?.name || 'Participant'
-        const speakerRole = resolvedName === uname ? (r ?? 'staff') : 'patient'
-        addTranscriptEntry(speakerRole, resolvedName, `[chat] ${text}`)
-      }
-
-      call.on('joined-meeting', onJoinedMeeting)
-      call.on('left-meeting', () => {
-        if (cancelled || skipLeaveCleanupRef.current) return
-        void runEndCallCleanupRef.current()
-      })
-      call.on('participant-joined', onParticipant)
-      call.on('participant-updated', onParticipant)
-      call.on('transcription-message', onTranscriptionMessage)
-      call.on('app-message', onAppMessage)
-      call.on('transcription-error', (ev) => console.warn('Daily transcription-error:', ev))
-      call.on('camera-error', (ev) => console.warn('Daily camera-error:', ev))
-
-      try {
-        await call.setTheme(MEMR_DAILY_THEME)
-        call.loadCss({ cssText: MEMR_DAILY_HIDE_TOP_CONTROLS_CSS })
-        try {
-          await call.startCamera({ startAudioOff: true, startVideoOff: true })
-        } catch (camErr) {
-          console.warn('Daily startCamera:', camErr)
-        }
-        await call.join({ url: dailyJoinUrl, theme: MEMR_DAILY_THEME })
-      } catch (e) {
-        console.error('Daily join failed:', e)
-        if (!cancelled && setupGeneration === dailySetupGenerationRef.current) {
-          dailyCallRef.current = null
-          dailyTeardownRef.current = dailyTeardownRef.current.then(() =>
-            destroyDailyCallInstance(call)
-          )
-          setDailyJoinUrl(null)
-          setIsConnected(false)
-          setError(e instanceof Error ? e.message : 'Failed to join video call')
-        }
-      }
-    }
-
-    void setup()
-
-    return () => {
-      cancelled = true
-      skipLeaveCleanupRef.current = true
-      const c = dailyCallRef.current
-      dailyCallRef.current = null
-      dailyTeardownRef.current = dailyTeardownRef.current.then(async () => {
-        await destroyDailyCallInstance(c)
-        const { default: Daily } = await import('@daily-co/daily-js')
-        await destroyOrphanDailyFrame(Daily)
-      })
-    }
-  }, [dailyJoinUrl, isConnected, addTranscriptEntry])
 
   /** Saves buffered transcript lines; returns inserted row ids in order, or null on failure. */
   const flushTranscript = async (encounterIdNum: number): Promise<number[] | null> => {
@@ -900,21 +617,11 @@ function VideoPage() {
 
   const handleConnect = () => {
     if (!roomToken) return
-    if (provider === 'vonlinkage') {
-      // LiveKit takes the token and server URL directly — there is no URL to
-      // build, and the token must never be put in a query string.
-      if (!roomUrl) {
-        setError('Could not get the video server address. Please try again.')
-        return
-      }
-    } else {
-      const baseUrl = roomUrl || (() => {
-        const rawDomain = (config.daily.domain || '').trim() || 'demo.daily.co'
-        const d = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
-        return `https://${d}/${roomName}`
-      })()
-      const sep = baseUrl.includes('?') ? '&' : '?'
-      setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    // LiveKit takes the token and server URL directly — nothing to build, and
+    // the token must never be put in a query string.
+    if (!roomUrl) {
+      setError('Could not get the video server address. Please try again.')
+      return
     }
     setShowConnectionModal(false)
     setError(null)
@@ -1046,7 +753,6 @@ function VideoPage() {
   const runEndCallCleanup = useCallback(async () => {
     if (leaveInProgressRef.current) return
     leaveInProgressRef.current = true
-    setDailyJoinUrl(null)
     setIsConnected(false)
     if (isPhysicianRole(role) && encounterId && doctorId) {
       await handleEndConsultation()
@@ -1081,11 +787,6 @@ function VideoPage() {
   runEndCallCleanupRef.current = runEndCallCleanup
 
   const handleEndCall = useCallback(async () => {
-    const call = dailyCallRef.current
-    if (call?.meetingState() === 'joined-meeting') {
-      await call.leave().catch(() => {})
-      return
-    }
     await runEndCallCleanup()
   }, [runEndCallCleanup])
 
@@ -1141,8 +842,8 @@ function VideoPage() {
 
   if (!user) return null
 
-  // Do not replace the whole page while the Daily iframe is active (avoids kicking users out mid-call if a late error fires).
-  if (error && !showConnectionModal && !dailyJoinUrl) {
+  // Do not replace the whole page while the call is active (avoids kicking users out mid-call if a late error fires).
+  if (error && !showConnectionModal && !isConnected) {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center p-6 sm:p-12">
         <div className="text-red-500 mb-4 text-center max-w-md px-4">Error: {error}</div>
@@ -1308,7 +1009,7 @@ function VideoPage() {
               {aiSummaryError && (
                 <div className="bg-red-900/30 border border-red-700/50 rounded-lg p-4 text-red-300 text-sm">
                   {aiSummaryError === 'No transcript available for this encounter'
-                    ? 'No transcript was captured for this session. Transcript capture requires Daily.co captioning to be active during the call.'
+                    ? 'No transcript was captured for this session. Transcription runs on the call recording after the visit ends, so it is not available immediately.'
                     : aiSummaryError}
                 </div>
               )}
@@ -1473,7 +1174,7 @@ function VideoPage() {
           onClick={() => setMobileDetailsOpen(false)}
         />
 
-        {/* Video — Daily.co full bleed with floating controls */}
+        {/* Video — full bleed with floating controls */}
         <div className="relative flex-1 min-h-0 w-full min-w-0 bg-[#EEF4FF]">
           {isLoading && (
             <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-[#EEF4FF] px-4">
@@ -1485,7 +1186,7 @@ function VideoPage() {
               <p className="text-base sm:text-lg text-slate-700">Preparing video call...</p>
             </div>
           )}
-          {isConnected && provider === 'vonlinkage' && !recordingStarted && (
+          {isConnected && !recordingStarted && (
             <div
               className="absolute inset-x-0 top-0 z-30 bg-amber-500 px-3 py-2 text-center text-sm font-medium text-white"
               role="status"
@@ -1493,7 +1194,7 @@ function VideoPage() {
               Recording could not be started — this visit will have no transcript.
             </div>
           )}
-          {isConnected && provider === 'vonlinkage' && roomToken && roomUrl && (
+          {isConnected && roomToken && roomUrl && (
             <div className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 h-auto w-full pb-[env(safe-area-inset-bottom)] lg:inset-0 lg:top-0 lg:h-full">
               <VonLinkageCall
                 token={roomToken}
@@ -1507,14 +1208,8 @@ function VideoPage() {
               />
             </div>
           )}
-          {isConnected && dailyJoinUrl && (
-            <div
-              ref={dailyFrameContainerRef}
-              className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 lg:inset-0 lg:top-0 h-auto lg:h-full w-full pb-[env(safe-area-inset-bottom)] [&_iframe]:!absolute [&_iframe]:!inset-0 [&_iframe]:!h-full [&_iframe]:!w-full [&_iframe]:!border-0"
-            />
-          )}
 
-          {/* MEMR header — sits above Daily iframe on mobile (iframe starts below this row) */}
+          {/* MEMR header — sits above the call surface on mobile (it starts below this row) */}
           <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] lg:z-10">
             <div className="mx-auto grid w-full max-w-3xl grid-cols-[2.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 lg:grid-cols-[2.75rem_minmax(0,1fr)_auto]">
               <button

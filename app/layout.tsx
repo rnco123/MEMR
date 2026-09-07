@@ -19,7 +19,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "MyclinicMD - Electronic Medical Records",
-  description: "MyclinicMD - Modern EMR system with video conferencing powered by Supabase and Daily.co",
+  description: "MyclinicMD - Modern EMR system with video conferencing powered by Supabase and VonLinkage",
   applicationName: "MyclinicMD",
   manifest: "/manifest.webmanifest",
   appleWebApp: {

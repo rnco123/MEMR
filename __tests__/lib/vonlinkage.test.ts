@@ -163,7 +163,7 @@ describe('telemedicine room route — rules that must not regress', () => {
     expect(route).toMatch(/appointment_id == null[\s\S]*status: 409/)
   })
 
-  it('keeps every guard the Daily route had', () => {
+  it('keeps every guard the route must not lose', () => {
     expect(route).toContain('guardEncounterAccess')
     expect(route).toContain('canJoinTelemedicine')
     expect(route).toContain('insertStatusTimeline')
@@ -184,7 +184,7 @@ describe('telemedicine room route — rules that must not regress', () => {
     expect(route).toMatch(/isPhysicianRole\(clinicalRole\)\s*\?\s*'doctor'\s*:\s*'nurse'/)
   })
 
-  it('fails closed rather than falling back to Daily when unconfigured', () => {
+  it('fails closed when unconfigured', () => {
     expect(route).toMatch(/isVonLinkageConfigured\(\)[\s\S]*status: 500/)
   })
 })

@@ -3,8 +3,6 @@ import * as Sentry from '@sentry/nextjs'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { isClinicalStaffRole } from '@/lib/roles'
-import { config } from '@/lib/config'
-import { POST as dailyEndRoomHandler } from '@/app/api/daily/end-room/route'
 import {
   deleteRoom,
   newCorrelationId,
@@ -15,14 +13,6 @@ import {
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
-  // Mirrors the join route's dispatch so a rollback flips both halves together.
-  if (config.telemedicine.provider === 'daily') {
-    return dailyEndRoomHandler(request)
-  }
-  return handleVonLinkage(request)
-}
-
-async function handleVonLinkage(request: NextRequest) {
   const correlationId = request.headers.get('x-correlation-id')?.trim() || newCorrelationId()
 
   try {

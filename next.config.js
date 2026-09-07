@@ -1,6 +1,20 @@
 /** @type {import('next').NextConfig} */
 const { withSentryConfig } = require('@sentry/nextjs')
 
+/**
+ * Origin the browser opens its LiveKit WebSocket to, e.g. `wss://livekit.example.com`.
+ *
+ * The realtime host is NOT the VonLinkage API host — VonLinkage returns it per
+ * room as `joinUrl` — so it cannot be derived from VONLINKAGE_BASE_URL. CSP
+ * headers are static and built here, so it has to be known at build time.
+ *
+ * Unset means the host is simply absent from connect-src: the call fails with a
+ * visible CSP error rather than the policy being widened to permit any socket.
+ */
+const livekitOrigin = (process.env.VONLINKAGE_LIVEKIT_ORIGIN || '').trim().replace(/\/+$/, '')
+const livekitHttpOrigin = livekitOrigin.replace(/^ws/, 'http')
+const livekitCsp = livekitOrigin ? ` ${livekitOrigin} ${livekitHttpOrigin}` : ''
+
 const nextConfig = {
   reactStrictMode: true,
   // Ensure client bundle gets public Supabase vars in environments
@@ -82,23 +96,23 @@ const nextConfig = {
           },
           {
             key: 'Permissions-Policy',
-            // Allow camera/mic for this app and embedded Daily.co iframes
+            // Camera/mic are required for the telemedicine call surface.
             value: 'camera=*, microphone=*, geolocation=()',
           },
           {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.daily.co https://*.sentry.io",
+              "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.sentry.io",
               "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
               // pdf.js (I-693 editor) embeds standard PDF fonts as data: WOFF2 URIs
               "font-src 'self' https://fonts.gstatic.com data:",
               "img-src 'self' data: https: blob:",
-              "connect-src 'self' https://*.supabase.co https://*.daily.co wss://*.daily.co https://*.sentry.io",
+              `connect-src 'self' https://*.supabase.co https://*.sentry.io${livekitCsp}`,
               // Patient document previews use time-limited Supabase Storage URLs.
-              "frame-src 'self' blob: https://*.supabase.co https://*.daily.co",
-              "media-src 'self' https://*.daily.co blob:",
+              "frame-src 'self' blob: https://*.supabase.co",
+              "media-src 'self' blob:",
               "object-src 'none'",
               "base-uri 'self'",
               "form-action 'self'",
@@ -107,7 +121,7 @@ const nextConfig = {
           },
           {
             key: 'Cross-Origin-Embedder-Policy',
-            // Daily.co video iframe needs to load cross-origin resources
+            // Relaxed so the call surface can load cross-origin resources.
             value: 'unsafe-none',
           },
           {

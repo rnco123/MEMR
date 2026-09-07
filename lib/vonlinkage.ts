@@ -3,9 +3,8 @@
  *
  * ## Why this module exists
  *
- * The patient app (MCM-Go) runs on VonLinkage. Daily.co and VonLinkage are
- * different platforms, so a patient on one and a doctor on the other can never
- * be in the same call. This is the doctor half of moving both onto VonLinkage.
+ * The patient app (MCM-Go) runs on VonLinkage. This is the clinician half, so
+ * that a doctor and a patient are on the same platform and can share a call.
  *
  * ## Credential
  *
@@ -107,7 +106,7 @@ export class VonLinkageError extends Error {
   }
 }
 
-/** Thrown when the integration is not configured, so routes fail closed rather than falling back to Daily. */
+/** Thrown when the integration is not configured, so routes fail closed. */
 export class VonLinkageNotConfiguredError extends Error {
   constructor(missing: string[]) {
     super(`VonLinkage is not configured: missing ${missing.join(', ')}`)
@@ -196,8 +195,8 @@ async function call<T>(
 }
 
 /**
- * Create-or-return. Idempotent: an existing room comes back unchanged, which
- * replaces the get-then-create-then-patch sequence the Daily route needed.
+ * Create-or-return. Idempotent: an existing room comes back unchanged, so a
+ * clinician rejoining does not disturb a call in progress.
  */
 export function createRoom(
   roomName: string,

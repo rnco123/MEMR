@@ -7,10 +7,8 @@
  * aged out — so a leak stays live until someone notices and revokes it.
  *
  * Anything prefixed `NEXT_PUBLIC_` is inlined into the browser bundle by
- * Next.js. The Daily integration this replaces reads
- * `DAILY_API_KEY || NEXT_PUBLIC_DAILY_API_KEY`; if that fallback were ever
- * populated the key would ship to every visitor. That pattern must not be
- * carried over, so the first test below bans the name outright rather than
+ * Next.js, so a credential read through a public-prefixed variable ships to
+ * every visitor. The first test below bans the name outright rather than
  * waiting for a build to leak it.
  */
 

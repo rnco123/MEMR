@@ -11,7 +11,6 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { resolveClinicalApiRole } from '@/lib/locations/scope'
 import { UserRole, isPhysicianRole } from '@/lib/roles'
 import { auditPhi } from '@/lib/audit-phi'
-import { POST as dailyRoomHandler } from '@/app/api/daily/room/route'
 import {
   createRoom,
   issueJoinToken,
@@ -53,55 +52,23 @@ async function getUserFromRequest(request: Request): Promise<{ user: { id: strin
 /**
  * Clinical role -> VonLinkage participant role.
  *
- * VonLinkage models the real role rather than Daily's `is_owner` boolean, so
- * the distinction is preserved instead of collapsed. The argument is the role
- * already resolved from the verified profile — never anything off the request
- * body, since the role is signed into the join token and decides what the
- * holder may do in the room.
+ * The argument is the role already resolved from the verified profile — never
+ * anything off the request body, since the role is signed into the join token
+ * and decides what the holder may do in the room.
  */
 function toVonRole(clinicalRole: UserRole | null): VonRole {
   return isPhysicianRole(clinicalRole) ? 'doctor' : 'nurse'
 }
 
-/**
- * Single entry point for joining a telemedicine call, for both providers.
- *
- * The client never reads `TELEMEDICINE_PROVIDER` — it calls this one route and
- * renders whatever `provider` comes back. That keeps the switch server-only and
- * single-source: flipping the variable changes the next request's response, so
- * a failed call rolls back without a deploy and without a client bundle that
- * disagrees with the server about which platform is live.
- */
+/** Joins a telemedicine call. VonLinkage is the only provider. */
 export async function POST(request: NextRequest) {
-  if (config.telemedicine.provider === 'daily') {
-    // Daily stays wired until a real doctor-patient call has succeeded on
-    // VonLinkage end to end. Delegating rather than duplicating means the
-    // rollback path is the exact code that is in production today.
-    const dailyResponse = await dailyRoomHandler(request)
-    let payload: unknown
-    try {
-      payload = await dailyResponse.clone().json()
-    } catch {
-      return dailyResponse
-    }
-    return NextResponse.json(
-      { ...(payload as Record<string, unknown>), provider: 'daily' as const },
-      { status: dailyResponse.status }
-    )
-  }
-
-  return handleVonLinkage(request)
-}
-
-async function handleVonLinkage(request: NextRequest) {
   // Forwarded to VonLinkage and logged on every failure — this is how a broken
   // call gets traced across MEMR, VonLinkage and LiveKit.
   const correlationId = request.headers.get('x-correlation-id')?.trim() || newCorrelationId()
 
   try {
-    // Fail closed. A misconfigured VonLinkage must surface as an error, never
-    // fall through to the Daily path — a silent fallback would put the doctor
-    // on a platform the patient cannot reach.
+    // Fail closed: a misconfigured VonLinkage surfaces as an error rather than
+    // a half-working call.
     if (!isVonLinkageConfigured()) {
       console.error('[telemedicine/room] VonLinkage is not configured', { correlationId })
       return NextResponse.json(
@@ -197,15 +164,12 @@ async function handleVonLinkage(request: NextRequest) {
 
     const roomName = `appointment-${encounter.appointment_id}`
 
-    // Idempotent: an existing room comes back unchanged, so this one call
-    // replaces Daily's get-then-create-then-patch sequence.
+    // Idempotent: an existing room comes back unchanged.
     //
     // The TTL is set explicitly rather than inherited. VonLinkage's default is
     // one hour, and because create is idempotent an existing room's deadline
     // cannot be extended by calling again — a consultation that runs past it is
-    // dropped and rejoining fails with ROOM_EXPIRED. The Daily rooms this
-    // replaces had no such deadline, so a short default would be a new way to
-    // lose a visit rather than a carried-over behaviour.
+    // dropped and rejoining fails with ROOM_EXPIRED.
     const room = await createRoom(roomName, { expiresIn: ROOM_TTL_SECONDS }, correlationId)
 
     // Recording is the transcript. VonLinkage has no live transcription — it
@@ -299,7 +263,6 @@ async function handleVonLinkage(request: NextRequest) {
     })
 
     return NextResponse.json({
-      provider: 'vonlinkage' as const,
       token: joinToken.token,
       // The token response carries no URL — the realtime URL lives on the room.
       url: room.joinUrl,

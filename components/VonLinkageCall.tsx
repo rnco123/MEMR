@@ -3,11 +3,10 @@
 /**
  * Themed LiveKit call surface for VonLinkage telemedicine.
  *
- * Daily gave us a complete prebuilt UI in an iframe; LiveKit has no iframe
- * equivalent. `<VideoConference />` from `@livekit/components-react` is the
- * closest prebuilt option, but it would not match the MEMR frame, so the
- * surface is composed here from LiveKit's primitives against the same palette
- * the Daily theme used.
+ * LiveKit has no drop-in prebuilt call UI. `<VideoConference />` from
+ * `@livekit/components-react` is the closest thing, but it would not match the
+ * MEMR frame, so the surface is composed here from LiveKit's primitives against
+ * the MEMR palette.
  *
  * This component owns the call surface only — the page around it keeps the
  * pre-visit summary, SOAP notes and connection modal.
@@ -29,7 +28,7 @@ import {
 } from '@livekit/components-react'
 import { ConnectionState, Track, type Participant } from 'livekit-client'
 
-/** Same palette as the Daily theme it replaces, so the call stays on-brand. */
+/** MEMR palette, so the call surface stays on-brand. */
 const THEME = {
   accent: '#2E6EF3',
   accentText: '#FFFFFF',
@@ -68,8 +67,7 @@ export default function VonLinkageCall({
       token={token}
       serverUrl={serverUrl}
       connect
-      // Start muted, matching the Daily room's start_audio_off/start_video_off:
-      // a clinician should choose when they are seen and heard.
+      // Start muted: a clinician should choose when they are seen and heard.
       video={false}
       audio={false}
       onConnected={onConnected}

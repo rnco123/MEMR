@@ -28,15 +28,12 @@ Set these in **Vercel Dashboard → Project → Settings → Environment Variabl
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-# Video provider: daily | vonlinkage (defaults to daily)
-TELEMEDICINE_PROVIDER=daily
-# Daily.co (legacy path, kept for rollback). Server-only key — NOT NEXT_PUBLIC_.
-DAILY_API_KEY=your_daily_co_api_key
-NEXT_PUBLIC_DAILY_DOMAIN=your_daily_co_domain
-# VonLinkage. Both server-only; the key must be issued under the SAME tenant as
-# the patient app's key, or doctor and patient land in different rooms.
+# VonLinkage telemedicine. Server-only; the key must be issued under the SAME
+# tenant as the patient app's key, or doctor and patient land in different rooms.
 VONLINKAGE_BASE_URL=https://your-vonlinkage-instance
 VONLINKAGE_API_KEY=vlk_your_tenant_api_key
+# Realtime host baked into the CSP at build time — the call is blocked without it.
+VONLINKAGE_LIVEKIT_ORIGIN=wss://your-livekit-host
 ADMIN_SIGNUP_PIN=your_secure_4_digit_pin
 NODE_ENV=production
 ```

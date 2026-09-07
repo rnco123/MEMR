@@ -20,19 +20,6 @@ describe('M-10 — Test endpoints blocked in production', () => {
   })
 })
 
-describe('H-10 — Daily API key source', () => {
-  it('daily/room route uses server-only env var', () => {
-    const route = readFile('app/api/daily/room/route.ts')
-    expect(route).toContain('DAILY_API_KEY')
-    // Must not reference NEXT_PUBLIC_DAILY_API_KEY as the only source
-  })
-
-  it('daily/end-room route uses server-only env var', () => {
-    const route = readFile('app/api/daily/end-room/route.ts')
-    expect(route).toContain('DAILY_API_KEY')
-  })
-})
-
 describe('H-03 — Role resolution does not trust metadata', () => {
   it('admin-auth.ts reads profile role first', () => {
     const adminAuth = readFile('lib/admin-auth.ts')
@@ -86,7 +73,6 @@ describe('H-12 — Audit log uses server-side user_id', () => {
 describe('M-04 — getSession not used for auth gates', () => {
   const filesToCheck = [
     'app/api/soap/complete-soap/route.ts',
-    'app/api/daily/end-room/route.ts',
     'app/api/telemedicine/room/route.ts',
     'app/api/telemedicine/end-room/route.ts',
     'app/api/chat/sync-profiles/route.ts',
