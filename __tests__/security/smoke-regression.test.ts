@@ -87,6 +87,8 @@ describe('M-04 — getSession not used for auth gates', () => {
   const filesToCheck = [
     'app/api/soap/complete-soap/route.ts',
     'app/api/daily/end-room/route.ts',
+    'app/api/telemedicine/room/route.ts',
+    'app/api/telemedicine/end-room/route.ts',
     'app/api/chat/sync-profiles/route.ts',
   ]
 

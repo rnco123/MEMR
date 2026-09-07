@@ -19,8 +19,28 @@ Set the following environment variables in your hosting platform:
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
 - `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (keep secret!)
-- `NEXT_PUBLIC_DAILY_API_KEY` - Daily.co API key
+- `TELEMEDICINE_PROVIDER` - `daily` or `vonlinkage` (defaults to `daily`). Switches the
+  video platform at request time, so a failed call can be rolled back without a deploy.
+
+Then set the variables for whichever provider is active:
+
+*Daily.co (legacy path, kept for rollback):*
+- `DAILY_API_KEY` - Daily.co API key. **Server-only** - do NOT use
+  `NEXT_PUBLIC_DAILY_API_KEY`; anything prefixed `NEXT_PUBLIC_` is inlined into the
+  browser bundle and would ship the key to every visitor.
 - `NEXT_PUBLIC_DAILY_DOMAIN` - Daily.co domain
+
+*VonLinkage (LiveKit-backed; the platform the patient app runs on):*
+- `VONLINKAGE_BASE_URL` - Base URL of the VonLinkage instance, no trailing slash
+- `VONLINKAGE_API_KEY` - Tenant API key (`vlk_...`). **Server-only, never
+  `NEXT_PUBLIC_`.** It mints join tokens for any identity and role in this tenant's
+  rooms, so leaking it means anyone can join any consultation as a doctor. It does not
+  expire - it is revoked - so a leak stays live until someone notices.
+
+  This key must be issued under the **same VonLinkage tenant** as the patient app's own
+  key. VonLinkage namespaces room names by tenant, so two apps on different tenants both
+  succeed, both echo the same room name back, and the doctor and patient still end up in
+  different rooms.
 - `ADMIN_SIGNUP_PIN` - Secure 4-digit PIN for user signup
 - `NODE_ENV` - Set to `production`
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import type { DailyCall, DailyParticipantsObject } from '@daily-co/daily-js'
 import { useAuth } from '@/lib/auth-context'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -12,6 +13,13 @@ import { config } from '@/lib/config'
 import { TelemedicineConnectionModal } from '@/components/TelemedicineConnectionModal'
 import { PreVisitSummary } from '@/components/PreVisitSummary'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
+
+// LiveKit needs real browser media APIs, and the whole bundle is dead weight on
+// the Daily path — so it is loaded only when a VonLinkage call actually renders.
+const VonLinkageCall = dynamic(() => import('@/components/VonLinkageCall'), {
+  ssr: false,
+  loading: () => <LoadingSpinner message="Loading video call..." />,
+})
 
 interface Patient {
   id: number
@@ -136,6 +144,13 @@ function isFinalTranscriptionSegment(rawResponse: Record<string, unknown> | unde
   return true
 }
 
+/**
+ * Which platform serves the call. Daily is the legacy path, kept until a real
+ * doctor-patient call has succeeded on VonLinkage end to end; VonLinkage is
+ * where the patient app already is.
+ */
+type TelemedicineProvider = 'daily' | 'vonlinkage'
+
 /** Global theme (not light/dark pair) — ignores OS dark mode so Prebuilt stays on-brand. */
 const MEMR_DAILY_THEME = {
   colors: {
@@ -205,6 +220,10 @@ function VideoPage() {
   const [showConnectionModal, setShowConnectionModal] = useState(true)
   const [isConnected, setIsConnected] = useState(false)
   const [dailyJoinUrl, setDailyJoinUrl] = useState<string | null>(null)
+  /** Which video platform this session is on, as told by the server. */
+  const [provider, setProvider] = useState<TelemedicineProvider>('daily')
+  /** False when VonLinkage could not start recording — meaning no transcript. */
+  const [recordingStarted, setRecordingStarted] = useState(true)
   const [patient, setPatient] = useState<Patient | null>(null)
   const [encounter, setEncounter] = useState<Encounter | null>(null)
   const [appointment, setAppointment] = useState<Appointment | null>(null)
@@ -363,7 +382,10 @@ function VideoPage() {
       })
 
       const work = async () => {
-        const response = await fetch('/api/daily/room', {
+        // One entry point for both providers. The server decides which is live
+        // from TELEMEDICINE_PROVIDER and says so in `provider`, so the client
+        // never needs its own copy of the flag to disagree with.
+        const response = await fetch('/api/telemedicine/room', {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
@@ -386,7 +408,15 @@ function VideoPage() {
           throw new Error(room?.error || 'Failed to join video room')
         }
 
-        if (!room?.name) {
+        // Daily names the room `name` and the URL `room_url`; VonLinkage names
+        // them `roomName` and `url` (its token response carries no URL at all,
+        // so the server takes it off the room).
+        const activeProvider: TelemedicineProvider =
+          room?.provider === 'vonlinkage' ? 'vonlinkage' : 'daily'
+        const resolvedRoomName = activeProvider === 'vonlinkage' ? room?.roomName : room?.name
+        const resolvedRoomUrl = activeProvider === 'vonlinkage' ? room?.url : room?.room_url
+
+        if (!resolvedRoomName) {
           throw new Error('Invalid room data')
         }
 
@@ -394,10 +424,21 @@ function VideoPage() {
           throw new Error('Could not get join token. Please try again.')
         }
 
+        if (activeProvider === 'vonlinkage' && !resolvedRoomUrl) {
+          throw new Error('Could not get the video server address. Please try again.')
+        }
+
         roomFetchCompletedForEncounterRef.current = encounterId
-        setRoomName(room.name)
+        setProvider(activeProvider)
+        setRoomName(resolvedRoomName)
         setRoomToken(room.token)
-        setRoomUrl(room.room_url ?? null)
+        setRoomUrl(resolvedRoomUrl ?? null)
+        // VonLinkage transcribes a finished recording — there is no live
+        // transcription — so a visit that failed to start recording will have
+        // no transcript at all. Surface that now, not afterwards.
+        setRecordingStarted(
+          activeProvider === 'vonlinkage' ? room?.recordingStarted !== false : true
+        )
         setIsLoading(false)
       } catch (err) {
         if (timeoutId) {
@@ -859,13 +900,22 @@ function VideoPage() {
 
   const handleConnect = () => {
     if (!roomToken) return
-    const baseUrl = roomUrl || (() => {
-      const rawDomain = (config.daily.domain || '').trim() || 'demo.daily.co'
-      const d = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
-      return `https://${d}/${roomName}`
-    })()
-    const sep = baseUrl.includes('?') ? '&' : '?'
-    setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    if (provider === 'vonlinkage') {
+      // LiveKit takes the token and server URL directly — there is no URL to
+      // build, and the token must never be put in a query string.
+      if (!roomUrl) {
+        setError('Could not get the video server address. Please try again.')
+        return
+      }
+    } else {
+      const baseUrl = roomUrl || (() => {
+        const rawDomain = (config.daily.domain || '').trim() || 'demo.daily.co'
+        const d = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
+        return `https://${d}/${roomName}`
+      })()
+      const sep = baseUrl.includes('?') ? '&' : '?'
+      setDailyJoinUrl(`${baseUrl}${sep}t=${encodeURIComponent(roomToken)}`)
+    }
     setShowConnectionModal(false)
     setError(null)
     skipLeaveCleanupRef.current = false
@@ -960,13 +1010,13 @@ function VideoPage() {
 
       const endRoomAndGo = async () => {
         try {
-          await fetch('/api/daily/end-room', {
+          await fetch('/api/telemedicine/end-room', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ encounterId: encounterIdNum }),
           })
         } catch (endRoomError) {
-          console.error('Failed to end Daily.co room:', endRoomError)
+          console.error('Failed to end telemedicine room:', endRoomError)
         }
         window.setTimeout(
           () => router.push(encounterId ? `/dashboard/flowboard?encounter=${encounterId}` : '/dashboard'),
@@ -1433,6 +1483,28 @@ function VideoPage() {
           {!isLoading && !isConnected && !showConnectionModal && (
             <div className="absolute inset-0 z-0 flex flex-col items-center justify-center bg-[#EEF4FF] px-4 text-center">
               <p className="text-base sm:text-lg text-slate-700">Preparing video call...</p>
+            </div>
+          )}
+          {isConnected && provider === 'vonlinkage' && !recordingStarted && (
+            <div
+              className="absolute inset-x-0 top-0 z-30 bg-amber-500 px-3 py-2 text-center text-sm font-medium text-white"
+              role="status"
+            >
+              Recording could not be started — this visit will have no transcript.
+            </div>
+          )}
+          {isConnected && provider === 'vonlinkage' && roomToken && roomUrl && (
+            <div className="absolute inset-x-0 bottom-0 top-[calc(5rem+env(safe-area-inset-top))] z-0 h-auto w-full pb-[env(safe-area-inset-bottom)] lg:inset-0 lg:top-0 lg:h-full">
+              <VonLinkageCall
+                token={roomToken}
+                serverUrl={roomUrl}
+                onLeave={() => void runEndCallCleanup()}
+                onDisconnected={() => setIsConnected(false)}
+                onError={(callError) => {
+                  console.error('VonLinkage call error:', callError)
+                  setError(callError.message || 'The video call disconnected.')
+                }}
+              />
             </div>
           )}
           {isConnected && dailyJoinUrl && (
