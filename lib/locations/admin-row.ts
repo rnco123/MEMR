@@ -13,6 +13,8 @@ export type AdminLocationRow = {
   google_map_url: string | null
   is_active: boolean
   tenant_id: number | null
+  /** Portal `Locations.id` this row is linked to; null until first synced. */
+  external_location_id: number | null
   tenant_name: string | null
   tenant_code: string | null
   created_at: string
@@ -49,6 +51,8 @@ export function normalizeAdminLocationRow(row: Record<string, unknown>): AdminLo
     google_map_url: (row.google_map_url as string | null) ?? null,
     is_active: row.is_active !== false,
     tenant_id: tenantId,
+    external_location_id:
+      row.external_location_id == null ? null : Number(row.external_location_id),
     tenant_name: tenant?.name ?? (tenantId != null ? `Tenant ${tenantId}` : null),
     tenant_code: tenant?.tenant_code ?? (tenantId != null ? String(tenantId) : null),
     created_at: String(row.created_at ?? ''),

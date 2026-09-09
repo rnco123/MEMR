@@ -37,7 +37,7 @@ export async function POST(request: Request) {
     const parsed = tenantCreateSchema.safeParse(body)
     if (!parsed.success) throw parsed.error
 
-    const result = await bridgePost<{ data: TenantRow; portal_synced: boolean }>('/tenants', {
+    const result = await bridgePost<{ data: TenantRow }>('/tenants', {
       name: parsed.data.name.trim(),
       tenant_code: parsed.data.tenant_code.trim(),
     })
@@ -52,7 +52,6 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       data: result.data,
-      portal_synced: result.portal_synced,
     })
   } catch (e) {
     return handleApiError(e)
