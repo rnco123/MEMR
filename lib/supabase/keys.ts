@@ -1,8 +1,12 @@
 /**
- * Supabase API keys — supports new Dashboard keys and legacy JWT keys.
+ * Supabase API keys.
  *
- * - Public: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (sb_publishable_…) or NEXT_PUBLIC_SUPABASE_ANON_KEY (legacy)
- * - Server: SUPABASE_SECRET_KEY (sb_secret_…) or SUPABASE_SERVICE_ROLE_KEY (legacy)
+ * - Public: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (sb_publishable_…)
+ * - Server: SUPABASE_SECRET_KEY (sb_secret_…)
+ *
+ * The legacy anon / service_role JWTs (eyJ…) are no longer read. They derive from the
+ * project's JWT secret, so they cannot be revoked individually — rotating one invalidates
+ * every legacy key on the project at once.
  *
  * @see https://supabase.com/docs/guides/api/api-keys
  */
@@ -17,22 +21,18 @@ export function getSupabaseUrl(): string {
 
 /** Safe for browser, middleware, and server client (RLS applies). */
 export function getSupabasePublishableKey(): string {
-  const key =
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
   if (!key) {
-    throw new Error(
-      'Missing Supabase public key: set NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY'
-    )
+    throw new Error('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (sb_publishable_…)')
   }
   return key
 }
 
 /** Server-only — bypasses RLS; never import in client bundles. */
 export function getSupabaseSecretKey(): string {
-  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
+  const key = process.env.SUPABASE_SECRET_KEY
   if (!key) {
-    throw new Error('Missing Supabase secret key: set SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY')
+    throw new Error('Missing SUPABASE_SECRET_KEY (sb_secret_…)')
   }
   return key
 }

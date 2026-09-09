@@ -7,7 +7,7 @@ export async function getUserFromRequest(request: Request): Promise<{ id: string
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
   if (token) {
-    const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
+    const supabase = createClient(config.supabase.url, config.supabase.publishableKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
     const {
@@ -30,7 +30,7 @@ export function getSupabaseForRequest(request: Request) {
   const authHeader = request.headers.get('Authorization')
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
   if (token) {
-    return createClient(config.supabase.url, config.supabase.anonKey, {
+    return createClient(config.supabase.url, config.supabase.publishableKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
   }
