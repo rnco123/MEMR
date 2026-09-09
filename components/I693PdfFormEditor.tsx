@@ -1059,60 +1059,65 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden text-slate-900">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md px-3 py-2 shadow-sm">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md shadow-sm">
+        {/* Context strip: the patient/date/location line used to share a row with the
+            action buttons, which squeezed it until the clinic name read "C…". It gets
+            its own thin band above them now, so all three read in one horizontal run. */}
+        <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 min-w-0">
           {onBack ? (
             <>
               <button
                 type="button"
                 onClick={onBack}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                 aria-label={t('i693.back_to_workflow')}
                 title={`${t('i693.pdf_editor_title_short')}${patientName ? ` · ${patientName}` : ''} · #${encounterId}`}
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <div className="hidden sm:block h-6 w-px bg-slate-200" aria-hidden />
+              <div className="h-4 w-px bg-slate-200 shrink-0" aria-hidden />
             </>
           ) : null}
-          <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap justify-between items-start gap-4">
-            <div className="min-w-0">
-              {/* No heading: this editor only ever opens on an I-693, so naming it
-                  again costs a line and truncates to "I6…" in a narrow header. */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 min-w-0">
-                {displayPatientName ? (
-                  <div className="flex items-center gap-1.5 shrink-0" title={displayPatientName}>
-                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span className="font-medium text-slate-700">{displayPatientName}</span>
-                  </div>
-                ) : null}
-                {displayDate ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span>{displayDate}</span>
-                  </div>
-                ) : null}
-                {clinicLocationLabel ? (
-                  <div className="flex items-center gap-1.5 min-w-0" title={clinicLocationLabel}>
-                    <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <span className="truncate">{clinicLocationLabel}</span>
-                  </div>
-                ) : null}
+          {/* No heading: this editor only ever opens on an I-693, so naming it
+              again costs a line and truncates to "I6…" in a narrow header. */}
+          <div className="flex items-center gap-x-3 text-xs text-slate-500 min-w-0 overflow-hidden">
+            {displayPatientName ? (
+              <div className="flex items-center gap-1.5 min-w-0" title={displayPatientName}>
+                <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="truncate font-medium text-slate-700">{displayPatientName}</span>
               </div>
-            </div>
+            ) : null}
+            {displayDate ? (
+              <>
+                <span className="h-3 w-px bg-slate-200 shrink-0" aria-hidden />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="whitespace-nowrap">{displayDate}</span>
+                </div>
+              </>
+            ) : null}
+            {clinicLocationLabel ? (
+              <>
+                <span className="h-3 w-px bg-slate-200 shrink-0" aria-hidden />
+                <div className="flex items-center gap-1.5 min-w-0" title={clinicLocationLabel}>
+                  <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="truncate">{clinicLocationLabel}</span>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
           {locationAutofill ? (
             <button
               type="button"
