@@ -8,9 +8,8 @@ import { AddressLookupFields } from '@/components/AddressLookupFields'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
-import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
   PATIENT_DOCUMENT_ACCEPT,
@@ -201,19 +200,12 @@ export function NurseRegisterPatientModal({
     () => assignedLocations.find((loc) => String(loc.id) === locationId) ?? null,
     [assignedLocations, locationId]
   )
-  // CSM and Loop tenants offer only immigration services; Kempwood keeps the full list.
-  // Admin → Configurations narrows the list further to the services this
-  // location offers in the EMR. Locations with no configuration are unaffected.
-  const { filterServicesForLocation } = useServiceAvailability()
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than a hardcoded rule about its tenant. A location with
+  // no configuration keeps the full list.
+  const { filterServices } = useLocationServices(selectedLocation?.id)
 
-  const availableServices = useMemo(() => {
-    const tenantScoped = isImmigrationOnlyTenant(selectedLocation?.tenant_id)
-      ? services.filter(
-          (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-        )
-      : services
-    return filterServicesForLocation(tenantScoped, selectedLocation?.id, 'emr')
-  }, [services, selectedLocation?.tenant_id, selectedLocation?.id, filterServicesForLocation])
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
 
   useEffect(() => {
     setServiceId((current) => {

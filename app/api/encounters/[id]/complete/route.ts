@@ -42,7 +42,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
         consent_ack,
         program_type,
         appointments:appointment_id (
-          services:service_id ( title_en, title_es )
+          services:service_id ( id, title_en, title_es )
         )
       `)
       .eq('id', encounterId)
