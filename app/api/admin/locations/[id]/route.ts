@@ -11,6 +11,7 @@ import {
   normalizeAdminLocationRow,
 } from '@/lib/locations/admin-row'
 import { locationUpdateSchema } from '@/lib/validation'
+import { syncLocationToPortal } from '@/lib/bridge/sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -137,9 +138,26 @@ export async function PATCH(request: Request, { params }: { params: { id: string
 
     const normalized = normalizeAdminLocationRow(data as Record<string, unknown>)
 
+    // Re-sync the portal copy so an edit here does not leave it stale.
+    // Best-effort: the location is already updated here.
+    const sync = await syncLocationToPortal({
+      id: normalized.id,
+      title: normalized.title,
+      tenant_id: normalized.tenant_id,
+      location_code: normalized.location_code,
+      location_group: normalized.location_group,
+      address: normalized.address,
+      phone: normalized.phone,
+      email: normalized.email,
+      opening_hours: normalized.opening_hours,
+      google_map_url: normalized.google_map_url,
+      is_active: normalized.is_active,
+    })
+
     return NextResponse.json({
       success: true,
       data: normalized,
+      portal_synced: sync.ok,
     })
   } catch (e) {
     return handleApiError(e)

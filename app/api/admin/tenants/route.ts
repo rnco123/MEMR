@@ -4,6 +4,7 @@ import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { logAuditEvent } from '@/lib/audit-server'
 import { tenantCreateSchema } from '@/lib/validation'
+import { syncTenantToPortal } from '@/lib/bridge/sync'
 import type { TenantRow } from '@/lib/tenants/types'
 
 export const dynamic = 'force-dynamic'
@@ -78,9 +79,18 @@ export async function POST(request: Request) {
       actor_id: user.id,
     })
 
+    // Copy to the portal project. Best-effort: the tenant already exists here.
+    const sync = await syncTenantToPortal({
+      id: data.id,
+      name: data.name,
+      tenant_code: data.tenant_code,
+      is_active: data.is_active,
+    })
+
     return NextResponse.json({
       success: true,
       data: data as TenantRow,
+      portal_synced: sync.ok,
     })
   } catch (e) {
     return handleApiError(e)

@@ -11,6 +11,7 @@ import {
   normalizeAdminLocationRow,
 } from '@/lib/locations/admin-row'
 import { locationCreateSchema } from '@/lib/validation'
+import { syncLocationToPortal } from '@/lib/bridge/sync'
 import { sanitizePatientSearchTerm } from '@/lib/nurse/patient-search-query'
 
 export const dynamic = 'force-dynamic'
@@ -153,9 +154,26 @@ export async function POST(request: Request) {
 
     const normalized = normalizeAdminLocationRow(data as Record<string, unknown>)
 
+    // Copy to the portal project so the public site can resolve this location.
+    // Best-effort: the location already exists here.
+    const sync = await syncLocationToPortal({
+      id: normalized.id,
+      title: normalized.title,
+      tenant_id: normalized.tenant_id,
+      location_code: normalized.location_code,
+      location_group: normalized.location_group,
+      address: normalized.address,
+      phone: normalized.phone,
+      email: normalized.email,
+      opening_hours: normalized.opening_hours,
+      google_map_url: normalized.google_map_url,
+      is_active: normalized.is_active,
+    })
+
     return NextResponse.json({
       success: true,
       data: normalized,
+      portal_synced: sync.ok,
     })
   } catch (e) {
     return handleApiError(e)
