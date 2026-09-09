@@ -15,7 +15,7 @@ export const LOCATION_GROUP_REGION_LABEL: Record<string, string> = {
 const CLINICA_I693_GROUPS = new Set(['A', 'B', 'C'])
 
 /** Kempwood tenant — uses Houston (B) pre-built template, not a separate one. */
-const KEMPWOOD_TENANT_ID = 3
+const KEMPWOOD_TENANT_ID = 2
 
 export function resolveI693TemplateGroup(
   rawGroup: string,

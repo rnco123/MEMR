@@ -3,14 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   AuthenticationError,
-  AuthorizationError,
   ValidationError,
   handleApiError,
 } from '@/lib/api-error-handler'
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { auditPhi } from '@/lib/audit-phi'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { LOOP_TENANT_ID } from '@/lib/tenants'
 import { bridgeGet } from '@/lib/bridge/sync'
 
 export const dynamic = 'force-dynamic'
@@ -68,19 +66,13 @@ export async function PATCH(request: Request, { params }: { params: { id: string
       throw new ValidationError('Encounter or linked appointment not found')
     }
 
-    // The Loop tenant doesn't allow changing the treatment type
     const { data: apptRow, error: apptFetchErr } = await admin
       .from('appointments')
-      .select('id, location_id, locations:location_id ( tenant_id )')
+      .select('id, location_id')
       .eq('id', encRow.appointment_id)
       .maybeSingle()
 
     if (apptFetchErr) throw apptFetchErr
-    const apptLocation = Array.isArray(apptRow?.locations) ? apptRow?.locations[0] : apptRow?.locations
-    const tenantId = (apptLocation as { tenant_id?: number | null } | null | undefined)?.tenant_id
-    if (tenantId === LOOP_TENANT_ID) {
-      throw new AuthorizationError('Treatment type cannot be changed for this location')
-    }
 
     // What a clinic offers is configured in Admin → Configurations, so the check is
     // against the location's assigned services rather than a rule about its tenant.

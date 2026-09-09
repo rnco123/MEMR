@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
-import { LOOP_TENANT_ID, stripServiceFeeForTenant } from '@/lib/tenants'
+import { stripServiceFeeForTenant } from '@/lib/tenants'
 import { useLocationServices } from '@/lib/configurations/use-location-services'
 import { SelectDrawer } from '@/components/SelectDrawer'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
@@ -237,8 +237,6 @@ export function EncounterDetailModal({
 
   // The Loop tenant doesn't allow changing the treatment type (also enforced
   // in the /service PATCH endpoint).
-  const serviceEditHiddenForTenant = appointment?.locations?.tenant_id === LOOP_TENANT_ID
-
   // What a clinic offers is configured in Admin → Configurations, so the list comes
   // from the location rather than from a hardcoded rule about its tenant. A location
   // with no configuration keeps the full list.
@@ -1101,7 +1099,7 @@ export function EncounterDetailModal({
                         <div className="min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <p className="text-slate-500 text-sm">{t('nurse_walkin.service')}</p>
-                            {canEditWorkflow && !encounterLocked && !editingService && !serviceEditHiddenForTenant && (
+                            {canEditWorkflow && !encounterLocked && !editingService && (
                               <button
                                 type="button"
                                 onClick={handleStartEditService}

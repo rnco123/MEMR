@@ -1,12 +1,12 @@
 /**
- * Live tenant ids (see migrations 065/096):
- *   1 = Clinica San Miguel (renamed from Default Tenant)
- *   3 = Kempwood
- *   4 = Loop
- * Tenant 2 (Kempen) was removed by migration 096.
+ * Live tenant ids, as held in every project (P1-P4):
+ *   1 = Clinica San Miguel
+ *   2 = Kempwood
+ *   4 = Clinica Hispana Nueva Vida ("Loop")
+ * Tenant 3 is free: Kempwood moved from 3 to 2 so that id and tenant_code match.
  */
 export const CSM_TENANT_ID = 1
-export const KEMPWOOD_TENANT_ID = 3
+export const KEMPWOOD_TENANT_ID = 2
 export const LOOP_TENANT_ID = 4
 
 /**
