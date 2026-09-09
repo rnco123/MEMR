@@ -1,39 +1,4 @@
-type AutocompleteSuggestion = {
-  street_line?: string
-  secondary?: string
-  city?: string
-  state?: string
-  zipcode?: string
-}
-
-type AutocompleteResponse = {
-  suggestions?: AutocompleteSuggestion[]
-}
-
-const SMARTY_URL = 'https://us-autocomplete-pro.api.smartystreets.com/lookup'
 const MAPBOX_SUGGEST_URL = 'https://api.mapbox.com/search/searchbox/v1/suggest'
-
-function formatSmartySuggestion(s: AutocompleteSuggestion): string {
-  return [s.street_line, s.secondary, s.city, s.state, s.zipcode].filter(Boolean).join(', ')
-}
-
-async function fetchSmartySuggestions(search: string): Promise<string[]> {
-  const authId = process.env.SMARTY_AUTH_ID
-  const authToken = process.env.SMARTY_AUTH_TOKEN
-  if (!authId || !authToken) return []
-
-  const url = new URL(SMARTY_URL)
-  url.searchParams.set('auth-id', authId)
-  url.searchParams.set('auth-token', authToken)
-  url.searchParams.set('search', search)
-  url.searchParams.set('max_results', '5')
-
-  const res = await fetch(url.toString(), { method: 'GET' })
-  if (!res.ok) return []
-
-  const data = (await res.json()) as AutocompleteResponse
-  return (data?.suggestions ?? []).map(formatSmartySuggestion).filter(Boolean)
-}
 
 async function fetchMapboxSuggestions(search: string): Promise<string[]> {
   const token = process.env.MAPBOX_ACCESS_TOKEN
@@ -65,25 +30,20 @@ async function fetchMapboxSuggestions(search: string): Promise<string[]> {
 }
 
 export function isAddressLookupConfigured(): boolean {
-  return Boolean(
-    (process.env.SMARTY_AUTH_ID && process.env.SMARTY_AUTH_TOKEN) || process.env.MAPBOX_ACCESS_TOKEN
-  )
+  return Boolean(process.env.MAPBOX_ACCESS_TOKEN)
 }
 
 export async function fetchAddressSuggestions(search: string): Promise<string[]> {
   const query = search.trim()
   if (query.length < 3) return []
 
-  const [mapbox, smarty] = await Promise.all([
-    fetchMapboxSuggestions(query),
-    fetchSmartySuggestions(query),
-  ])
-
   const seen = new Set<string>()
-  return [...mapbox, ...smarty].filter((s) => {
-    const key = s.toLowerCase().trim()
-    if (!key || seen.has(key)) return false
-    seen.add(key)
-    return true
-  }).slice(0, 8)
+  return (await fetchMapboxSuggestions(query))
+    .filter((s) => {
+      const key = s.toLowerCase().trim()
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .slice(0, 8)
 }

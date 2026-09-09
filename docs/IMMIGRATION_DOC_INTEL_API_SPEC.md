@@ -15,7 +15,7 @@ A **backend service** (microservice) that:
 
 - Accepts **immigration-related documents** (PDFs/images) and **extracts structured data** using **hybrid extraction** (deterministic PDF fields + **OpenAI** / vision for scans and messy layouts).
 - Applies **dynamic form definitions** stored in **Supabase** (new USCIS / civil-surgeon / portal forms can be onboarded without redeploying the core engine).
-- Normalizes and validates **addresses** via **Mapbox** (geocoding, autocomplete, suggestions) and **Smarty** (USPS-grade validation / verification where appropriate).
+- Normalizes and validates **addresses** via **Mapbox** (geocoding, autocomplete, suggestions).
 - Returns **review-ready payloads** to **MyclinicMD** (Next.js): field values, **confidence**, **evidence** (page + bounding region or text span), and **validation errors** — not “silent truth.”
 
 ### Is this a good idea?
@@ -54,13 +54,12 @@ flowchart LR
   EXT --> LLM
   EXT --> ADDR
   ADDR --> Mapbox[Mapbox API]
-  ADDR --> Smarty[Smarty API]
   ING --> VAL
   VAL -->|webhook or poll| API
 ```
 
 - **MyclinicMD** owns: auth, RLS, patient/encounter/document rows, audit log events, user-facing UI.
-- **Doc Intel service** owns: long-running jobs, extraction pipelines, calling OpenAI/Mapbox/Smarty, merging results with **form definitions** read from Supabase (via service role or read replica — see Section 5).
+- **Doc Intel service** owns: long-running jobs, extraction pipelines, calling OpenAI/Mapbox, merging results with **form definitions** read from Supabase (via service role or read replica — see Section 5).
 
 ---
 
@@ -89,7 +88,6 @@ These can live in the **existing** MyclinicMD database (recommended) so RLS and 
 - **Supabase service role key** or **narrow scoped JWT** for worker (prefer **custom claims** + restricted policies).
 - **OpenAI** (or Azure OpenAI) API key with **approved data processing** terms.
 - **Mapbox** token (server-side secret).
-- **Smarty** auth ID + token.
 - **Webhook secret** (HMAC) for callbacks from microservice → Next.js.
 
 ---
@@ -134,7 +132,7 @@ The Cursor agent should implement a **JSON Schema** or well-documented JSON cont
 | `POST` | `/v1/jobs` | Create extraction job: `{ document_ref, form_slug, form_version?, idempotency_key, callback_url? }`. Returns `{ job_id, status }`. |
 | `GET` | `/v1/jobs/{job_id}` | Job status + partial results. |
 | `GET` | `/v1/jobs/{job_id}/result` | Final normalized payload when `succeeded`. |
-| `POST` | `/v1/addresses/resolve` | Optional sync helper: `{ freeform_or_components, country }` → Mapbox + Smarty merged suggestion (rate-limited). |
+| `POST` | `/v1/addresses/resolve` | Optional sync helper: `{ freeform_or_components, country }` → Mapbox suggestion (rate-limited). |
 | `POST` | `/v1/internal/forms/reload` | Admin: invalidate form schema cache (auth: internal only). |
 
 ### 5.2 Result payload shape (to frontend)
@@ -157,7 +155,6 @@ The Cursor agent should implement a **JSON Schema** or well-documented JSON cont
     {
       "field_key": "applicant.mailing_street",
       "mapbox": { "place_id": "...", "formatted": "..." },
-      "smarty": { "dpv_match_code": "Y", "footnotes": [] },
       "recommended_value": "123 MAIN ST",
       "flags": ["verify_with_patient"]
     }
@@ -178,7 +175,7 @@ Frontend responsibility: **diff UI**, accept/reject per field, write patches to 
 3. **Slow path:** Rasterize pages or extract images + text; **OpenAI vision** (or equivalent) with **JSON mode / structured outputs**; require **per-field evidence** for any LLM-sourced value.
 4. **Merge** with precedence: AcroForm > OCR text match > LLM (configurable).
 5. **Normalize** dates, phones, A-numbers per form rules in JSON spec.
-6. **Address pipeline:** Mapbox for geocode + standardization candidate; Smarty for **US** verification / ZIP+4 where `address_policy` requires it.
+6. **Address pipeline:** Mapbox for geocode + standardization candidate and US verification where `address_policy` requires it.
 7. **Validate** against JSON Schema derived from form definition; emit `validation_errors`.
 
 ---
@@ -198,7 +195,7 @@ Frontend responsibility: **diff UI**, accept/reject per field, write patches to 
 - mTLS or **signed requests** (HMAC-SHA256 of body + timestamp) between Next.js and microservice.
 - **Idempotency-Key** on `POST /v1/jobs`.
 - Secrets in **Vault / Vercel env / Supabase secrets** — never in repo.
-- **HIPAA:** BAA with OpenAI/Azure, Mapbox, Smarty as applicable; **minimum necessary** pixels sent to vision API (crop regions when possible).
+- **HIPAA:** BAA with OpenAI/Azure and Mapbox as applicable; **minimum necessary** pixels sent to vision API (crop regions when possible).
 - **Rate limiting** per `tenant_id` / clinic.
 - **Audit:** EMR writes an audit row when job created, when result viewed, when clinician accepts field changes.
 
@@ -240,10 +237,10 @@ Goals:
    - Use PyMuPDF (fitz) for AcroForm fields when present; map using `pdf_acroform_aliases` from form JSON.
    - Use OpenAI API (configurable base URL for Azure) with vision + JSON schema structured output for remaining fields; every LLM field must include evidence (page number, quote, optional bbox if feasible).
    - Pluggable interface `ExtractorBackend` for future vendors.
-5. Addresses: implement `AddressPipeline` — Mapbox Geocoding/Search API + Smarty US Street API; merge into single recommendation object; handle non-US addresses with Mapbox only and clear flags.
+5. Addresses: implement `AddressPipeline` — Mapbox Geocoding/Search API; produce a single recommendation object; handle non-US addresses with clear flags.
 6. Security: no secrets in logs; validate incoming webhooks and outgoing callbacks; idempotency keys; request signing middleware optional but stub interface.
 7. Observability: structured logging (job_id, form_slug), OpenTelemetry hooks optional, health/readiness endpoints.
-8. Deliverables: Dockerfile, README with env vars table, OpenAPI schema auto-generated, example `.env.example`, minimal integration test with mocked OpenAI/Mapbox/Smarty.
+8. Deliverables: Dockerfile, README with env vars table, OpenAPI schema auto-generated, example `.env.example`, minimal integration test with mocked OpenAI/Mapbox.
 
 Constraints:
 - Do not call government portals or automate logins.
