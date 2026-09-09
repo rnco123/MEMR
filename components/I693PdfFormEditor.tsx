@@ -1020,17 +1020,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     })
   }, [combPlacements, form, pageHosts, updateCombField])
 
-  const clinicLocationLabel = useMemo(() => {
-    if (!locationAutofill) return null
-    const parts = [
-      locationAutofill.region_label,
-      locationAutofill.location_title,
-      locationAutofill.location_address,
-    ]
-      .map((s) => s?.trim())
-      .filter(Boolean)
-    return parts.length > 0 ? parts.join(' · ') : null
-  }, [locationAutofill])
+  // The clinic's name is enough to tell one location from another; the region and
+  // street address wrapped over five lines in a header that has to stay one.
+  const clinicLocationLabel = useMemo(
+    () => locationAutofill?.location_title?.trim() || null,
+    [locationAutofill]
+  )
 
   const displayPatientName = useMemo(() => {
     if (patientName?.trim()) return patientName.trim()
@@ -1084,8 +1079,9 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
           ) : null}
           <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap justify-between items-start gap-4">
             <div className="min-w-0">
-              <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{t('i693.immigration_heading')}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 min-w-0">
+              {/* No heading: this editor only ever opens on an I-693, so naming it
+                  again costs a line and truncates to "I6…" in a narrow header. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 min-w-0">
                 {displayPatientName ? (
                   <div className="flex items-center gap-1.5 shrink-0" title={displayPatientName}>
                     <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
@@ -1103,12 +1099,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
                   </div>
                 ) : null}
                 {clinicLocationLabel ? (
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0" title={clinicLocationLabel}>
                     <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    <span>{clinicLocationLabel}</span>
+                    <span className="truncate">{clinicLocationLabel}</span>
                   </div>
                 ) : null}
               </div>
