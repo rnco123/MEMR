@@ -16,18 +16,32 @@ import { nursePatientCreateSchema } from '@/lib/validation'
 import { insertEncounter } from '@/lib/encounters/insert-encounter'
 import { getProfileId, insertStatusTimeline } from '@/lib/status-timeline'
 import { auditPhi } from '@/lib/audit-phi'
-import { emptyToNull, normalizePhoneForStorage, phoneMatchDigits } from '@/lib/patients/phone-normalize'
+import { emptyToNull, normalizePhoneForStorage } from '@/lib/patients/phone-normalize'
 import { normalizePatientGender } from '@/lib/encounter/patient-gender'
+import { bridgePost } from '@/lib/bridge/sync'
 
 export const dynamic = 'force-dynamic'
+
+type PatientCreateResult = {
+  source: string
+  stores: Array<{
+    store: string
+    ok: boolean
+    id?: string
+    reason?: string
+    record?: Record<string, unknown>
+  }>
+}
 
 /**
  * POST /api/nurse/patients
  *
- * Create a Direct patient chart in the EMR and open a visit:
+ * Create a Direct patient chart and open a visit:
  * patient → appointment → encounter (`appointment_initiated`).
  * Intake, vitals, and physical exam are documented later in the encounter modal.
- * Direct charts are EMR-only (not synced to external Supabase).
+ *
+ * The patient itself is created by mcm-bridge, which owns both Supabase projects and
+ * the rule that keeps Direct charts EMR-only. Duplicate matching lives there too.
  */
 export async function POST(request: Request) {
   try {
@@ -61,58 +75,36 @@ export async function POST(request: Request) {
     const serviceId = Number(service.id)
 
     const phoneStored = normalizePhoneForStorage(v.phone) ?? emptyToNull(v.phone)
-    const phoneDigits = phoneMatchDigits(v.phone)
     const dob = emptyToNull(v.date_of_birth)
-
-    // Mirror QR duplicate matching (DOB + phone digits) so Direct create does not fork charts.
-    if (dob && phoneDigits.length >= 10) {
-      const { data: dobMatches, error: matchError } = await admin
-        .from('patients')
-        .select('id, phone, first_name, last_name, created_by_source')
-        .eq('date_of_birth', dob)
-
-      if (matchError) throw matchError
-
-      const existing = (dobMatches ?? []).find(
-        (row) => phoneMatchDigits(row.phone) === phoneDigits
-      )
-      if (existing) {
-        throw new ConflictError(
-          `A patient already exists with this date of birth and phone (ID ${existing.id}: ${existing.first_name} ${existing.last_name}). Search and select them instead of creating a duplicate.`
-        )
-      }
-    }
-
     const gender = normalizePatientGender(v.gender)
 
-    const { data: patient, error: insertError } = await admin
-      .from('patients')
-      .insert({
-        first_name: v.first_name.trim(),
-        last_name: v.last_name.trim(),
-        email: emptyToNull(v.email),
-        phone: phoneStored,
-        gender,
-        date_of_birth: dob,
-        street_address: emptyToNull(v.street_address),
-        state: emptyToNull(v.state),
-        zip_code: emptyToNull(v.zip_code),
-        location_id: v.location_id,
-        emergency_contact_name: emptyToNull(v.emergency_contact_name),
-        emergency_contact_phone: emptyToNull(v.emergency_contact_phone),
-        emergency_contact_relationship: emptyToNull(v.emergency_contact_relationship),
-        is_text_opt_in: v.is_text_opt_in ?? false,
-        is_check_opt_in: v.is_check_opt_in ?? false,
-        // Direct = EMR manual registration. Do not sync this row to external Supabase.
-        created_by_source: 'Direct',
-      })
-      .select(
-        'id, patient_code, first_name, last_name, email, phone, gender, date_of_birth, street_address, state, zip_code, location_id, created_by_source, created_at'
-      )
-      .single()
+    // `Direct` selects the bridge rule that keeps this chart EMR-only. The bridge also
+    // applies the DOB + phone duplicate check and answers 409 when it matches.
+    const created = await bridgePost<PatientCreateResult>('/patients', {
+      source: 'Direct',
+      first_name: v.first_name.trim(),
+      last_name: v.last_name.trim(),
+      email: emptyToNull(v.email),
+      phone: phoneStored,
+      gender,
+      date_of_birth: dob,
+      street_address: emptyToNull(v.street_address),
+      state: emptyToNull(v.state),
+      zip_code: emptyToNull(v.zip_code),
+      location_id: v.location_id,
+      emergency_contact_name: emptyToNull(v.emergency_contact_name),
+      emergency_contact_phone: emptyToNull(v.emergency_contact_phone),
+      emergency_contact_relationship: emptyToNull(v.emergency_contact_relationship),
+      is_text_opt_in: v.is_text_opt_in ?? false,
+      is_check_opt_in: v.is_check_opt_in ?? false,
+    })
 
-    if (insertError) throw insertError
+    const chart = created.stores.find((store) => store.store === 'emr.patients')
+    if (!chart?.ok || !chart.record) {
+      throw new ConflictError(chart?.reason ?? 'Bridge did not create the patient chart')
+    }
 
+    const patient = chart.record
     const patientId = Number(patient.id)
 
     if (v.pharmacy_id != null) {
