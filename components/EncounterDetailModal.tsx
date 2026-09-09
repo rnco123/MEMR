@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { LOOP_TENANT_ID, isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
 import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
@@ -152,6 +153,7 @@ interface Appointment {
   appointment_time: string | null
   onsite_type: string
   service_id?: number | null
+  location_id?: number | null
   services?: { id?: number; title_en?: string | null; title_es?: string | null } | null
   locations?: { title?: string | null; location_code?: string | null; tenant_id?: number | null } | null
 }
@@ -239,12 +241,34 @@ export function EncounterDetailModal({
 
   // Only Kempwood offers the full services list; immigration-only tenants
   // (CSM, Loop) may only switch between immigration services.
+  // Admin → Configurations narrows the list further to the services this
+  // location offers in the EMR. Locations with no configuration are unaffected.
+  const { filterServicesForLocation } = useServiceAvailability()
+
   const serviceOptions = useMemo(() => {
-    if (!isImmigrationOnlyTenant(appointment?.locations?.tenant_id)) return allServices
-    return allServices.filter(
-      (svc) => isImmigrationServiceTitle(svc.title_en) || isImmigrationServiceTitle(svc.title_es)
-    )
-  }, [allServices, appointment?.locations?.tenant_id])
+    const tenantScoped = isImmigrationOnlyTenant(appointment?.locations?.tenant_id)
+      ? allServices.filter(
+          (svc) => isImmigrationServiceTitle(svc.title_en) || isImmigrationServiceTitle(svc.title_es)
+        )
+      : allServices
+    const scoped = filterServicesForLocation(tenantScoped, appointment?.location_id, 'emr')
+
+    // Keep the encounter's current service selectable even if it has since been
+    // unassigned from this location — otherwise the dropdown would silently show
+    // a blank value for a record that does have a service.
+    const currentId = appointment?.service_id
+    if (currentId != null && !scoped.some((svc) => svc.id === currentId)) {
+      const current = allServices.find((svc) => svc.id === currentId)
+      if (current) return [current, ...scoped]
+    }
+    return scoped
+  }, [
+    allServices,
+    appointment?.locations?.tenant_id,
+    appointment?.location_id,
+    appointment?.service_id,
+    filterServicesForLocation,
+  ])
 
   const handleStartEditService = () => {
     void loadServices()
@@ -364,6 +388,7 @@ export function EncounterDetailModal({
             appointment_time: appointmentData.appointment_time as string | null,
             onsite_type: appointmentData.onsite_type as string,
             service_id: appointmentData.service_id as number | null,
+            location_id: appointmentData.location_id as number | null,
             services: appointmentData.services as Appointment['services'],
             locations: appointmentData.locations as Appointment['locations'],
           })

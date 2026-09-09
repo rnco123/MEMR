@@ -16,6 +16,7 @@ import { formatDobShort } from '@/lib/datetime/date-input'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
 import {
   applyNurseScreeningToI693Form,
   emptyNurseImmigrationScreening,
@@ -164,12 +165,18 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   // the full list); the general intake/pharmacy sections are hidden for them.
   const immigrationOnlyTenant = isImmigrationOnlyTenant(effectiveTenantId)
 
+  // Admin → Configurations narrows the list further to the services this
+  // location offers in the EMR. Locations with no configuration are unaffected.
+  const { filterServicesForLocation } = useServiceAvailability()
+
   const availableServices = useMemo(() => {
-    if (!immigrationOnlyTenant) return services
-    return services.filter(
-      (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-    )
-  }, [services, immigrationOnlyTenant])
+    const tenantScoped = immigrationOnlyTenant
+      ? services.filter(
+          (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
+        )
+      : services
+    return filterServicesForLocation(tenantScoped, effectiveLocationId, 'emr')
+  }, [services, immigrationOnlyTenant, filterServicesForLocation, effectiveLocationId])
 
   useEffect(() => {
     setServiceId((current) => {
