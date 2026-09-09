@@ -10,8 +10,8 @@ import {
 import { guardEncounterAccess } from '@/lib/encounters/guard'
 import { auditPhi } from '@/lib/audit-phi'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { LOOP_TENANT_ID, isImmigrationOnlyTenant } from '@/lib/tenants'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
+import { LOOP_TENANT_ID } from '@/lib/tenants'
+import { bridgeGet } from '@/lib/bridge/sync'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,7 +71,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     // The Loop tenant doesn't allow changing the treatment type
     const { data: apptRow, error: apptFetchErr } = await admin
       .from('appointments')
-      .select('id, locations:location_id ( tenant_id )')
+      .select('id, location_id, locations:location_id ( tenant_id )')
       .eq('id', encRow.appointment_id)
       .maybeSingle()
 
@@ -81,13 +81,28 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     if (tenantId === LOOP_TENANT_ID) {
       throw new AuthorizationError('Treatment type cannot be changed for this location')
     }
-    // Immigration-only tenants (CSM, Loop) may only switch between immigration services.
-    if (
-      isImmigrationOnlyTenant(tenantId) &&
-      !isImmigrationServiceTitle(serviceRow.title_en) &&
-      !isImmigrationServiceTitle(serviceRow.title_es)
-    ) {
-      throw new ValidationError('Only immigration services are available at this location')
+
+    // What a clinic offers is configured in Admin → Configurations, so the check is
+    // against the location's assigned services rather than a rule about its tenant.
+    // This has to agree with the picker, which is built from the same list; matching
+    // on the word "immigration" in a title also meant renaming a service silently
+    // changed which ones were allowed.
+    //
+    // A location with no configuration, or a bridge that cannot be reached, allows
+    // any existing service — the same fallback the picker uses.
+    const locationId = apptRow?.location_id == null ? null : Number(apptRow.location_id)
+    if (locationId != null) {
+      try {
+        const offered = await bridgeGet<{ id: number }[]>(
+          `/catalog/locations/${locationId}/services`
+        )
+        if (offered.length > 0 && !offered.some((svc) => Number(svc.id) === serviceId)) {
+          throw new ValidationError('That service is not offered at this location')
+        }
+      } catch (err) {
+        if (err instanceof ValidationError) throw err
+        console.error('[encounter/service] could not read the location rules:', err)
+      }
     }
 
     // Update appointment's service_id

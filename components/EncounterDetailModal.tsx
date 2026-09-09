@@ -8,6 +8,7 @@ import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { LOOP_TENANT_ID, stripServiceFeeForTenant } from '@/lib/tenants'
 import { useLocationServices } from '@/lib/configurations/use-location-services'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { LoadingSpinner } from './LoadingSpinner'
@@ -1115,22 +1116,21 @@ export function EncounterDetailModal({
                           </div>
                           {editingService ? (
                             <div className="space-y-2 mt-1">
-                              <select
+                              <SelectDrawer
                                 value={selectedServiceId}
-                                onChange={(e) => setSelectedServiceId(e.target.value)}
+                                onChange={setSelectedServiceId}
                                 disabled={savingService}
-                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-                              >
-                                <option value="">{t('patient_register.treatment_type_ph')}</option>
-                                {serviceOptions.map((svc) => (
-                                  <option key={svc.id} value={svc.id}>
-                                    {stripServiceFeeForTenant(
-                                      (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? '',
-                                      appointment?.locations?.tenant_id
-                                    )}
-                                  </option>
-                                ))}
-                              </select>
+                                placeholder={t('patient_register.treatment_type_ph')}
+                                searchPlaceholder={t('common.search')}
+                                emptyLabel={t('common.no_results')}
+                                options={serviceOptions.map((svc) => ({
+                                  value: String(svc.id),
+                                  label: stripServiceFeeForTenant(
+                                    (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? '',
+                                    appointment?.locations?.tenant_id
+                                  ),
+                                }))}
+                              />
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
