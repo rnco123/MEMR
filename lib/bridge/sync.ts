@@ -168,3 +168,7 @@ export function bridgePatch<T>(path: string, payload: unknown): Promise<T> {
     body: JSON.stringify(payload),
   })
 }
+
+export function bridgeDelete<T>(path: string): Promise<T> {
+  return request<T>(path, { method: 'DELETE' })
+}
