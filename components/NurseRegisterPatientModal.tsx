@@ -10,6 +10,7 @@ import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
   PATIENT_DOCUMENT_ACCEPT,
@@ -201,12 +202,18 @@ export function NurseRegisterPatientModal({
     [assignedLocations, locationId]
   )
   // CSM and Loop tenants offer only immigration services; Kempwood keeps the full list.
+  // Admin → Configurations narrows the list further to the services this
+  // location offers in the EMR. Locations with no configuration are unaffected.
+  const { filterServicesForLocation } = useServiceAvailability()
+
   const availableServices = useMemo(() => {
-    if (!isImmigrationOnlyTenant(selectedLocation?.tenant_id)) return services
-    return services.filter(
-      (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-    )
-  }, [services, selectedLocation?.tenant_id])
+    const tenantScoped = isImmigrationOnlyTenant(selectedLocation?.tenant_id)
+      ? services.filter(
+          (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
+        )
+      : services
+    return filterServicesForLocation(tenantScoped, selectedLocation?.id, 'emr')
+  }, [services, selectedLocation?.tenant_id, selectedLocation?.id, filterServicesForLocation])
 
   useEffect(() => {
     setServiceId((current) => {
@@ -238,18 +245,20 @@ export function NurseRegisterPatientModal({
     Boolean(locationId) && assignedLocations.some((loc) => String(loc.id) === locationId)
 
   const canSubmit = useMemo(() => {
-    const emailTrimmed = email.trim()
-    const emailOk = !emailTrimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)
+    // Email and date of birth identify a returning patient, so both are required —
+    // without them the bridge cannot tell a repeat visit from a new chart.
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     return Boolean(
       firstName.trim() &&
         lastName.trim() &&
         locationReady &&
         serviceId &&
         emailOk &&
+        dob.trim() &&
         !submitting &&
         !servicesLoading
     )
-  }, [firstName, lastName, locationReady, serviceId, email, submitting, servicesLoading])
+  }, [firstName, lastName, locationReady, serviceId, email, dob, submitting, servicesLoading])
 
   const emailError = useMemo(() => {
     const emailTrimmed = email.trim()
