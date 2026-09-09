@@ -7,6 +7,10 @@ export interface FileValidationResult {
   error?: string
 }
 
+/** Word .docx (Office Open XML) */
+export const DOCX_MIME_TYPE =
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
 /**
  * Allowed MIME types for document uploads
  */
@@ -16,7 +20,7 @@ const ALLOWED_MIME_TYPES = [
   'image/jpg',
   'application/pdf',
   'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+  DOCX_MIME_TYPE,
 ]
 
 /**
@@ -32,17 +36,17 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024
 /** Patient chart documents (PDF / images) */
 export const PATIENT_DOCUMENT_MAX_BYTES = 50 * 1024 * 1024
 
-export const PATIENT_DOCUMENT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf'] as const
+export const PATIENT_DOCUMENT_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.pdf', '.docx'] as const
 
 /** Native file-picker filter kept in sync with patient document validation. */
-export const PATIENT_DOCUMENT_ACCEPT =
-  '.pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg'
+export const PATIENT_DOCUMENT_ACCEPT = `.pdf,.png,.jpg,.jpeg,.docx,application/pdf,image/png,image/jpeg,${DOCX_MIME_TYPE}`
 
 const PATIENT_DOCUMENT_MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.pdf': 'application/pdf',
+  '.docx': DOCX_MIME_TYPE,
 }
 
 const PATIENT_DOCUMENT_MIMES = new Set([
@@ -50,6 +54,7 @@ const PATIENT_DOCUMENT_MIMES = new Set([
   'image/jpeg',
   'image/jpg',
   'application/pdf',
+  DOCX_MIME_TYPE,
 ])
 
 function fileExtension(fileName: string): string {
@@ -141,14 +146,14 @@ export function validatePatientDocumentUpload(file: File): FileValidationResult 
   if (!PATIENT_DOCUMENT_EXTENSIONS.includes(ext as (typeof PATIENT_DOCUMENT_EXTENSIONS)[number])) {
     return {
       valid: false,
-      error: 'Invalid file type. Please upload PDF, PNG, JPEG, or JPG files only.',
+      error: 'Invalid file type. Please upload PDF, DOCX, PNG, JPEG, or JPG files only.',
     }
   }
 
   if (!resolvePatientDocumentContentType(file)) {
     return {
       valid: false,
-      error: 'Invalid file type. Please upload PDF, PNG, JPEG, or JPG files only.',
+      error: 'Invalid file type. Please upload PDF, DOCX, PNG, JPEG, or JPG files only.',
     }
   }
 
@@ -225,10 +230,17 @@ async function scanFileContentByType(
   const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
   const jpegSignature = [0xff, 0xd8, 0xff]
   const pdfSignature = [0x25, 0x50, 0x44, 0x46]
+  // .docx is a ZIP container: "PK" followed by a local-file / empty / spanned marker.
+  const zipSignatures = [
+    [0x50, 0x4b, 0x03, 0x04],
+    [0x50, 0x4b, 0x05, 0x06],
+    [0x50, 0x4b, 0x07, 0x08],
+  ]
 
   const isPng = bytes.slice(0, 8).every((byte, i) => byte === pngSignature[i])
   const isJpeg = bytes.slice(0, 3).every((byte, i) => byte === jpegSignature[i])
   const isPdf = bytes.slice(0, 4).every((byte, i) => byte === pdfSignature[i])
+  const isZip = zipSignatures.some((sig) => bytes.slice(0, 4).every((byte, i) => byte === sig[i]))
 
   if (contentType === 'image/png' && !isPng) {
     return { valid: false, error: 'File content does not match declared type (PNG)' }
@@ -240,6 +252,10 @@ async function scanFileContentByType(
 
   if (contentType === 'application/pdf' && !isPdf) {
     return { valid: false, error: 'File content does not match declared type (PDF)' }
+  }
+
+  if (contentType === DOCX_MIME_TYPE && !isZip) {
+    return { valid: false, error: 'File content does not match declared type (DOCX)' }
   }
 
   return { valid: true }

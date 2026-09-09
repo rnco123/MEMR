@@ -16,6 +16,14 @@ import {
   validatePatientDocumentUpload,
 } from '@/lib/security/file-upload'
 
+/** Badge shown next to a queued upload. */
+function pendingFileKind(file: File): 'PDF' | 'DOC' | 'IMG' {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.pdf')) return 'PDF'
+  if (name.endsWith('.docx')) return 'DOC'
+  return 'IMG'
+}
+
 const INPUT =
   'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/35 focus:border-violet-400 transition-shadow'
 const SECTION =
@@ -883,11 +891,13 @@ export function NurseRegisterPatientModal({
                         }`}
                       >
                         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                          item.file.type === 'application/pdf'
+                          pendingFileKind(item.file) === 'PDF'
                             ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
+                            : pendingFileKind(item.file) === 'DOC'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                          {pendingFileKind(item.file)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-slate-800">{item.file.name}</span>

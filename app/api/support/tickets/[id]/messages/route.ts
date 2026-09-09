@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { NextRequest, NextResponse } from 'next/server'
-import { generateSecureFileName, scanFileContent, validateFileUpload } from '@/lib/security/file-upload'
+import { DOCX_MIME_TYPE, generateSecureFileName, scanFileContent, validateFileUpload } from '@/lib/security/file-upload'
 import { replySchema } from '@/lib/support/types'
 import { resolveSupportActor } from '@/lib/support/resolve-actor'
 import { handleApiError } from '@/lib/api-error-handler'
@@ -17,7 +17,15 @@ async function ensureBucket() {
   await admin.storage.createBucket(BUCKET, {
     public: false,
     fileSizeLimit: 10 * 1024 * 1024,
-    allowedMimeTypes: ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp', 'application/pdf'],
+    allowedMimeTypes: [
+      'image/png',
+      'image/jpeg',
+      'image/jpg',
+      'image/gif',
+      'image/webp',
+      'application/pdf',
+      DOCX_MIME_TYPE,
+    ],
   })
 }
 
