@@ -172,3 +172,11 @@ export function bridgePatch<T>(path: string, payload: unknown): Promise<T> {
 export function bridgeDelete<T>(path: string): Promise<T> {
   return request<T>(path, { method: 'DELETE' })
 }
+
+export function bridgePut<T>(path: string, payload: unknown): Promise<T> {
+  return request<T>(path, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
