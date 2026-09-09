@@ -6,9 +6,8 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
-import { LOOP_TENANT_ID, isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
-import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
+import { LOOP_TENANT_ID, stripServiceFeeForTenant } from '@/lib/tenants'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { LoadingSpinner } from './LoadingSpinner'
@@ -239,19 +238,13 @@ export function EncounterDetailModal({
   // in the /service PATCH endpoint).
   const serviceEditHiddenForTenant = appointment?.locations?.tenant_id === LOOP_TENANT_ID
 
-  // Only Kempwood offers the full services list; immigration-only tenants
-  // (CSM, Loop) may only switch between immigration services.
-  // Admin → Configurations narrows the list further to the services this
-  // location offers in the EMR. Locations with no configuration are unaffected.
-  const { filterServicesForLocation } = useServiceAvailability()
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(appointment?.location_id)
 
   const serviceOptions = useMemo(() => {
-    const tenantScoped = isImmigrationOnlyTenant(appointment?.locations?.tenant_id)
-      ? allServices.filter(
-          (svc) => isImmigrationServiceTitle(svc.title_en) || isImmigrationServiceTitle(svc.title_es)
-        )
-      : allServices
-    const scoped = filterServicesForLocation(tenantScoped, appointment?.location_id, 'emr')
+    const scoped = filterServices(allServices)
 
     // Keep the encounter's current service selectable even if it has since been
     // unassigned from this location — otherwise the dropdown would silently show
@@ -262,13 +255,7 @@ export function EncounterDetailModal({
       if (current) return [current, ...scoped]
     }
     return scoped
-  }, [
-    allServices,
-    appointment?.locations?.tenant_id,
-    appointment?.location_id,
-    appointment?.service_id,
-    filterServicesForLocation,
-  ])
+  }, [allServices, appointment?.service_id, filterServices])
 
   const handleStartEditService = () => {
     void loadServices()

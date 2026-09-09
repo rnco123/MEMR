@@ -14,9 +14,8 @@ import { phoneDigitsOnly } from '@/lib/phone-digits'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
 import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
-import { useServiceAvailability } from '@/lib/configurations/use-service-availability'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
 import {
   applyNurseScreeningToI693Form,
   emptyNurseImmigrationScreening,
@@ -165,18 +164,12 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   // the full list); the general intake/pharmacy sections are hidden for them.
   const immigrationOnlyTenant = isImmigrationOnlyTenant(effectiveTenantId)
 
-  // Admin → Configurations narrows the list further to the services this
-  // location offers in the EMR. Locations with no configuration are unaffected.
-  const { filterServicesForLocation } = useServiceAvailability()
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(effectiveLocationId)
 
-  const availableServices = useMemo(() => {
-    const tenantScoped = immigrationOnlyTenant
-      ? services.filter(
-          (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-        )
-      : services
-    return filterServicesForLocation(tenantScoped, effectiveLocationId, 'emr')
-  }, [services, immigrationOnlyTenant, filterServicesForLocation, effectiveLocationId])
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
 
   useEffect(() => {
     setServiceId((current) => {
