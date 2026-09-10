@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { AddressLookupInput } from '@/components/AddressLookupInput'
 
 type Pharmacy = {
   id: number
@@ -216,11 +217,10 @@ function PharmaciesPage() {
               />
             </div>
             <div className="md:col-span-2">
-              <label className="text-sm text-slate-700">{t('pharmacies.address')}</label>
-              <input
+              <AddressLookupInput
+                label={t('pharmacies.address')}
                 value={createForm.address}
-                onChange={(e) => setCreateForm((f) => ({ ...f, address: e.target.value }))}
-                className="mt-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900"
+                onChange={(address) => setCreateForm((f) => ({ ...f, address }))}
               />
             </div>
             <div className="md:col-span-2">
@@ -311,12 +311,14 @@ function PharmaciesPage() {
                             placeholder={t('pharmacies.phone_placeholder')}
                             className="bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
                           />
-                          <input
-                            value={editForm.address}
-                            onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
-                            placeholder={t('pharmacies.address')}
-                            className="md:col-span-2 bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
-                          />
+                          <div className="md:col-span-2">
+                            <AddressLookupInput
+                              value={editForm.address}
+                              onChange={(address) => setEditForm((f) => ({ ...f, address }))}
+                              placeholder={t('pharmacies.address')}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-900"
+                            />
+                          </div>
                           <input
                             type="email"
                             value={editForm.email}

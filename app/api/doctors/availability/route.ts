@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import type { User } from '@supabase/supabase-js'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { createSupabaseWithAccessToken, hasServiceRoleKey } from '@/lib/supabase/user-jwt-client'
+import { createSupabaseWithAccessToken, hasSecretKey } from '@/lib/supabase/user-jwt-client'
 import { config } from '@/lib/config'
 import { fetchProfileFields, fetchUserRole } from '@/lib/fetch-user-role'
 import { UserRole, mapRoleToEnum, isPhysicianRole } from '@/lib/roles'
@@ -23,7 +23,7 @@ async function getAuthFromRequest(request: Request): Promise<{ user: User; acces
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
   if (token) {
-    const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
+    const supabase = createClient(config.supabase.url, config.supabase.publishableKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     })
     const { data: { user }, error } = await supabase.auth.getUser(token)
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
     }
 
     let supabase
-    if (hasServiceRoleKey()) {
+    if (hasSecretKey()) {
       supabase = createAdminClient()
     } else if (accessToken) {
       supabase = createSupabaseWithAccessToken(accessToken)
@@ -59,7 +59,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error:
-            'Server misconfiguration: set SUPABASE_SERVICE_ROLE_KEY or call with a valid session / Authorization bearer token.',
+            'Server misconfiguration: set SUPABASE_SECRET_KEY or call with a valid session / Authorization bearer token.',
         },
         { status: 500 }
       )
@@ -221,14 +221,14 @@ export async function POST(request: Request) {
       )
     }
 
-    // Prefer user JWT for reads/writes so local dev works without SUPABASE_SERVICE_ROLE_KEY (RLS matches browser)
+    // Prefer user JWT for reads/writes so local dev works without SUPABASE_SECRET_KEY (RLS matches browser)
     const readSb =
-      accessToken != null ? createSupabaseWithAccessToken(accessToken) : hasServiceRoleKey() ? createAdminClient() : null
+      accessToken != null ? createSupabaseWithAccessToken(accessToken) : hasSecretKey() ? createAdminClient() : null
     if (!readSb) {
       return NextResponse.json(
         {
           error:
-            'Server misconfiguration: set SUPABASE_SERVICE_ROLE_KEY (or sign in with a session that provides an access token).',
+            'Server misconfiguration: set SUPABASE_SECRET_KEY (or sign in with a session that provides an access token).',
         },
         { status: 500 }
       )
@@ -261,7 +261,7 @@ export async function POST(request: Request) {
     const doctorName = (profile?.full_name as string | undefined) || user.email || 'Doctor'
 
     const writeSb =
-      accessToken != null && !hasServiceRoleKey() ? createSupabaseWithAccessToken(accessToken) : createAdminClient()
+      accessToken != null && !hasSecretKey() ? createSupabaseWithAccessToken(accessToken) : createAdminClient()
 
     // First, ensure the doctor exists in the doctors table
     const { data: existingDoctor } = await writeSb

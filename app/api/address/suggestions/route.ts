@@ -23,11 +23,11 @@ export async function GET(req: Request) {
   }
 
   try {
-    const merged = await fetchAddressSuggestions(search)
+    const suggestions = await fetchAddressSuggestions(search)
     return NextResponse.json({
       success: true,
-      count: merged.length,
-      suggestions: merged.map((fullAddress) => ({ fullAddress })),
+      count: suggestions.length,
+      suggestions,
     })
   } catch {
     return NextResponse.json({ success: true, count: 0, suggestions: [] })

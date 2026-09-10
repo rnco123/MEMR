@@ -76,7 +76,7 @@ export async function GET(_request: Request, { params }: { params: { id: string 
         appointments:appointment_id (
           appointment_date,
           appointment_time,
-          services:service_id ( title_en, title_es )
+          services:service_id ( id, title_en, title_es )
         )
       `
       )

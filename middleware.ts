@@ -76,7 +76,7 @@ export async function middleware(request: NextRequest) {
   } catch (e) {
     console.error('[middleware] Supabase env not configured:', e)
     return new NextResponse(
-      'Server misconfiguration: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY, then redeploy.',
+      'Server misconfiguration: set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, then redeploy.',
       { status: 503, headers: { 'content-type': 'text/plain; charset=utf-8' } }
     )
   }

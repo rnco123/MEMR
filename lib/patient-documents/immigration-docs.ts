@@ -83,7 +83,7 @@ export async function listImmigrationDocumentsForPatient(
       created_at,
       program_type,
       consent_ack,
-      appointments:appointment_id ( services:service_id ( title_en, title_es ) )
+      appointments:appointment_id ( services:service_id ( id, title_en, title_es ) )
     `
     )
     .eq('patient_id', patientId)

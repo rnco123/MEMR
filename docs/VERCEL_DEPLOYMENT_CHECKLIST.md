@@ -26,8 +26,8 @@ Set these in **Vercel Dashboard → Project → Settings → Environment Variabl
 **Required:**
 ```
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+SUPABASE_SECRET_KEY=sb_secret_...
 NEXT_PUBLIC_DAILY_API_KEY=your_daily_co_api_key
 NEXT_PUBLIC_DAILY_DOMAIN=your_daily_co_domain
 ADMIN_SIGNUP_PIN=your_secure_4_digit_pin
@@ -45,7 +45,7 @@ SENTRY_AUTH_TOKEN=your_sentry_auth_token (for source maps)
 **Important:**
 - Set these for **Production**, **Preview**, and **Development** environments
 - Never commit these to Git
-- `SUPABASE_SERVICE_ROLE_KEY` is secret - keep it secure
+- `SUPABASE_SECRET_KEY` is secret - keep it secure
 
 ### 2. Database Migrations (CRITICAL)
 

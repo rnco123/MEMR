@@ -14,6 +14,8 @@ blob-report/
 # env files
 .env
 .env.local
+# local secrets file (holds SUPABASE_SECRET_KEY) — bare name, not matched by `.env*`
+env
 
 # misc
 .DS_Store

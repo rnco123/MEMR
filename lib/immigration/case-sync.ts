@@ -489,7 +489,7 @@ async function listImmigrationCasesInner(
         location_id,
         appointment_date,
         appointment_time,
-        services:service_id ( title_en, title_es ),
+        services:service_id ( id, title_en, title_es ),
         patients:patient_id ( first_name, last_name, location_id )
       )
     `

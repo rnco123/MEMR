@@ -36,7 +36,7 @@ async function getUserFromRequest(
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
   if (token) {
-    const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
+    const supabase = createClient(config.supabase.url, config.supabase.publishableKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
     const {
@@ -114,7 +114,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = authResult?.token
-      ? createClient(config.supabase.url, config.supabase.anonKey, {
+      ? createClient(config.supabase.url, config.supabase.publishableKey, {
           global: { headers: { Authorization: `Bearer ${authResult.token}` } },
         })
       : await createServerClient()

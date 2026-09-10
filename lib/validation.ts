@@ -129,14 +129,14 @@ export const nurseWalkInIntakeSchema = z.object({
 export const nursePatientCreateSchema = z.object({
   first_name: z.string().min(1, 'First name is required').max(100).trim(),
   last_name: z.string().min(1, 'Last name is required').max(100).trim(),
-  email: z.union([z.string().email().max(200), z.literal(''), z.null()]).optional(),
+  // Email and date of birth identify a returning patient, so both are required at
+  // every entry point — the bridge matches on them to avoid forking a chart.
+  email: z.string().email('A valid email is required').max(200),
   phone: z.union([z.string().max(30), z.literal(''), z.null()]).optional(),
   gender: z.enum(['male', 'female', 'other']).optional().nullable(),
   date_of_birth: z
     .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD')
-    .optional()
-    .nullable(),
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date of birth must be YYYY-MM-DD'),
   street_address: z.union([z.string().max(500), z.literal(''), z.null()]).optional(),
   state: z.union([z.string().max(100), z.literal(''), z.null()]).optional(),
   zip_code: z.union([z.string().max(20), z.literal(''), z.null()]).optional(),

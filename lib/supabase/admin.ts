@@ -8,7 +8,7 @@ import { config } from '@/lib/config'
 export function createAdminClient() {
   return createClient(
     config.supabase.url,
-    config.supabase.serviceRoleKey,
+    config.supabase.secretKey,
     {
       auth: {
         autoRefreshToken: false,
