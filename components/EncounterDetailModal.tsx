@@ -1173,6 +1173,17 @@ export function EncounterDetailModal({
                   onPatientUpdated={updated => setPatient(updated)}
                 />
 
+                {encounter && (
+                  <EncounterPhysicalExamPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditPhysicalExam}
+                    onSaved={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
                 {showI693Form ? (
                   <EncounterImmigrationIntakePanel
                     encounterId={encounterId}
@@ -1206,17 +1217,6 @@ export function EncounterDetailModal({
                     encounter={encounter}
                     readOnly={!canEditClinicalEncounter}
                     onUpdated={async () => {
-                      await refreshEncounterFromApi()
-                    }}
-                  />
-                )}
-
-                {encounter && (
-                  <EncounterPhysicalExamPanel
-                    encounterId={encounterId}
-                    encounterStatus={encounter.status}
-                    canEdit={canEditPhysicalExam}
-                    onSaved={async () => {
                       await refreshEncounterFromApi()
                     }}
                   />

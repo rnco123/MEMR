@@ -4,25 +4,14 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isForbiddenResponse } from '@/lib/http/api-response'
-
-type ConsentKey =
-  | 'telemedicine'
-  | 'hipaa'
-  | 'cash_pay'
-  | 'texas_ai'
-  | 'surgery'
-  | 'no_insurance'
-  | 'immigration'
-  | 'dot'
-  | 'ma_supervision'
+import { canJoinTelemedicine } from '@/lib/encounter-status'
 
 interface EncounterRooming {
   id: number
+  status?: string | null
   identity_verified_at?: string | null
-  prescribing_location_ack_at?: string | null
   ma_supervision_ack_at?: string | null
   ready_for_doctor_at?: string | null
-  consent_ack?: Record<string, string> | null
 }
 
 interface Props {
@@ -32,23 +21,9 @@ interface Props {
   onUpdated: () => void
 }
 
-const CONSENT_LABEL_KEYS: { key: ConsentKey; labelKey: string }[] = [
-  { key: 'telemedicine', labelKey: 'encounter_modal.consent_telemedicine' },
-  { key: 'hipaa', labelKey: 'encounter_modal.consent_hipaa' },
-  { key: 'cash_pay', labelKey: 'encounter_modal.consent_cash_pay' },
-  { key: 'texas_ai', labelKey: 'encounter_modal.consent_texas_ai' },
-  { key: 'surgery', labelKey: 'encounter_modal.consent_surgery' },
-  { key: 'no_insurance', labelKey: 'encounter_modal.consent_no_insurance' },
-  { key: 'immigration', labelKey: 'encounter_modal.consent_immigration' },
-  { key: 'dot', labelKey: 'encounter_modal.consent_dot' },
-  { key: 'ma_supervision', labelKey: 'encounter_modal.consent_ma_supervision' },
-]
-
 export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false, onUpdated }: Props) {
   const { t } = useT()
   const [saving, setSaving] = useState(false)
-
-  const ack = encounter.consent_ack && typeof encounter.consent_ack === 'object' ? encounter.consent_ack : {}
 
   const patchRooming = async (body: Record<string, unknown>) => {
     if (readOnly) return
@@ -74,14 +49,6 @@ export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false
     }
   }
 
-  const toggleConsent = (key: ConsentKey, checked: boolean) => {
-    if (readOnly) return
-    const next = { ...ack }
-    if (checked) next[key] = new Date().toISOString()
-    else delete next[key]
-    void patchRooming({ consent_ack: next })
-  }
-
   const workflowRows = [
     {
       k: 'identity_verified' as const,
@@ -89,24 +56,19 @@ export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false
       at: encounter.identity_verified_at,
     },
     {
-      k: 'prescribing_location_ack' as const,
-      labelKey: 'encounter_modal.rooming_prescribing_loc',
-      at: encounter.prescribing_location_ack_at,
-    },
-    {
       k: 'ma_supervision_ack' as const,
       labelKey: 'encounter_modal.rooming_ma_supervision',
       at: encounter.ma_supervision_ack_at,
     },
-    {
-      k: 'ready_for_doctor' as const,
-      labelKey: 'encounter_modal.rooming_ready_doctor',
-      at: encounter.ready_for_doctor_at,
-    },
   ]
 
+  const readyForDoctor = !!encounter.ready_for_doctor_at
+  // The provider board lists a patient only once vitals are saved (status reaches
+  // vitals_assessed) AND rooming is marked ready, so warn when half the pair is missing.
+  const vitalsAssessed = canJoinTelemedicine(encounter.status)
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-6 shadow-sm">
+    <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4 shadow-sm">
       <h3 className="text-lg font-bold text-slate-900">{t('encounter_modal.rooming_title')}</h3>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -129,23 +91,43 @@ export function EncounterRoomingPanel({ encounterId, encounter, readOnly = false
         ))}
       </div>
 
-      <div>
-        <p className="text-sm text-slate-500 mb-2">{t('encounter_modal.rooming_consent_header')}</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {CONSENT_LABEL_KEYS.map(({ key, labelKey }) => (
-            <label key={key} className="flex items-center gap-2 text-sm text-slate-800">
-              <input
-                type="checkbox"
-                checked={!!ack[key]}
-                disabled={saving || readOnly}
-                onChange={(e) => toggleConsent(key, e.target.checked)}
-                className="rounded border-slate-300 text-[#2E6EF3] focus:ring-[#2E6EF3]/35"
-              />
-              {t(labelKey)}
-            </label>
-          ))}
-        </div>
-      </div>
+      {/* Handoff to the provider: stamping this puts the patient on the physician
+          flowboard's "ready for telemedicine" tiles. */}
+      <label
+        className={`flex items-start gap-3 p-4 rounded-xl border transition-colors ${
+          readyForDoctor
+            ? 'bg-emerald-50/80 border-emerald-200'
+            : 'bg-[#f9fbff] border-slate-200'
+        } ${readOnly ? '' : 'cursor-pointer hover:border-emerald-300'}`}
+      >
+        <input
+          type="checkbox"
+          checked={readyForDoctor}
+          disabled={saving || readOnly}
+          onChange={(e) => void patchRooming({ ready_for_doctor: e.target.checked })}
+          className="mt-0.5 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500/35"
+        />
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-slate-900">
+            {t('encounter_modal.rooming_ready_doctor')}
+          </span>
+          <span className="block text-xs text-slate-500 mt-0.5">
+            {t('encounter_modal.rooming_ready_doctor_hint')}
+          </span>
+          {readyForDoctor && (
+            <span className="block text-xs text-emerald-800 font-medium mt-1">
+              {t('encounter_modal.rooming_ready_doctor_at', {
+                time: new Date(encounter.ready_for_doctor_at!).toLocaleString(),
+              })}
+            </span>
+          )}
+          {readyForDoctor && !vitalsAssessed && (
+            <span className="block text-xs text-amber-800 font-medium mt-1">
+              {t('encounter_modal.rooming_ready_doctor_needs_vitals')}
+            </span>
+          )}
+        </span>
+      </label>
     </div>
   )
 }
