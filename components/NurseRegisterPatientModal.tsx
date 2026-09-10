@@ -8,7 +8,7 @@ import { AddressLookupFields } from '@/components/AddressLookupFields'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
-import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { stripServiceFee } from '@/lib/services/service-title'
 import { useLocationServices } from '@/lib/configurations/use-location-services'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
@@ -226,7 +226,7 @@ export function NurseRegisterPatientModal({
     const title = language === 'es' && service.title_es
       ? service.title_es
       : service.title_en
-    return stripServiceFeeForTenant(title, selectedLocation?.tenant_id)
+    return stripServiceFee(title)
   }
 
   const filteredLocations = useMemo(() => {

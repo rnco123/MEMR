@@ -2,21 +2,22 @@ import { resolveI693TemplateGroup, resolveCivilSurgeonAddressForGroup } from '@/
 
 describe('resolveI693TemplateGroup', () => {
   it('maps standard Clinica groups A/B/C', () => {
-    expect(resolveI693TemplateGroup('A', {})).toBe('A')
-    expect(resolveI693TemplateGroup('B', {})).toBe('B')
-    expect(resolveI693TemplateGroup('C', {})).toBe('C')
+    expect(resolveI693TemplateGroup('A')).toBe('A')
+    expect(resolveI693TemplateGroup('B')).toBe('B')
+    expect(resolveI693TemplateGroup('C')).toBe('C')
   })
 
-  it('maps Kempwood CLN-28 to Houston (B) template', () => {
-    expect(resolveI693TemplateGroup('CLN-28', {})).toBe('B')
+  // Kempwood used to be recognised by its tenant id and by the literal 'CLN-28'.
+  // Its row carries 'B' now, like every other Houston clinic, so nothing about the
+  // clinic is special-cased here.
+  it('returns null for a group outside A/B/C', () => {
+    expect(resolveI693TemplateGroup('CLN-28')).toBeNull()
+    expect(resolveI693TemplateGroup('D')).toBeNull()
+    expect(resolveI693TemplateGroup('TELE')).toBeNull()
   })
 
-  it('maps Kempwood tenant to Houston (B) template', () => {
-    expect(resolveI693TemplateGroup('', { tenant_id: 3 })).toBe('B')
-  })
-
-  it('returns null for unknown groups', () => {
-    expect(resolveI693TemplateGroup('CLN-99', { tenant_id: 1 })).toBeNull()
+  it('returns null when a location has no group', () => {
+    expect(resolveI693TemplateGroup('')).toBeNull()
   })
 })
 

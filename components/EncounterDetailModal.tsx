@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
-import { stripServiceFeeForTenant } from '@/lib/tenants'
+import { stripServiceFee } from '@/lib/services/service-title'
 import { useLocationServices } from '@/lib/configurations/use-location-services'
 import { SelectDrawer } from '@/components/SelectDrawer'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
@@ -330,7 +330,7 @@ export function EncounterDetailModal({
     if (!svc) return t('common.na')
     const title = (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) || ''
     if (!title) return t('common.na')
-    return stripServiceFeeForTenant(title, appointment?.locations?.tenant_id)
+    return stripServiceFee(title)
   }, [appointment?.services, appointment?.locations?.tenant_id, language, t])
 
   const appointmentLocationTitle = useMemo(() => {
@@ -1123,9 +1123,8 @@ export function EncounterDetailModal({
                                 emptyLabel={t('common.no_results')}
                                 options={serviceOptions.map((svc) => ({
                                   value: String(svc.id),
-                                  label: stripServiceFeeForTenant(
-                                    (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? '',
-                                    appointment?.locations?.tenant_id
+                                  label: stripServiceFee(
+                                    (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? ''
                                   ),
                                 }))}
                               />
@@ -1174,48 +1173,6 @@ export function EncounterDetailModal({
                   onPatientUpdated={updated => setPatient(updated)}
                 />
 
-                {encounter && (
-                  <EncounterRoomingPanel
-                    encounterId={encounterId}
-                    encounter={encounter}
-                    readOnly={!canEditClinicalEncounter}
-                    onUpdated={async () => {
-                      await refreshEncounterFromApi()
-                    }}
-                  />
-                )}
-
-                {encounter && (
-                  <EncounterPhysicalExamPanel
-                    encounterId={encounterId}
-                    encounterStatus={encounter.status}
-                    canEdit={canEditPhysicalExam}
-                    onSaved={async () => {
-                      await refreshEncounterFromApi()
-                    }}
-                  />
-                )}
-
-                {encounter && (
-                  <EncounterPrescriptionsPanel
-                    encounterId={encounterId}
-                    encounterStatus={encounter.status}
-                    canEdit={canEditEncounterRx}
-                    canSendToAdmin={canSendPrescriptionsToAdmin}
-                    canManagePharmacy={canManagePharmacy}
-                    canPrintPrescriptions={isAdminViewer}
-                    hasDoctor={encounter.doctor_id != null}
-                    hasPharmacy={encounter.pharmacy_id != null}
-                    pharmacyId={encounter.pharmacy_id}
-                    assignedPharmacy={
-                      pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
-                    }
-                    pharmacies={pharmacies}
-                    onPharmacyUpdated={refreshEncounterAndPharmacy}
-                    onPharmaciesReload={reloadPharmacyRegistry}
-                  />
-                )}
-
                 {showI693Form ? (
                   <EncounterImmigrationIntakePanel
                     encounterId={encounterId}
@@ -1243,6 +1200,28 @@ export function EncounterDetailModal({
                   }}
                 />
 
+                {encounter && (
+                  <EncounterRoomingPanel
+                    encounterId={encounterId}
+                    encounter={encounter}
+                    readOnly={!canEditClinicalEncounter}
+                    onUpdated={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
+                {encounter && (
+                  <EncounterPhysicalExamPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditPhysicalExam}
+                    onSaved={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
                 <EncounterSoapPanel
                   encounterId={encounterId}
                   aiSoap={soapNotes}
@@ -1250,6 +1229,26 @@ export function EncounterDetailModal({
                   encounterStatus={encounter?.status ?? null}
                   onDownloadDoctorPdf={soap => void handleDownloadDoctorSoapPdf(soap)}
                 />
+
+                {encounter && (
+                  <EncounterPrescriptionsPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditEncounterRx}
+                    canSendToAdmin={canSendPrescriptionsToAdmin}
+                    canManagePharmacy={canManagePharmacy}
+                    canPrintPrescriptions={isAdminViewer}
+                    hasDoctor={encounter.doctor_id != null}
+                    hasPharmacy={encounter.pharmacy_id != null}
+                    pharmacyId={encounter.pharmacy_id}
+                    assignedPharmacy={
+                      pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
+                    }
+                    pharmacies={pharmacies}
+                    onPharmacyUpdated={refreshEncounterAndPharmacy}
+                    onPharmaciesReload={reloadPharmacyRegistry}
+                  />
+                )}
               </div>
             )}
           </div>
