@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
 import { useT } from '@/lib/i18n'
 import { calculateAgeFromDob } from '@/lib/nurse/walk-in-intake'
@@ -667,14 +668,24 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.service')}</label>
-                    <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className={`${INPUT} mt-1`}>
-                      {availableServices.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {serviceTitle(s)}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="text-xs text-slate-600" htmlFor="walkin-service">
+                      {t('nurse_walkin.service')}
+                    </label>
+                    <div className="mt-1">
+                      <SelectDrawer
+                        id="walkin-service"
+                        value={serviceId}
+                        onChange={setServiceId}
+                        disabled={availableServices.length === 0}
+                        placeholder={t('patient_register.treatment_type_ph')}
+                        searchPlaceholder={t('common.search')}
+                        emptyLabel={t('common.no_results')}
+                        options={availableServices.map((s) => ({
+                          value: String(s.id),
+                          label: serviceTitle(s),
+                        }))}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs text-slate-600">{t('nurse_walkin.visit_type')}</label>
