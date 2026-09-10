@@ -30,8 +30,8 @@ npm install
    - Copy `.env.local.example` to `.env.local`
    - Fill in your Supabase credentials:
      - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL
-     - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous key
-     - `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key (optional, for server-side operations)
+     - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: Your Supabase publishable key (`sb_publishable_…`)
+     - `SUPABASE_SECRET_KEY`: Your Supabase secret key (`sb_secret_…`, server-side only)
    - Fill in your Daily.co credentials:
      - `NEXT_PUBLIC_DAILY_API_KEY`: Your Daily.co API key
      - `NEXT_PUBLIC_DAILY_DOMAIN`: Your Daily.co domain
@@ -84,8 +84,8 @@ You'll need to provide the following environment variables:
 ### Supabase
 
 - `NEXT_PUBLIC_SUPABASE_URL`: Your Supabase project URL (found in your Supabase dashboard)
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous/public key
-- `SUPABASE_SERVICE_ROLE_KEY`: Your Supabase service role key (for server-side operations)
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`: Your Supabase publishable key (`sb_publishable_…`)
+- `SUPABASE_SECRET_KEY`: Your Supabase secret key (`sb_secret_…`, server-side only — bypasses RLS)
 
 ### Daily.co
 

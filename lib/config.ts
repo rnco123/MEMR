@@ -17,21 +17,16 @@ function getEnvVar(key: string, required = true): string {
   return value || ''
 }
 
-const supabasePublishable =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const supabaseSecret = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const supabasePublishable = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || ''
+const supabaseSecret = process.env.SUPABASE_SECRET_KEY || ''
 
 export const config = {
   supabase: {
     url: getEnvVar('NEXT_PUBLIC_SUPABASE_URL'),
-    /** Publishable (sb_publishable_…) or legacy anon JWT */
+    /** Publishable key (sb_publishable_…) — safe for browser; RLS applies. */
     publishableKey: supabasePublishable,
-    /** Secret (sb_secret_…) or legacy service_role JWT */
+    /** Secret key (sb_secret_…) — server-only; bypasses RLS. */
     secretKey: supabaseSecret,
-    /** @deprecated use publishableKey */
-    anonKey: supabasePublishable,
-    /** @deprecated use secretKey */
-    serviceRoleKey: supabaseSecret,
   },
   daily: {
     /** Server-only. Never expose via NEXT_PUBLIC_* — would leak into client bundle (H-10). */
@@ -72,10 +67,10 @@ if (config.app.isProduction && !isBuildTime && isServer) {
   const missing: string[] = []
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) missing.push('NEXT_PUBLIC_SUPABASE_URL')
   if (!supabasePublishable) {
-    missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY')
+    missing.push('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY')
   }
   if (!supabaseSecret) {
-    missing.push('SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY')
+    missing.push('SUPABASE_SECRET_KEY')
   }
   if (!process.env.DAILY_API_KEY) {
     missing.push('DAILY_API_KEY')

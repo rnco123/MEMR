@@ -19,7 +19,7 @@ async function getUserFromRequest(request: Request): Promise<{ user: { id: strin
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null
 
   if (token) {
-    const supabase = createClient(config.supabase.url, config.supabase.anonKey, {
+    const supabase = createClient(config.supabase.url, config.supabase.publishableKey, {
       global: { headers: { Authorization: `Bearer ${token}` } },
     })
     const { data: { user }, error } = await supabase.auth.getUser()

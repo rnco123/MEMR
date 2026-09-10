@@ -8,6 +8,7 @@ import {
   canEditEncounterSoap,
   canEditSoapByRole,
 } from '@/lib/soap/encounter-doctor-soap'
+import { bridgePatch } from '@/lib/bridge/sync'
 
 export type PatientInfoUpdatePayload = {
   first_name: string
@@ -216,14 +217,14 @@ export async function saveEncounterPatientInfo(
     zip_code: normalizeNullable(args.payload.zip_code),
   }
 
-  const { data: saved, error: saveErr } = await admin
-    .from('patients')
-    .update(patientUpdate)
-    .eq('id', ctx.patient.id)
-    .select(PATIENT_INFO_SELECT)
-    .single()
+  // mcm-bridge owns every write to `patients`; this app only reads it.
+  const updated = await bridgePatch<{ record?: Record<string, unknown> }>(
+    `/patients/${ctx.patient.id}`,
+    { store: 'emr.patients', ...patientUpdate }
+  )
 
-  if (saveErr) throw saveErr
+  const saved = updated.record
+  if (!saved) throw new ValidationError('Patient update did not return the saved row')
 
   const { error: auditErr } = await admin.from('patient_info_audit').insert({
     encounter_id: args.encounterId,

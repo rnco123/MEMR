@@ -36,7 +36,7 @@ export async function GET() {
         appointments:appointment_id (
           appointment_date,
           appointment_time,
-          services:service_id ( title_en, title_es )
+          services:service_id ( id, title_en, title_es )
         )
       `
       )

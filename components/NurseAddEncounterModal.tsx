@@ -15,8 +15,9 @@ import { AddressLookupInput } from '@/components/AddressLookupInput'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
-import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
+import { isImmigrationServiceId } from '@/lib/i693/immigration-eligibility'
+import { stripServiceFee } from '@/lib/services/service-title'
 import {
   applyNurseScreeningToI693Form,
   emptyNurseImmigrationScreening,
@@ -156,21 +157,19 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   }, [isOpen, resetForm, t])
 
   const effectiveLocationId = defaultLocationId ?? selectedPatient?.location_id ?? null
-  const effectiveTenantId = useMemo(
-    () => locations.find((l) => l.id === effectiveLocationId)?.tenant_id ?? null,
-    [effectiveLocationId, locations]
-  )
 
-  // CSM and Loop tenants offer only immigration services here (Kempwood keeps
-  // the full list); the general intake/pharmacy sections are hidden for them.
-  const immigrationOnlyTenant = isImmigrationOnlyTenant(effectiveTenantId)
+  // Which sections to show follows the service being booked, not the clinic's tenant.
+  // An immigration exam gets the USCIS screening; anything else gets general intake
+  // and pharmacy. This used to be a list of tenant ids, which meant a clinic that
+  // offered both got the wrong form for one of them.
+  const immigrationEncounter = isImmigrationServiceId(serviceId)
 
-  const availableServices = useMemo(() => {
-    if (!immigrationOnlyTenant) return services
-    return services.filter(
-      (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-    )
-  }, [services, immigrationOnlyTenant])
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(effectiveLocationId)
+
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
 
   useEffect(() => {
     setServiceId((current) => {
@@ -336,12 +335,12 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
 
   const serviceTitle = (s: ServiceRow) => {
     const title = language === 'es' && s.title_es ? s.title_es : s.title_en
-    return stripServiceFeeForTenant(title, effectiveTenantId)
+    return stripServiceFee(title)
   }
 
   // Booking-app rule: Female matched on the first letter (Female / Femenino) and age > 15.
   const showWomensHealth =
-    immigrationOnlyTenant &&
+    immigrationEncounter &&
     (selectedPatient?.gender ?? '').trim().toLowerCase().startsWith('f') &&
     (calculateAgeFromDob(selectedPatient?.date_of_birth ?? null) ?? 0) > 15
 
@@ -382,7 +381,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       toast.error(t('patient_register.treatment_type_required'))
       return
     }
-    if (immigrationOnlyTenant && !screeningComplete) {
+    if (immigrationEncounter && !screeningComplete) {
       toast.error(t('imm_intake.screening_required'))
       return
     }
@@ -400,15 +399,15 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           service_id: Number(serviceId),
           location_id: defaultLocationId ?? selectedPatient.location_id,
           onsite_type: onsiteType,
-          pharmacy_id: !immigrationOnlyTenant && pharmacyId ? Number(pharmacyId) : null,
+          pharmacy_id: !immigrationEncounter && pharmacyId ? Number(pharmacyId) : null,
           intake:
-            !immigrationOnlyTenant && Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
+            !immigrationEncounter && Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
         }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || json.message || 'Failed')
       toast.success(isFuture ? t('nurse_walkin.created_future') : t('nurse_walkin.created'))
-      if (immigrationOnlyTenant) {
+      if (immigrationEncounter) {
         await saveScreeningToI693(Number(json.data.encounter_id))
       }
       onCreated({
@@ -692,7 +691,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 </div>
               </section>
 
-              {immigrationOnlyTenant && (
+              {immigrationEncounter && (
                 <ImmigrationScreeningFields
                   value={immScreening}
                   onChange={setImmScreening}
@@ -703,7 +702,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 />
               )}
 
-              {!immigrationOnlyTenant && (
+              {!immigrationEncounter && (
                 <IntakeFormFields
                   value={intakeForm}
                   onChange={setIntakeForm}
@@ -714,7 +713,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 />
               )}
 
-              {!immigrationOnlyTenant && (
+              {!immigrationEncounter && (
               <section>
                 <h3 className={SECTION}>{t('nurse_walkin.pharmacy')}</h3>
                 <input

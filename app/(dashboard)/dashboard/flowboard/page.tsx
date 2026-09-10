@@ -41,9 +41,12 @@ import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { flowboardServiceTitle } from '@/lib/flowboard/service-title'
 import { compareActivityDesc } from '@/lib/flowboard/activity-sort'
+import { TelemedicineReadyTiles } from '@/components/TelemedicineReadyTiles'
 
 const CACHE_KEY = 'flowboard_appointments'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100]
+/** The ready-for-telemedicine queue is live; refetch quietly on this cadence. */
+const READY_POLL_MS = 45_000
 
 function formatDob(dateString: string | null | undefined): string | null {
   return formatDobShort(dateString)
@@ -72,6 +75,7 @@ interface Appointment {
   activity_at?: string
   encounter_status?: string
   encounter_id?: number
+  ready_for_doctor_at?: string | null
   location_id?: number | null
   location_title?: string | null
   patient?: {
@@ -229,6 +233,36 @@ function FlowboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional: avoids re-running on every auth-context re-render that yields a new user object with the same id.
   }, [selectedLocationId, user?.id, role, fetchAssignedAppointments])
 
+  // Patients the nurse hands off (vitals saved + rooming marked ready) should surface
+  // on their own, without the provider hitting refresh.
+  useEffect(() => {
+    if (!user || !isClinicalDashboardRole(role) || role === UserRole.NURSE) return
+    const timer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return
+      fetchAssignedAppointments(false)
+    }, READY_POLL_MS)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user?.id (not the user object reference) is intentional.
+  }, [user?.id, role, fetchAssignedAppointments])
+
+  const openEncounterModal = useCallback((appointment: Appointment) => {
+    if (!appointment.encounter_id) return
+    setSelectedEncounter({
+      encounterId: appointment.encounter_id,
+      appointmentId: appointment.id,
+      patientId: appointment.patient_id,
+      encounterStatus: appointment.encounter_status,
+    })
+  }, [])
+
+  const joinTelemedicineFor = useCallback(
+    (appointment: Appointment) => {
+      if (!appointment.encounter_id) return
+      router.push(`/video?encounter=${appointment.encounter_id}`)
+    },
+    [router]
+  )
+
   const refreshData = useCallback(() => {
     try {
       sessionStorage.removeItem(CACHE_KEY)
@@ -256,6 +290,18 @@ function FlowboardPage() {
     const formatted = formatClinicTimeSlot(timeString)
     return formatted || t('common.em_dash')
   }
+
+  // Ready-for-telemedicine tiles read the unfiltered (location-scoped) list so the
+  // handoff queue stays visible while the provider searches or filters by status.
+  const readyTiles = (
+    <TelemedicineReadyTiles
+      appointments={appointments}
+      formatTime={formatTime}
+      formatDob={formatDob}
+      onJoin={(appointment) => joinTelemedicineFor(appointment as Appointment)}
+      onOpenChart={(appointment) => openEncounterModal(appointment as Appointment)}
+    />
+  )
 
   // Filter and sort appointments (search/filter on ALL records)
   const filteredAppointments = useMemo(() => {
@@ -418,6 +464,8 @@ function FlowboardPage() {
             {isRefreshing ? t('common.refreshing') : t('common.refresh')}
           </button>
         </div>
+
+        {readyTiles}
 
         {/* Search and Filters */}
         <FlowboardFilterToolbar
@@ -779,6 +827,7 @@ function FlowboardPage() {
 
         {/* Mobile card list */}
         <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3 space-y-3 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          {!loading && readyTiles}
           {loading ? (
             <div className="flex items-center justify-center py-16">
               <LoadingSpinner message={t('flow.loading')} />

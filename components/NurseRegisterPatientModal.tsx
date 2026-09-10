@@ -8,13 +8,21 @@ import { AddressLookupFields } from '@/components/AddressLookupFields'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
-import { isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
+import { stripServiceFee } from '@/lib/services/service-title'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
   PATIENT_DOCUMENT_ACCEPT,
   validatePatientDocumentUpload,
 } from '@/lib/security/file-upload'
+
+/** Badge shown next to a queued upload. */
+function pendingFileKind(file: File): 'PDF' | 'DOC' | 'IMG' {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.pdf')) return 'PDF'
+  if (name.endsWith('.docx')) return 'DOC'
+  return 'IMG'
+}
 
 const INPUT =
   'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/35 focus:border-violet-400 transition-shadow'
@@ -200,13 +208,12 @@ export function NurseRegisterPatientModal({
     () => assignedLocations.find((loc) => String(loc.id) === locationId) ?? null,
     [assignedLocations, locationId]
   )
-  // CSM and Loop tenants offer only immigration services; Kempwood keeps the full list.
-  const availableServices = useMemo(() => {
-    if (!isImmigrationOnlyTenant(selectedLocation?.tenant_id)) return services
-    return services.filter(
-      (s) => isImmigrationServiceTitle(s.title_en) || isImmigrationServiceTitle(s.title_es)
-    )
-  }, [services, selectedLocation?.tenant_id])
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than a hardcoded rule about its tenant. A location with
+  // no configuration keeps the full list.
+  const { filterServices } = useLocationServices(selectedLocation?.id)
+
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
 
   useEffect(() => {
     setServiceId((current) => {
@@ -219,7 +226,7 @@ export function NurseRegisterPatientModal({
     const title = language === 'es' && service.title_es
       ? service.title_es
       : service.title_en
-    return stripServiceFeeForTenant(title, selectedLocation?.tenant_id)
+    return stripServiceFee(title)
   }
 
   const filteredLocations = useMemo(() => {
@@ -238,18 +245,20 @@ export function NurseRegisterPatientModal({
     Boolean(locationId) && assignedLocations.some((loc) => String(loc.id) === locationId)
 
   const canSubmit = useMemo(() => {
-    const emailTrimmed = email.trim()
-    const emailOk = !emailTrimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)
+    // Email and date of birth identify a returning patient, so both are required —
+    // without them the bridge cannot tell a repeat visit from a new chart.
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     return Boolean(
       firstName.trim() &&
         lastName.trim() &&
         locationReady &&
         serviceId &&
         emailOk &&
+        dob.trim() &&
         !submitting &&
         !servicesLoading
     )
-  }, [firstName, lastName, locationReady, serviceId, email, submitting, servicesLoading])
+  }, [firstName, lastName, locationReady, serviceId, email, dob, submitting, servicesLoading])
 
   const emailError = useMemo(() => {
     const emailTrimmed = email.trim()
@@ -882,11 +891,13 @@ export function NurseRegisterPatientModal({
                         }`}
                       >
                         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                          item.file.type === 'application/pdf'
+                          pendingFileKind(item.file) === 'PDF'
                             ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
+                            : pendingFileKind(item.file) === 'DOC'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                          {pendingFileKind(item.file)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-slate-800">{item.file.name}</span>

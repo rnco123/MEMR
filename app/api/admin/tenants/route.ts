@@ -1,29 +1,23 @@
 import { NextResponse } from 'next/server'
-import { createAdminClient } from '@/lib/supabase/admin'
 import { handleApiError, ValidationError } from '@/lib/api-error-handler'
 import { requireAdminUser } from '@/lib/admin-auth'
 import { logAuditEvent } from '@/lib/audit-server'
 import { tenantCreateSchema } from '@/lib/validation'
+import { bridgeGet, bridgePost } from '@/lib/bridge/sync'
 import type { TenantRow } from '@/lib/tenants/types'
 
 export const dynamic = 'force-dynamic'
 
-const TENANT_SELECT = 'id, name, tenant_code, is_active, created_at, updated_at'
-
+/**
+ * Tenants live behind mcm-bridge, which owns both Supabase projects. This route keeps
+ * admin auth, validation and auditing; the bridge does the writing and keeps the
+ * portal copy in step.
+ */
 export async function GET() {
   try {
     await requireAdminUser()
-    const admin = createAdminClient()
-
-    const { data, error } = await admin
-      .from('tenants')
-      .select(TENANT_SELECT)
-      .eq('is_active', true)
-      .order('tenant_code', { ascending: true })
-
-    if (error) throw error
-
-    return NextResponse.json({ data: (data ?? []) as TenantRow[] })
+    const data = await bridgeGet<TenantRow[]>('/tenants')
+    return NextResponse.json({ data })
   } catch (e) {
     return handleApiError(e)
   }
@@ -32,7 +26,6 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const user = await requireAdminUser()
-    const admin = createAdminClient()
 
     let body: unknown
     try {
@@ -44,43 +37,21 @@ export async function POST(request: Request) {
     const parsed = tenantCreateSchema.safeParse(body)
     if (!parsed.success) throw parsed.error
 
-    const name = parsed.data.name.trim()
-    const tenantCode = parsed.data.tenant_code.trim()
+    const result = await bridgePost<{ data: TenantRow }>('/tenants', {
+      name: parsed.data.name.trim(),
+      tenant_code: parsed.data.tenant_code.trim(),
+    })
 
-    const { data: existing } = await admin
-      .from('tenants')
-      .select('id')
-      .eq('tenant_code', tenantCode)
-      .maybeSingle()
-
-    if (existing) {
-      throw new ValidationError('Tenant code already exists')
-    }
-
-    const now = new Date().toISOString()
-    const { data, error } = await admin
-      .from('tenants')
-      .insert({
-        name,
-        tenant_code: tenantCode,
-        is_active: true,
-        updated_at: now,
-      })
-      .select(TENANT_SELECT)
-      .single()
-
-    if (error) throw error
-
-    await logAuditEvent('settings_changed', 'system', data.id, {
+    await logAuditEvent('settings_changed', 'system', result.data.id, {
       action: 'tenant_created',
-      name: data.name,
-      tenant_code: data.tenant_code,
+      name: result.data.name,
+      tenant_code: result.data.tenant_code,
       actor_id: user.id,
     })
 
     return NextResponse.json({
       success: true,
-      data: data as TenantRow,
+      data: result.data,
     })
   } catch (e) {
     return handleApiError(e)

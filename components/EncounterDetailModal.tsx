@@ -6,8 +6,9 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
-import { LOOP_TENANT_ID, isImmigrationOnlyTenant, stripServiceFeeForTenant } from '@/lib/tenants'
-import { isImmigrationServiceTitle } from '@/lib/i693/immigration-eligibility'
+import { stripServiceFee } from '@/lib/services/service-title'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { LoadingSpinner } from './LoadingSpinner'
@@ -152,6 +153,7 @@ interface Appointment {
   appointment_time: string | null
   onsite_type: string
   service_id?: number | null
+  location_id?: number | null
   services?: { id?: number; title_en?: string | null; title_es?: string | null } | null
   locations?: { title?: string | null; location_code?: string | null; tenant_id?: number | null } | null
 }
@@ -235,16 +237,24 @@ export function EncounterDetailModal({
 
   // The Loop tenant doesn't allow changing the treatment type (also enforced
   // in the /service PATCH endpoint).
-  const serviceEditHiddenForTenant = appointment?.locations?.tenant_id === LOOP_TENANT_ID
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(appointment?.location_id)
 
-  // Only Kempwood offers the full services list; immigration-only tenants
-  // (CSM, Loop) may only switch between immigration services.
   const serviceOptions = useMemo(() => {
-    if (!isImmigrationOnlyTenant(appointment?.locations?.tenant_id)) return allServices
-    return allServices.filter(
-      (svc) => isImmigrationServiceTitle(svc.title_en) || isImmigrationServiceTitle(svc.title_es)
-    )
-  }, [allServices, appointment?.locations?.tenant_id])
+    const scoped = filterServices(allServices)
+
+    // Keep the encounter's current service selectable even if it has since been
+    // unassigned from this location — otherwise the dropdown would silently show
+    // a blank value for a record that does have a service.
+    const currentId = appointment?.service_id
+    if (currentId != null && !scoped.some((svc) => svc.id === currentId)) {
+      const current = allServices.find((svc) => svc.id === currentId)
+      if (current) return [current, ...scoped]
+    }
+    return scoped
+  }, [allServices, appointment?.service_id, filterServices])
 
   const handleStartEditService = () => {
     void loadServices()
@@ -320,7 +330,7 @@ export function EncounterDetailModal({
     if (!svc) return t('common.na')
     const title = (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) || ''
     if (!title) return t('common.na')
-    return stripServiceFeeForTenant(title, appointment?.locations?.tenant_id)
+    return stripServiceFee(title)
   }, [appointment?.services, appointment?.locations?.tenant_id, language, t])
 
   const appointmentLocationTitle = useMemo(() => {
@@ -364,6 +374,7 @@ export function EncounterDetailModal({
             appointment_time: appointmentData.appointment_time as string | null,
             onsite_type: appointmentData.onsite_type as string,
             service_id: appointmentData.service_id as number | null,
+            location_id: appointmentData.location_id as number | null,
             services: appointmentData.services as Appointment['services'],
             locations: appointmentData.locations as Appointment['locations'],
           })
@@ -1088,7 +1099,7 @@ export function EncounterDetailModal({
                         <div className="min-w-0">
                           <div className="flex items-center justify-between gap-2 mb-1">
                             <p className="text-slate-500 text-sm">{t('nurse_walkin.service')}</p>
-                            {canEditWorkflow && !encounterLocked && !editingService && !serviceEditHiddenForTenant && (
+                            {canEditWorkflow && !encounterLocked && !editingService && (
                               <button
                                 type="button"
                                 onClick={handleStartEditService}
@@ -1103,22 +1114,20 @@ export function EncounterDetailModal({
                           </div>
                           {editingService ? (
                             <div className="space-y-2 mt-1">
-                              <select
+                              <SelectDrawer
                                 value={selectedServiceId}
-                                onChange={(e) => setSelectedServiceId(e.target.value)}
+                                onChange={setSelectedServiceId}
                                 disabled={savingService}
-                                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]"
-                              >
-                                <option value="">{t('patient_register.treatment_type_ph')}</option>
-                                {serviceOptions.map((svc) => (
-                                  <option key={svc.id} value={svc.id}>
-                                    {stripServiceFeeForTenant(
-                                      (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? '',
-                                      appointment?.locations?.tenant_id
-                                    )}
-                                  </option>
-                                ))}
-                              </select>
+                                placeholder={t('patient_register.treatment_type_ph')}
+                                searchPlaceholder={t('common.search')}
+                                emptyLabel={t('common.no_results')}
+                                options={serviceOptions.map((svc) => ({
+                                  value: String(svc.id),
+                                  label: stripServiceFee(
+                                    (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? ''
+                                  ),
+                                }))}
+                              />
                               <div className="flex items-center gap-2">
                                 <button
                                   type="button"
@@ -1165,17 +1174,6 @@ export function EncounterDetailModal({
                 />
 
                 {encounter && (
-                  <EncounterRoomingPanel
-                    encounterId={encounterId}
-                    encounter={encounter}
-                    readOnly={!canEditClinicalEncounter}
-                    onUpdated={async () => {
-                      await refreshEncounterFromApi()
-                    }}
-                  />
-                )}
-
-                {encounter && (
                   <EncounterPhysicalExamPanel
                     encounterId={encounterId}
                     encounterStatus={encounter.status}
@@ -1183,26 +1181,6 @@ export function EncounterDetailModal({
                     onSaved={async () => {
                       await refreshEncounterFromApi()
                     }}
-                  />
-                )}
-
-                {encounter && (
-                  <EncounterPrescriptionsPanel
-                    encounterId={encounterId}
-                    encounterStatus={encounter.status}
-                    canEdit={canEditEncounterRx}
-                    canSendToAdmin={canSendPrescriptionsToAdmin}
-                    canManagePharmacy={canManagePharmacy}
-                    canPrintPrescriptions={isAdminViewer}
-                    hasDoctor={encounter.doctor_id != null}
-                    hasPharmacy={encounter.pharmacy_id != null}
-                    pharmacyId={encounter.pharmacy_id}
-                    assignedPharmacy={
-                      pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
-                    }
-                    pharmacies={pharmacies}
-                    onPharmacyUpdated={refreshEncounterAndPharmacy}
-                    onPharmaciesReload={reloadPharmacyRegistry}
                   />
                 )}
 
@@ -1233,6 +1211,17 @@ export function EncounterDetailModal({
                   }}
                 />
 
+                {encounter && (
+                  <EncounterRoomingPanel
+                    encounterId={encounterId}
+                    encounter={encounter}
+                    readOnly={!canEditClinicalEncounter}
+                    onUpdated={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
                 <EncounterSoapPanel
                   encounterId={encounterId}
                   aiSoap={soapNotes}
@@ -1240,6 +1229,26 @@ export function EncounterDetailModal({
                   encounterStatus={encounter?.status ?? null}
                   onDownloadDoctorPdf={soap => void handleDownloadDoctorSoapPdf(soap)}
                 />
+
+                {encounter && (
+                  <EncounterPrescriptionsPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditEncounterRx}
+                    canSendToAdmin={canSendPrescriptionsToAdmin}
+                    canManagePharmacy={canManagePharmacy}
+                    canPrintPrescriptions={isAdminViewer}
+                    hasDoctor={encounter.doctor_id != null}
+                    hasPharmacy={encounter.pharmacy_id != null}
+                    pharmacyId={encounter.pharmacy_id}
+                    assignedPharmacy={
+                      pharmacy ? normalizePharmacyRow(pharmacy as Record<string, unknown>) : null
+                    }
+                    pharmacies={pharmacies}
+                    onPharmacyUpdated={refreshEncounterAndPharmacy}
+                    onPharmaciesReload={reloadPharmacyRegistry}
+                  />
+                )}
               </div>
             )}
           </div>

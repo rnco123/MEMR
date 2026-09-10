@@ -14,17 +14,16 @@ export const LOCATION_GROUP_REGION_LABEL: Record<string, string> = {
 
 const CLINICA_I693_GROUPS = new Set(['A', 'B', 'C'])
 
-/** Kempwood tenant — uses Houston (B) pre-built template, not a separate one. */
-const KEMPWOOD_TENANT_ID = 3
-
-export function resolveI693TemplateGroup(
-  rawGroup: string,
-  location: { tenant_id?: number | null }
-): 'A' | 'B' | 'C' | null {
-  if (CLINICA_I693_GROUPS.has(rawGroup)) return rawGroup as 'A' | 'B' | 'C'
-  // Kempwood keeps CLN-28 as its location code but shares the Houston (B) I-693 template.
-  if (rawGroup === 'CLN-28' || location.tenant_id === KEMPWOOD_TENANT_ID) return 'B'
-  return null
+/**
+ * A location's group is set in Admin → Locations and is the only thing that picks a
+ * template. Kempwood used to be resolved by its tenant id instead; its row now
+ * carries 'B' (Houston) like the other Houston clinics, so the rule is gone.
+ *
+ * Anything outside A/B/C — a blank group, or a practice with its own civil surgeon —
+ * gets no autofill rather than another clinic's details.
+ */
+export function resolveI693TemplateGroup(rawGroup: string): 'A' | 'B' | 'C' | null {
+  return CLINICA_I693_GROUPS.has(rawGroup) ? (rawGroup as 'A' | 'B' | 'C') : null
 }
 
 const CIVIL_SURGEON_SHARED = {
@@ -272,7 +271,7 @@ export async function resolveI693LocationAutofill(
 
   const { data: loc, error: locErr } = await admin
     .from('locations')
-    .select('id, title, address, email, phone, location_group, tenant_id')
+    .select('id, title, address, email, phone, location_group')
     .eq('id', locationId)
     .maybeSingle()
 
@@ -282,9 +281,7 @@ export async function resolveI693LocationAutofill(
     .trim()
     .toUpperCase()
 
-  const typedGroup = resolveI693TemplateGroup(rawGroup, {
-    tenant_id: loc.tenant_id as number | null | undefined,
-  })
+  const typedGroup = resolveI693TemplateGroup(rawGroup)
 
   if (!typedGroup) {
     const regionLabel = LOCATION_GROUP_REGION_LABEL[rawGroup] ?? null
