@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { DobDateInput } from '@/components/DobDateInput'
 import { AddressLookupFields } from '@/components/AddressLookupFields'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
@@ -610,23 +611,24 @@ export function NurseRegisterPatientModal({
                 <h3 className={SECTION}>{t('patient_register.treatment_type')}</h3>
                 <p className="text-xs text-slate-500 -mt-1">{t('patient_register.treatment_type_required')}</p>
                 <div>
-                  <label className={LABEL}>{t('patient_register.treatment_type')}</label>
-                  <select
-                    value={serviceId}
-                    onChange={(e) => setServiceId(e.target.value)}
-                    disabled={servicesLoading || availableServices.length === 0}
-                    className={`${INPUT} mt-1.5`}
-                    required
-                  >
-                    {availableServices.length === 0 ? (
-                      <option value="">{t('patient_register.treatment_type_ph')}</option>
-                    ) : null}
-                    {availableServices.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {serviceTitle(s)}
-                      </option>
-                    ))}
-                  </select>
+                  <label className={LABEL} htmlFor="register-treatment-type">
+                    {t('patient_register.treatment_type')}
+                  </label>
+                  <div className="mt-1.5">
+                    <SelectDrawer
+                      id="register-treatment-type"
+                      value={serviceId}
+                      onChange={setServiceId}
+                      disabled={servicesLoading || availableServices.length === 0}
+                      placeholder={t('patient_register.treatment_type_ph')}
+                      searchPlaceholder={t('common.search')}
+                      emptyLabel={t('common.no_results')}
+                      options={availableServices.map((s) => ({
+                        value: String(s.id),
+                        label: serviceTitle(s),
+                      }))}
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-slate-500 pt-2 leading-relaxed">{t('patient_register.visit_opens_hint')}</p>
               </section>
