@@ -26,6 +26,26 @@ export function resolveI693TemplateGroup(rawGroup: string): 'A' | 'B' | 'C' | nu
   return CLINICA_I693_GROUPS.has(rawGroup) ? (rawGroup as 'A' | 'B' | 'C') : null
 }
 
+/**
+ * Locations pinned to a group in code because their row carries none. Location
+ * 31 is a Dallas clinic, so it gets the Group A defaults. The row still wins
+ * whenever it has a usable A/B/C, so tagging it in Admin → Locations makes the
+ * entry here redundant and it can be deleted.
+ */
+const I693_GROUP_BY_LOCATION_ID: Record<number, 'A' | 'B' | 'C'> = {
+  31: 'A',
+}
+
+/** Group for a location: its own row first, then the pinned fallback above. */
+export function resolveI693TemplateGroupForLocation(
+  locationId: number | null | undefined,
+  rawGroup: string
+): 'A' | 'B' | 'C' | null {
+  const fromRow = resolveI693TemplateGroup(rawGroup)
+  if (fromRow) return fromRow
+  return locationId == null ? null : I693_GROUP_BY_LOCATION_ID[locationId] ?? null
+}
+
 const CIVIL_SURGEON_SHARED = {
   practice_name: 'CLINICA SAN MIGUEL',
   medical_license: '106645',
@@ -281,7 +301,7 @@ export async function resolveI693LocationAutofill(
     .trim()
     .toUpperCase()
 
-  const typedGroup = resolveI693TemplateGroup(rawGroup)
+  const typedGroup = resolveI693TemplateGroupForLocation(locationId, rawGroup)
 
   if (!typedGroup) {
     const regionLabel = LOCATION_GROUP_REGION_LABEL[rawGroup] ?? null

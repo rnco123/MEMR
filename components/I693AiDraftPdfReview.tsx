@@ -8,6 +8,7 @@ import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
 import type { I693FormData } from '@/lib/i693/types'
 import {
   applyI693FormToPdfDocument,
+  patchForceEditableAnnotations,
 } from '@/lib/i693/pdfjs-form-bridge'
 import { clonePdfBytes, loadPdfJsDocument } from '@/lib/i693/pdfjs-load'
 import {
@@ -158,6 +159,10 @@ export function I693AiDraftPdfReview({ draft, onAccept, onReject }: Props) {
         }).promise
 
         const annotationsList = await page.getAnnotations()
+        // Read-only USCIS widgets (the Part 10 remarks box) are painted to their
+        // own canvas, which this review never mounts — unlock them so the draft
+        // value shows, then lockFormLayer makes the whole layer read-only again.
+        patchForceEditableAnnotations(annotationsList)
         const layer = new pdfjs.AnnotationLayer({
           div: formLayerDiv,
           page,
