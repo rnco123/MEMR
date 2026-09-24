@@ -1,4 +1,8 @@
-import { resolveI693TemplateGroup, resolveCivilSurgeonAddressForGroup } from '@/lib/i693/location-autofill'
+import {
+  resolveCivilSurgeonAddressForGroup,
+  resolveI693TemplateGroup,
+  resolveI693TemplateGroupForLocation,
+} from '@/lib/i693/location-autofill'
 
 describe('resolveI693TemplateGroup', () => {
   it('maps standard Clinica groups A/B/C', () => {
@@ -18,6 +22,21 @@ describe('resolveI693TemplateGroup', () => {
 
   it('returns null when a location has no group', () => {
     expect(resolveI693TemplateGroup('')).toBeNull()
+  })
+})
+
+describe('resolveI693TemplateGroupForLocation', () => {
+  it('pins location 31 to Dallas (Group A) when its row carries no group', () => {
+    expect(resolveI693TemplateGroupForLocation(31, '')).toBe('A')
+  })
+
+  it('lets the location row override the pinned fallback', () => {
+    expect(resolveI693TemplateGroupForLocation(31, 'B')).toBe('B')
+  })
+
+  it('still returns null for an unpinned location with no usable group', () => {
+    expect(resolveI693TemplateGroupForLocation(30, 'TELE')).toBeNull()
+    expect(resolveI693TemplateGroupForLocation(null, '')).toBeNull()
   })
 })
 

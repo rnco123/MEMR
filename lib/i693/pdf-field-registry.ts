@@ -480,6 +480,30 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
     "when": "Class B Other Chest"
   },
   {
+    "key": "tb_screening.remarks",
+    "pdfFieldName": "form1[0].#subform[6].Pt8Line1A7_Remarks[0]",
+    "page": 6,
+    "kind": "text"
+  },
+  {
+    "key": "syphilis_sti.remarks",
+    "pdfFieldName": "form1[0].#subform[7].Pt8Line1B3_Remarks[0]",
+    "page": 7,
+    "kind": "text"
+  },
+  {
+    "key": "physical_mental.remarks",
+    "pdfFieldName": "form1[0].#subform[8].Pt8Line2B_Remarks[0]",
+    "page": 8,
+    "kind": "text"
+  },
+  {
+    "key": "drug_abuse.remarks",
+    "pdfFieldName": "form1[0].#subform[9].Pt8Line3B_Remarks[0]",
+    "page": 9,
+    "kind": "text"
+  },
+  {
     "key": "vaccination_grid",
     "pdfFieldName": "form1[0].P13[0].sfTable[0].P9_TDVaccineCheckBox[0]",
     "page": 11,
@@ -1184,6 +1208,12 @@ export const PDF_FIELD_REGISTRY: PdfFieldBinding[] = [
   {
     "key": "vaccination_grid",
     "pdfFieldName": "form1[0].P13[0].sfTable[0].Pt10Line1_CompleteSeries[5]",
+    "page": 11,
+    "kind": "text"
+  },
+  {
+    "key": "vaccination_grid",
+    "pdfFieldName": "form1[0].P13[0].sfTable[0].Pt7Line1_CompleteSeries[0]",
     "page": 11,
     "kind": "text"
   },
