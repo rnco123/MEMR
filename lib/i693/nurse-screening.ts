@@ -172,7 +172,8 @@ export function extractNurseScreeningFromForm(
  * Merge nurse screening answers into a patient's existing I-693 form data.
  * Identity fields fill empty applicant slots only (never overwrite), the
  * patient-reported screening answers land in the matching parts' remarks
- * (USCIS-facing, so kept in English), and vaccination rows with records are
+ * (USCIS-facing, so kept in English) except Part 8 A.7, which is left to the
+ * civil surgeon, and vaccination rows with records are
  * appended to the Part 13 table when not already listed.
  */
 export function applyNurseScreeningToI693Form(
@@ -207,18 +208,10 @@ export function applyNurseScreeningToI693Form(
   fillIfEmpty('passport_number', s.passport_number)
   fillIfEmpty('a_number', s.a_number.replace(/^A-?/i, '').toUpperCase().slice(0, 9))
 
-  const tbRemark = joinAnswers([
-    ['TB diagnosed/treated', yn(s.tb_diagnosed)],
-    ['Positive TB test (PPD/IGRA)', yn(s.tb_positive_test)],
-    ['Close contact with active TB', yn(s.tb_close_contact)],
-    ['TB symptoms (cough >3wk, night sweats, fever, weight loss)', yn(s.tb_symptoms)],
-    ['Prior abnormal chest X-ray', yn(s.abnormal_chest_xray)],
-  ])
-  form.tb_screening.remarks = upsertMarkedLine(
-    form.tb_screening.remarks,
-    tbRemark ? `${REPORTED_MARKER} ${tbRemark}` : null,
-    REPORTED_MARKER
-  )
+  // Part 8 A.7 remarks stay the civil surgeon's box: the TB screening answers
+  // live in form.intake_screening (shown in the encounter modal) and are never
+  // written here. Strip any line an earlier version of this code left behind.
+  form.tb_screening.remarks = upsertMarkedLine(form.tb_screening.remarks, null, REPORTED_MARKER)
 
   const stiAnswer = yn(s.sti_or_hansens)
   form.syphilis_sti.remarks = upsertMarkedLine(
