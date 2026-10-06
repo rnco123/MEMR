@@ -4,6 +4,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { handleApiError, AuthenticationError, AuthorizationError } from '@/lib/api-error-handler'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
+import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 
 export const dynamic = 'force-dynamic'
@@ -40,6 +41,18 @@ export async function GET() {
         )
       `
       )
+      // Narrow to immigration encounters BEFORE limiting. Without this the limit
+      // applies to every encounter of any kind, and the board shows only the
+      // immigration ones that happen to fall inside that window — 126 of 525 when
+      // this was found, with a patient dropping off simply because unrelated
+      // encounters were touched more recently.
+      //
+      // isImmigrationEncounterForI693 below is still the authority and also
+      // accepts consent_ack and service id 25. Both are strict subsets of
+      // program_type today (measured: 0 encounters qualify by either without it),
+      // so this fetches everything the predicate would accept. If that ever stops
+      // being true, widen this filter or the predicate will never see those rows.
+      .eq('program_type', IMMIGRATION_PROGRAM)
       .order('updated_at', { ascending: false })
       .limit(200)
 
