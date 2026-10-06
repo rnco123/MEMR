@@ -3,6 +3,7 @@ import { mergeI693Form, type I693FormData } from '@/lib/i693/types'
 import {
   isImmigrationEncounterForI693,
   ENCOUNTER_I693_ELIGIBILITY_SELECT,
+  IMMIGRATION_SERVICE_ID,
   resolveEncounterPatientId,
 } from '@/lib/i693/immigration-eligibility'
 import { findPatientI693Submission } from '@/lib/i693/patient-form'
@@ -440,6 +441,38 @@ type ListImmigrationCasesResult = Awaited<ReturnType<typeof listImmigrationCases
 let listImmigrationCasesInflight: Promise<ListImmigrationCasesResult> | null = null
 
 /** Coalesce parallel /api/i693/cases requests so sync does not run twice at once. */
+/**
+ * Upper bound on one listing. Applies to immigration encounters only now that
+ * the queries filter before limiting, so it is headroom over the real
+ * population (527 at the time of writing) rather than a window that hides
+ * cases. Revisit with pagination before it is approached.
+ */
+const IMMIGRATION_LIST_LIMIT = 2000
+
+const LIST_ENCOUNTER_SELECT = `
+  id,
+  patient_id,
+  appointment_id,
+  consent_ack,
+  program_type,
+  updated_at,
+  patients:patient_id ( first_name, last_name, location_id ),
+  appointments:appointment_id (
+    patient_id,
+    location_id,
+    appointment_date,
+    appointment_time,
+    services:service_id ( id, title_en, title_es ),
+    patients:patient_id ( first_name, last_name, location_id )
+  )
+`
+
+/** Same shape, but an inner join so `appointments.service_id` can be filtered on. */
+const LIST_ENCOUNTER_SELECT_INNER_APPOINTMENT = LIST_ENCOUNTER_SELECT.replace(
+  'appointments:appointment_id (',
+  'appointments:appointment_id!inner ('
+)
+
 export async function listImmigrationCases(
   admin: SupabaseClient,
   options: ListImmigrationCasesOptions = {}
@@ -473,33 +506,59 @@ async function listImmigrationCasesInner(
     i693_status: string | null
   }[]
 > {
-  const { data: encounters, error } = await admin
-    .from('encounters')
-    .select(
-      `
-      id,
-      patient_id,
-      appointment_id,
-      consent_ack,
-      program_type,
-      updated_at,
-      patients:patient_id ( first_name, last_name, location_id ),
-      appointments:appointment_id (
-        patient_id,
-        location_id,
-        appointment_date,
-        appointment_time,
-        services:service_id ( id, title_en, title_es ),
-        patients:patient_id ( first_name, last_name, location_id )
-      )
-    `
-    )
-    .order('updated_at', { ascending: false })
-    .limit(300)
+  // An encounter is an immigration case if ANY of three things is true (see
+  // isImmigrationEncounterForI693): program_type, a consent_ack.immigration
+  // entry, or appointment service 25. Two live on `encounters` and one on the
+  // joined `appointments`, which no single PostgREST filter can span — hence
+  // three queries merged by id.
+  //
+  // This deliberately does NOT filter on program_type alone. Line 343 of this
+  // file is the only place in the codebase that ever writes that column, so an
+  // encounter that has not been synced yet has program_type null. Filtering on
+  // it would mean the sync could only ever see what it had already processed,
+  // and a new case would never be picked up at all.
+  //
+  // The previous version fetched the 300 most recently updated encounters of
+  // any type and filtered afterwards, so immigration cases silently dropped off
+  // the board when unrelated encounters were touched — 126 of 525 visible when
+  // this was found.
+  const [byProgram, byConsent, byService] = await Promise.all([
+    admin
+      .from('encounters')
+      .select(LIST_ENCOUNTER_SELECT)
+      .eq('program_type', IMMIGRATION_PROGRAM)
+      .order('updated_at', { ascending: false })
+      .limit(IMMIGRATION_LIST_LIMIT),
+    admin
+      .from('encounters')
+      .select(LIST_ENCOUNTER_SELECT)
+      .not('consent_ack->>immigration', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(IMMIGRATION_LIST_LIMIT),
+    admin
+      .from('encounters')
+      .select(LIST_ENCOUNTER_SELECT_INNER_APPOINTMENT)
+      .eq('appointments.service_id', IMMIGRATION_SERVICE_ID)
+      .order('updated_at', { ascending: false })
+      .limit(IMMIGRATION_LIST_LIMIT),
+  ])
 
-  if (error) throw error
+  for (const result of [byProgram, byConsent, byService]) {
+    if (result.error) throw result.error
+  }
 
-  const immigration = (encounters ?? []).filter((e) => isImmigrationEncounterForI693(e))
+  const byId = new Map<number, Record<string, unknown>>()
+  for (const row of [...(byProgram.data ?? []), ...(byConsent.data ?? []), ...(byService.data ?? [])]) {
+    const record = row as Record<string, unknown>
+    const id = Number(record.id)
+    if (id > 0) byId.set(id, record)
+  }
+
+  const encounters = [...byId.values()].sort((a, b) =>
+    String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? ''))
+  )
+
+  const immigration = encounters.filter((e) => isImmigrationEncounterForI693(e))
   const encounterIds = immigration.map((e) => Number((e as { id: number }).id)).filter((id) => id > 0)
 
   const patientIds = [
