@@ -5,6 +5,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { LocationHoursEditor } from '@/components/LocationHoursEditor'
 import { AddressLookupInput } from '@/components/AddressLookupInput'
+import { LocationQrDialog } from '@/components/LocationQrDialog'
 import { resolveGoogleMapUrl } from '@/lib/locations/format'
 import {
   DEFAULT_WEEKLY_HOURS,
@@ -128,6 +129,7 @@ function AdminLocationsPage() {
     map: false,
   })
   const [editSaving, setEditSaving] = useState(false)
+  const [qrFor, setQrFor] = useState<{ id: number; title: string } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all')
@@ -772,6 +774,13 @@ function AdminLocationsPage() {
                           </button>
                           <button
                             type="button"
+                            onClick={() => setQrFor({ id: row.id, title: row.title })}
+                            className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg text-sm hover:bg-slate-200"
+                          >
+                            {t('locations.qr.button')}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => void toggleActive(row)}
                             className={`px-3 py-2 rounded-lg text-sm ${
                               row.is_active
@@ -823,6 +832,13 @@ function AdminLocationsPage() {
             </button>
           </div>
         </div>
+      )}
+      {qrFor && (
+        <LocationQrDialog
+          endpoint={`/api/admin/locations/${qrFor.id}/qr`}
+          locationTitle={qrFor.title}
+          onClose={() => setQrFor(null)}
+        />
       )}
     </div>
   )

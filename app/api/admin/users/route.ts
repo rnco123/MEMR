@@ -7,6 +7,7 @@ import { resolveStaffAvatarUrl } from '@/lib/avatars/resolve-url'
 import { parseDoctorNpi } from '@/lib/doctors/npi'
 import { fetchAllLocations } from '@/lib/locations/fetch-all'
 import { ADMIN_STAFF_ROLE_VALUES, isPhysicianRole, UserRole } from '@/lib/roles'
+import { syncStaffRecord, syncUserLocations } from '@/lib/users/staff-sync'
 import { z } from 'zod'
 
 const adminStaffRoleSchema = z.enum(ADMIN_STAFF_ROLE_VALUES)
@@ -58,69 +59,6 @@ const patchUserSchema = z
       d.compliance_access !== undefined,
     { message: 'At least one field to update is required' }
   )
-
-async function syncStaffRecord(
-  admin: ReturnType<typeof createAdminClient>,
-  uid: string,
-  role: z.infer<typeof adminStaffRoleSchema>,
-  fullName: string,
-  email: string | null,
-  options?: { primaryLocationId?: number | null; npi?: string | null }
-) {
-  const locationPatch =
-    options && 'primaryLocationId' in options
-      ? { location_id: options.primaryLocationId ?? null }
-      : {}
-  const npiPatch = options && 'npi' in options ? { npi: options.npi ?? null } : {}
-
-  if (isPhysicianRole(role)) {
-    const { data: existing } = await admin.from('doctors').select('id').eq('user_id', uid).maybeSingle()
-    const payload = {
-      full_name: fullName,
-      email,
-      ...locationPatch,
-      ...npiPatch,
-    }
-    if (existing) {
-      const { error } = await admin.from('doctors').update(payload).eq('user_id', uid)
-      if (error) throw error
-    } else {
-      const { error } = await admin.from('doctors').insert({ user_id: uid, ...payload })
-      if (error) throw error
-    }
-  } else {
-    const { data: existing } = await admin.from('nurses').select('id').eq('user_id', uid).maybeSingle()
-    const payload = {
-      full_name: fullName,
-      is_active: true,
-      ...locationPatch,
-    }
-    if (existing) {
-      const { error } = await admin.from('nurses').update(payload).eq('user_id', uid)
-      if (error) throw error
-    } else {
-      const { error } = await admin.from('nurses').insert({ user_id: uid, ...payload })
-      if (error) throw error
-    }
-  }
-}
-
-async function syncUserLocations(
-  admin: ReturnType<typeof createAdminClient>,
-  uid: string,
-  locationIds: number[]
-) {
-  await admin.from('user_locations').delete().eq('user_uid', uid)
-  if (locationIds.length === 0) return
-  const { error } = await admin.from('user_locations').insert(
-    locationIds.map((lid) => ({
-      user_uid: uid,
-      profile_id: uid,
-      location_id: lid,
-    }))
-  )
-  if (error) throw error
-}
 
 export async function GET(_req: NextRequest) {
   try {

@@ -26,6 +26,11 @@ function getRequiredRolesForPath(pathname: string): UserRole[] | null {
     return null
   }
 
+  // Clinic manager area — tenant-scoped operations, no clinical pages.
+  if (p === '/manage' || p.startsWith('/manage/')) {
+    return [UserRole.CLINIC_MANAGER]
+  }
+
   // Admin-only pages — enforce at middleware layer (M-02a).
   if (p.startsWith('/admin')) {
     return [UserRole.ADMIN]
@@ -177,9 +182,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(redirectUrl)
   }
 
+  // Clinic managers have no clinical or admin pages; keep them in /manage.
+  if (
+    isAuthenticated &&
+    userRole === UserRole.CLINIC_MANAGER &&
+    normalizedPathname !== '/manage' &&
+    !normalizedPathname.startsWith('/manage/')
+  ) {
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = '/manage'
+    redirectUrl.search = ''
+    return NextResponse.redirect(redirectUrl)
+  }
+
   if (!isAuthenticated) {
     const redirectUrl = request.nextUrl.clone()
-    redirectUrl.pathname = normalizedPathname.startsWith('/admin') ? '/login' : '/'
+    // `/` is the public landing page, so signed-out visitors go to /login.
+    redirectUrl.pathname = '/login'
     if (!normalizedPathname.startsWith('/admin')) {
       redirectUrl.searchParams.set('redirectedFrom', pathname)
     }
@@ -209,7 +228,7 @@ export const config = {
      * Protected app pages only. Excluded entirely:
      * - /api/* (each route uses lib/security/api-auth.ts)
      * - /_next/*, /static/*, favicon.ico, static assets
-     * - Public pages: /, /login, /offline
+     * - Public pages: /, /login, /offline, /welcome, /signup
      */
     '/dashboard',
     '/dashboard/:path*',
@@ -219,5 +238,7 @@ export const config = {
     '/video/:path*',
     '/patient-file',
     '/patient-file/:path*',
+    '/manage',
+    '/manage/:path*',
   ],
 }

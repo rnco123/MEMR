@@ -42,6 +42,15 @@ const adminNavItems = [
     ),
   },
   {
+    nameKey: 'admin.nav.signups',
+    href: '/admin/signups',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+      </svg>
+    ),
+  },
+  {
     nameKey: 'admin.nav.audit',
     href: '/admin/audit',
     icon: (
@@ -220,7 +229,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {
         title: t('admin.nav.section.administration'),
         items: adminNav.filter((item) =>
-          ['/admin/users', '/admin/audit', '/admin/locations', '/admin/services', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support', '/admin/configurations'].includes(item.href)
+          ['/admin/users', '/admin/signups', '/admin/audit', '/admin/locations', '/admin/services', '/admin/pharmacies', '/admin/forms', '/admin/prescriptions', '/admin/support', '/admin/configurations'].includes(item.href)
         ),
       },
     ]

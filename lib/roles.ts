@@ -9,6 +9,8 @@ export enum UserRole {
   FNP = 'fnp',
   PA = 'pa',
   NURSE = 'nurse',
+  /** Operations-only, scoped to one tenant via profiles.tenant_id. No patient data. */
+  CLINIC_MANAGER = 'clinic_manager',
 }
 
 /** Roles with physician-level clinical permissions (MD, FNP, PA). */
@@ -64,6 +66,7 @@ export const ROLES = {
   FNP: UserRole.FNP,
   PA: UserRole.PA,
   NURSE: UserRole.NURSE,
+  CLINIC_MANAGER: UserRole.CLINIC_MANAGER,
 } as const
 
 const DOCTOR_LIKE_PERMISSIONS: RolePermissions = {
@@ -84,6 +87,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
   [UserRole.FNP]: 'Family Nurse Practitioner (FNP)',
   [UserRole.PA]: 'Physician Assistant (PA)',
   [UserRole.NURSE]: 'Nurse',
+  [UserRole.CLINIC_MANAGER]: 'Clinic Manager',
 }
 
 // Role-based permissions
@@ -114,6 +118,15 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canDeletePatients: false,
     canCreateAppointments: true,
     canViewAllRecords: true,
+    canManageStaff: false,
+  },
+  // Staff management happens only through /manage, scoped to the manager's tenant.
+  [UserRole.CLINIC_MANAGER]: {
+    canViewAllPatients: false,
+    canEditPatients: false,
+    canDeletePatients: false,
+    canCreateAppointments: false,
+    canViewAllRecords: false,
     canManageStaff: false,
   },
 }
@@ -187,7 +200,8 @@ export function isValidRole(role: string | null | undefined): role is UserRole {
     role === UserRole.DOCTOR ||
     role === UserRole.FNP ||
     role === UserRole.PA ||
-    role === UserRole.NURSE
+    role === UserRole.NURSE ||
+    role === UserRole.CLINIC_MANAGER
   )
 }
 
@@ -201,6 +215,7 @@ export function mapRoleToEnum(role: string | null | undefined): UserRole | null 
   if (r === 'pa') return UserRole.PA
   // Backward compatibility for legacy records.
   if (r === 'nurse' || r === 'staff') return UserRole.NURSE
+  if (r === 'clinic_manager') return UserRole.CLINIC_MANAGER
   return null
 }
 
@@ -223,6 +238,7 @@ export function getRoleI18nKey(role: string | null | undefined): string {
   if (mapped === UserRole.FNP) return 'admin.role_fnp'
   if (mapped === UserRole.PA) return 'admin.role_pa'
   if (mapped === UserRole.NURSE) return 'admin.role_nurse'
+  if (mapped === UserRole.CLINIC_MANAGER) return 'admin.role_clinic_manager'
   if (role === 'staff') return 'admin.role_staff'
   return 'common.unknown'
 }
