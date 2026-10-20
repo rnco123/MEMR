@@ -10,6 +10,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
@@ -77,7 +78,7 @@ test.describe('I-693 Workflow', () => {
 
     // Navigate via sidebar link — ensures role is fully loaded before page mounts
     const i693Link = page.getByRole('link', { name: 'Form I-693' }).first()
-    if (await i693Link.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(i693Link, 5000)) {
       await i693Link.click()
     } else {
       await page.goto('/dashboard/i-693')
@@ -138,7 +139,7 @@ test.describe('I-693 Workflow', () => {
 
     // Find a draggable card — cards have draggable="true"
     const draggableCard = page.locator('[draggable="true"]').first()
-    const cardVisible = await draggableCard.isVisible({ timeout: 10000 }).catch(() => false)
+    const cardVisible = await isShown(draggableCard, 10000)
 
     if (!cardVisible) {
       console.log('ℹ No draggable cards — no I-693 cases in the database')
@@ -148,7 +149,7 @@ test.describe('I-693 Workflow', () => {
     // Kanban columns are identified by their status label text
     // Try to drag to "Ready for Review" column
     const targetColumn = page.getByText(/ready.*review/i).first()
-    const targetVisible = await targetColumn.isVisible({ timeout: 5000 }).catch(() => false)
+    const targetVisible = await isShown(targetColumn, 5000)
 
     if (!targetVisible) {
       console.log('ℹ Target column not visible')
@@ -190,7 +191,7 @@ test.describe('I-693 Workflow', () => {
 
     // Find "Edit on PDF" button on first case card — exact text from i18n: "Edit on PDF"
     const editBtn = page.getByRole('button', { name: 'Edit on PDF' }).first()
-    const editBtnVisible = await editBtn.isVisible({ timeout: 10000 }).catch(() => false)
+    const editBtnVisible = await isShown(editBtn, 10000)
 
     if (!editBtnVisible) {
       console.log('ℹ No I-693 cases with "Edit on PDF" button — skipping PDF editor test')
@@ -200,16 +201,15 @@ test.describe('I-693 Workflow', () => {
     await editBtn.click()
     await page.waitForLoadState('networkidle')
 
-    // PDF editor heading: "I693 Immigration" or "Form I-693"
-    await expect(
-      page.getByRole('heading', { name: /I693|I-693|Immigration/i }).first()
-    ).toBeVisible({ timeout: 20000 })
+    // PDF editor: page counter and toolbar (the editor has no I-693 heading).
+    await expect(page.getByText(/^Page 1 \/ \d+$/).first()).toBeVisible({ timeout: 20000 })
+    await expect(page.getByRole('button', { name: 'Export to PDF' })).toBeVisible()
     console.log('✓ PDF editor loaded')
 
     // ── Edit a field ───────────────────────────────────────────────────────
     // Find any input field in the form and edit it
     const firstInput = page.locator('input[type="text"]:not([disabled]), input[type="number"]:not([disabled])').first()
-    const inputVisible = await firstInput.isVisible({ timeout: 5000 }).catch(() => false)
+    const inputVisible = await isShown(firstInput, 5000)
     if (inputVisible) {
       await firstInput.click()
       await firstInput.fill('Test Edit')
@@ -218,17 +218,17 @@ test.describe('I-693 Workflow', () => {
 
     // ── Split View button ─────────────────────────────────────────────────
     const splitViewBtn = page.getByRole('button', { name: /Split view/i })
-    if (await splitViewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(splitViewBtn, 5000)) {
       await splitViewBtn.click()
       await page.waitForTimeout(500)
       // Split view panel should open — look for "SplitView" or upload hint
       const splitPanel = page.getByText(/SplitView|supporting documents|patient chart/i).first()
-      const splitPanelVisible = await splitPanel.isVisible({ timeout: 5000 }).catch(() => false)
+      const splitPanelVisible = await isShown(splitPanel, 5000)
       if (splitPanelVisible) {
         console.log('✓ Split view opened')
         // Close split view by clicking again or close button
         const closeBtn = page.getByRole('button', { name: /split view|close/i }).first()
-        if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+        if (await isShown(closeBtn, 3000)) {
           await closeBtn.click()
         } else {
           await splitViewBtn.click()
@@ -241,7 +241,7 @@ test.describe('I-693 Workflow', () => {
 
     // ── Save button ───────────────────────────────────────────────────────
     const saveBtn = page.getByRole('button', { name: /^Save$|^Saving/i }).first()
-    if (await saveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(saveBtn, 5000)) {
       const saveEnabled = await saveBtn.isEnabled({ timeout: 3000 }).catch(() => false)
       if (saveEnabled) {
         const saveResponsePromise = page.waitForResponse(
@@ -258,7 +258,7 @@ test.describe('I-693 Workflow', () => {
 
     // ── Print button ─────────────────────────────────────────────────────
     const printBtn = page.getByRole('button', { name: /^Print$/i })
-    if (await printBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(printBtn, 5000)) {
       // Listen for print dialog or window.print() — just verify the button is clickable
       let printCalled = false
       await page.exposeFunction('__playwrightPrintCalled', () => { printCalled = true })
@@ -276,7 +276,7 @@ test.describe('I-693 Workflow', () => {
 
     // ── Export to PDF button ──────────────────────────────────────────────
     const exportBtn = page.getByRole('button', { name: /Export to PDF/i })
-    if (await exportBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(exportBtn, 5000)) {
       // Click and wait for PDF generation API or download
       const exportPromise = page.waitForResponse(
         r => r.url().includes('/api') && r.url().toLowerCase().includes('pdf'),
@@ -306,7 +306,7 @@ test.describe('I-693 Workflow', () => {
 
     // Navigate via sidebar link — ensures role is fully loaded before page mounts
     const i693Link = page.getByRole('link', { name: 'Form I-693' }).first()
-    if (await i693Link.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(i693Link, 5000)) {
       await i693Link.click()
     } else {
       await page.goto('/dashboard/i-693')

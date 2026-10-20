@@ -19,6 +19,8 @@ export default defineConfig({
     screenshot: 'on',
     video: 'on',
     testIdAttribute: 'data-testid',
+    // UI language falls back to the browser locale; keep assertions on English strings
+    locale: 'en-US',
     // Give every action and navigation more room on slow/cold servers
     actionTimeout: 30000,
     navigationTimeout: 60000,

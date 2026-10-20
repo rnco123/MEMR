@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
-const DEPLOYED_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://mcm-testing.up.railway.app'
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const DEPLOYED_URL = ''
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
 
@@ -83,7 +85,7 @@ test.describe('Global UI', () => {
         .first()
 
     const collapseBtn = findSidebarToggle()
-    const collapseBtnVisible = await collapseBtn.isVisible({ timeout: 5000 }).catch(() => false)
+    const collapseBtnVisible = await isShown(collapseBtn, 5000)
     if (!collapseBtnVisible) {
       console.log('ℹ Sidebar toggle not found — skipping')
       return
@@ -98,7 +100,7 @@ test.describe('Global UI', () => {
 
     // Re-query the toggle: its label may have changed after collapse
     const expandBtn = findSidebarToggle()
-    const expandBtnVisible = await expandBtn.isVisible({ timeout: 5000 }).catch(() => false)
+    const expandBtnVisible = await isShown(expandBtn, 5000)
     if (expandBtnVisible) {
       await expandBtn.click() // Expand back
       await page.waitForTimeout(500)

@@ -46,13 +46,18 @@ npm run dev
 
 ### Playwright E2E
 
-This repo now includes a Playwright flow that signs in as an admin, creates a user in `/admin/users`, signs out, and verifies the new user can log in.
+The suite in `e2e/` covers every route: public pages and clinic signup, the access-control matrix for each role, the admin area, the clinical dashboard (nurse and physician), the patient file and the clinic manager area (`/manage`). Tests for a role skip when that role's credentials are not set.
 
 1. Set these environment variables in `.env.local` or your shell:
 
-- `PLAYWRIGHT_ADMIN_EMAIL`
-- `PLAYWRIGHT_ADMIN_PASSWORD`
+- `PLAYWRIGHT_ADMIN_EMAIL` / `PLAYWRIGHT_ADMIN_PASSWORD`
+- `PLAYWRIGHT_NURSE_EMAIL` / `PLAYWRIGHT_NURSE_PASSWORD`
+- `PLAYWRIGHT_DOCTOR_EMAIL` / `PLAYWRIGHT_DOCTOR_PASSWORD`
+- `PLAYWRIGHT_MANAGER_EMAIL` / `PLAYWRIGHT_MANAGER_PASSWORD` (a `clinic_manager` account)
 - `PLAYWRIGHT_NEW_USER_PASSWORD` if you want a fixed password for the created user
+- `PLAYWRIGHT_ALLOW_PUBLISH=1` to run the real services create/edit/delete round trip, which publishes to the public site (mocked otherwise)
+
+Flows with side effects that can't be undone (signup approve/reject, moving visits, saving configurations, prescription status, resetting passwords) are mocked with `page.route`, so the UI is exercised without changing shared data.
 
 2. Run the test:
 

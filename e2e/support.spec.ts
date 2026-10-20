@@ -1,7 +1,9 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
-const DEPLOYED_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://mcm-testing.up.railway.app'
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const DEPLOYED_URL = ''
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
@@ -60,7 +62,7 @@ test.describe('Support Tickets', () => {
 
     // ── Priority (pill buttons: Low / Normal / High / Urgent) ───────────────
     const highBtn = page.getByRole('button', { name: /^high$/i })
-    if (await highBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(highBtn, 2000)) {
       await highBtn.click()
     }
 
@@ -168,13 +170,14 @@ test.describe('Support Tickets', () => {
     console.log('✓ Admin replied to support ticket successfully')
 
     // Wait for the optimistic message to appear in the thread
-    await expect(page.getByText(replyText)).toBeVisible({ timeout: 10000 })
+    await expect(page.getByText(replyText).first()).toBeVisible({ timeout: 10000 })
 
     // ── Mark ticket as Resolved ───────────────────────────────────────────────
     // The "Resolved" button is type="button" and only shown when status is not
     // already resolved/closed. It appears in the right column of the form.
-    const resolvedBtn = page.getByRole('button', { name: 'Resolved' })
-    const resolvedBtnVisible = await resolvedBtn.isVisible({ timeout: 5000 }).catch(() => false)
+    // A status filter pill is also named "Resolved"; the action button has type="button".
+    const resolvedBtn = page.locator('button[type="button"]').filter({ hasText: /^\s*Resolved\s*$/ })
+    const resolvedBtnVisible = await isShown(resolvedBtn, 5000)
 
     if (resolvedBtnVisible) {
       const resolvedResponsePromise = page.waitForResponse(
@@ -212,7 +215,7 @@ test.describe('Support Tickets', () => {
     const subjectToFind = createdTicketSubject || 'Playwright test ticket'
     const targetCard = page.getByRole('button').filter({ hasText: subjectToFind }).first()
 
-    const cardVisible = await targetCard.isVisible({ timeout: 10000 }).catch(() => false)
+    const cardVisible = await isShown(targetCard, 10000)
     if (!cardVisible) {
       console.log(`ℹ Ticket "${subjectToFind}" not found — skipping`)
       return
@@ -244,7 +247,7 @@ test.describe('Support Tickets', () => {
     // "✓ Verify & Close" only appears when activeTicket.status === 'resolved'.
     // The JSX uses &amp; which renders as &.
     const closeBtn = page.getByRole('button', { name: /verify.*close/i })
-    const closeBtnVisible = await closeBtn.isVisible({ timeout: 5000 }).catch(() => false)
+    const closeBtnVisible = await isShown(closeBtn, 5000)
 
     if (closeBtnVisible) {
       const closeResponsePromise = page.waitForResponse(

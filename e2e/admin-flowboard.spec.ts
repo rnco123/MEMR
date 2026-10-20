@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
@@ -75,7 +76,7 @@ test.describe('Admin — Flowboard', () => {
       page.locator('select').nth(1) // second select after status filter
     )
 
-    const locationFilterVisible = await locationFilter.isVisible({ timeout: 5000 }).catch(() => false)
+    const locationFilterVisible = await isShown(locationFilter, 5000)
 
     if (!locationFilterVisible) {
       console.log('ℹ Location filter not visible — no locations configured or only one location exists')
@@ -93,7 +94,7 @@ test.describe('Admin — Flowboard', () => {
 
     // "Clear filters" button should appear since a filter is active
     const clearBtn = page.getByRole('button', { name: /clear filter|clear/i }).first()
-    const clearVisible = await clearBtn.isVisible({ timeout: 3000 }).catch(() => false)
+    const clearVisible = await isShown(clearBtn, 3000)
     if (clearVisible) {
       await clearBtn.click()
       await page.waitForTimeout(300)
@@ -170,7 +171,7 @@ test.describe('Admin — Flowboard', () => {
     await page.waitForTimeout(1000) // debounce
 
     // Results should show Ali Hassan or empty state
-    const hasResults = await page.getByText(/Ali Hassan/i).first().isVisible({ timeout: 5000 }).catch(() => false)
+    const hasResults = await isShown(page.getByText(/Ali Hassan/i), 5000)
 
     if (hasResults) {
       await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 5000 })
@@ -192,7 +193,7 @@ test.describe('Admin — Flowboard', () => {
     // which renders as "View file" — it's a <Link> (anchor) not a button
     const patientFileLink = page.getByRole('link', { name: /view file|view patient|open file/i }).first()
 
-    const linkVisible = await patientFileLink.isVisible({ timeout: 10000 }).catch(() => false)
+    const linkVisible = await isShown(patientFileLink, 10000)
 
     if (!linkVisible) {
       console.log('ℹ No patients in history — skipping patient file open test')

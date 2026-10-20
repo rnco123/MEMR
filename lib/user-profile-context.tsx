@@ -38,11 +38,16 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => createClient(), [])
   const userId = user?.id
   const [profile, setProfile] = useState<UserProfileSummary | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [fetching, setLoading] = useState(false)
+  // The fetch starts in an effect, so on the first render after sign-in nothing is
+  // "loading" yet; without this, withRoleProtection sees no role and redirects to /.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null)
+  const loading = fetching || (!!userId && loadedFor !== userId)
 
   const refreshProfile = useCallback(async () => {
     if (!userId) {
       setProfile(null)
+      setLoadedFor(null)
       return
     }
     setLoading(true)
@@ -67,6 +72,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
       /* ignore */
     } finally {
       setLoading(false)
+      setLoadedFor(userId)
     }
   }, [userId, applyRoleFromProfile])
 
