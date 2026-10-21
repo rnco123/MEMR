@@ -7,6 +7,7 @@ import { createTicketSchema } from '@/lib/support/types'
 import { SUPPORT_TICKET_SELECT } from '@/lib/support/support-selects'
 import { resolveSupportActor } from '@/lib/support/resolve-actor'
 import { handleApiError } from '@/lib/api-error-handler'
+import { managerTicketCreatorUids } from '@/lib/manage/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,7 +53,9 @@ export async function GET(request: NextRequest) {
       .order('created_at', { ascending: false })
 
     if (!isAdmin) {
-      query = query.eq('created_by', user.id)
+      // Clinic managers read (never answer) their tenant staff's tickets.
+      const managerScope = await managerTicketCreatorUids(admin, user.id, profile?.role)
+      query = managerScope ? query.in('created_by', managerScope) : query.eq('created_by', user.id)
     }
     if (status) query = query.eq('status', status)
     if (priority) query = query.eq('priority', priority)

@@ -48,17 +48,28 @@ export async function getLocationQr(
   }
 }
 
-/** Creates the QR when missing; returns the existing one otherwise (never replaced). */
+/**
+ * Creates the QR when missing; returns the existing one otherwise (never replaced).
+ * A location not yet in the portal is added there first by the bridge, so this
+ * works for every EMR location.
+ */
 export async function generateLocationQr(
   admin: ReturnType<typeof createAdminClient>,
   emrLocationId: number
 ): Promise<LocationQrResult> {
-  const portalId = await portalIdFor(admin, emrLocationId)
-  if (portalId == null) {
-    throw new ValidationError('This location is not linked to the portal yet. Save it again to sync, then retry.')
-  }
-  const res = await bridgePost<{ data: LocationQr }>(`/qr/locations/${portalId}`, {})
-  return { portal_location_id: portalId, data: res.data }
+  await portalIdFor(admin, emrLocationId) // 400s an unknown location before calling out
+  return bridgePost<LocationQrResult>(`/locations/${emrLocationId}/qr`, {})
+}
+
+export type PortalQrRow = LocationQr & {
+  /** The CSA intake link the QR encodes; null when the bridge has no QR_BASE_URL. */
+  intake_url: string | null
+}
+
+/** Every portal QR row, keyed by portal location id. */
+export async function listPortalQrs(): Promise<Map<number, PortalQrRow>> {
+  const res = await bridgeGet<{ data: PortalQrRow[] }>('/qr/locations')
+  return new Map((res.data ?? []).map((row) => [row.locationid, row]))
 }
 
 export function parseLocationId(raw: string | undefined): number {

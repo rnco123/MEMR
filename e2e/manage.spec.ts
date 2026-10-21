@@ -22,24 +22,21 @@ test.describe('Clinic manager — shell', () => {
     await signInAs(page, 'manager')
     const meJson = (await (await me).json()) as { tenant?: { name?: string } }
 
-    await expect(page.getByRole('heading', { level: 1, name: 'Staff' })).toBeVisible()
+    await expect(page.getByRole('heading', { level: 1, name: 'Dashboard' })).toBeVisible()
     if (meJson.tenant?.name) await expect(page.getByText(meJson.tenant.name).first()).toBeVisible()
-    for (const [name, href] of [['Staff', '/manage'], ['Locations', '/manage/locations'], ['Forms', '/manage/forms']] as const) {
+    for (const [name, href] of [
+      ['Dashboard', '/manage'],
+      ['Staff', '/manage/staff'],
+      ['Flowboard', '/manage/flowboard'],
+      ['Patient history', '/manage/patients-history'],
+      ['Support', '/manage/support'],
+    ] as const) {
       await expect(page.getByRole('link', { name, exact: true })).toHaveAttribute('href', href)
     }
+    // Locations and consent forms are managed by MEMR admins, not here.
+    await expect(page.getByRole('link', { name: 'Locations', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('link', { name: 'Forms', exact: true })).toHaveCount(0)
     pageErrors.expectNone()
-  })
-
-  test('nav moves between Staff, Locations and Forms', async ({ page }) => {
-    await signInAs(page, 'manager')
-    await page.getByRole('link', { name: 'Locations', exact: true }).click()
-    await page.waitForURL(/\/manage\/locations$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Locations' })).toBeVisible()
-    await page.getByRole('link', { name: 'Forms', exact: true }).click()
-    await page.waitForURL(/\/manage\/forms$/)
-    await expect(page.getByRole('heading', { level: 1, name: 'Consent forms' })).toBeVisible()
-    await page.getByRole('link', { name: 'Staff', exact: true }).click()
-    await page.waitForURL(/\/manage$/)
   })
 
   test('manager can sign out', async ({ page }) => {
@@ -57,6 +54,7 @@ test.describe('Clinic manager — Staff', () => {
 
   test('add staff form validates role and location', async ({ page }) => {
     await signInAs(page, 'manager')
+    await visit(page, '/manage/staff')
     let posted = false
     page.on('request', r => {
       if (r.url().endsWith('/api/manage/staff') && r.method() === 'POST') posted = true
@@ -75,6 +73,7 @@ test.describe('Clinic manager — Staff', () => {
 
   test('manager adds a nurse, edits, then deactivates them', async ({ page }) => {
     await signInAs(page, 'manager')
+    await visit(page, '/manage/staff')
     const email = `playwright.user.${stamp()}@example.com`
     const name = `Playwright Staff ${stamp()}`
 
@@ -126,6 +125,7 @@ test.describe('Clinic manager — Staff', () => {
 
   test('staff API rejects a weak password', async ({ page }) => {
     await signInAs(page, 'manager')
+    await visit(page, '/manage/staff')
     const res = await page.request.post('/api/manage/staff', {
       data: { name: 'Weak', email: `playwright.user.${stamp()}@example.com`, password: 'weak', role: 'nurse', location_ids: [] },
     })
@@ -135,6 +135,7 @@ test.describe('Clinic manager — Staff', () => {
 
   test('staff API refuses admin as a role', async ({ page }) => {
     await signInAs(page, 'manager')
+    await visit(page, '/manage/staff')
     const res = await page.request.post('/api/manage/staff', {
       data: { name: 'Escalate', email: `playwright.user.${stamp()}@example.com`, password: 'Playwright!Aa1', role: 'admin', location_ids: [1] },
     })
@@ -143,111 +144,53 @@ test.describe('Clinic manager — Staff', () => {
   })
 })
 
-test.describe('Clinic manager — Locations', () => {
-  test.setTimeout(180000)
-
-  test('manager adds, edits and deactivates a location', async ({ page }) => {
+test.describe('Clinic manager — no locations or forms', () => {
+  test('the removed pages and APIs are gone', async ({ page }) => {
     await signInAs(page, 'manager')
-    await visit(page, '/manage/locations')
-    const title = `Playwright Site ${stamp()}`
-
-    await page.getByRole('button', { name: '+ Add location' }).click()
-    await page.getByPlaceholder('Location name').fill(title)
-    await page.getByPlaceholder('Address').fill('500 Test Ave, Houston, TX 77002')
-    await page.keyboard.press('Escape')
-    await page.getByPlaceholder('Phone').fill('5551112222')
-    await page.getByPlaceholder('Location email').fill('site@playwright.example.com')
-    const created = page.waitForResponse(r => r.url().endsWith('/api/manage/locations') && r.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    expect((await created).ok()).toBeTruthy()
-
-    const card = page.locator('div').filter({ hasText: title }).filter({ has: page.getByRole('button', { name: 'Edit' }) }).last()
-    await expect(card).toBeVisible()
-    await expect(card.getByText('5551112222', { exact: false })).toBeVisible()
-
-    await card.getByRole('button', { name: 'Edit' }).click()
-    await page.getByPlaceholder('Phone').fill('5553334444')
-    const patched = page.waitForResponse(r => /\/api\/manage\/locations\/\d+$/.test(r.url()) && r.request().method() === 'PATCH')
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    expect((await patched).ok()).toBeTruthy()
-    await expect(page.getByText('Changes saved.').first()).toBeVisible()
-
-    const card2 = page.locator('div').filter({ hasText: title }).filter({ has: page.getByRole('button', { name: 'Deactivate' }) }).last()
-    const deactivated = page.waitForResponse(r => /\/api\/manage\/locations\/\d+$/.test(r.url()) && r.request().method() === 'PATCH')
-    await card2.getByRole('button', { name: 'Deactivate' }).click()
-    expect((await deactivated).ok()).toBeTruthy()
-    // Once deactivated the card offers "Activate" instead, so find it again.
-    const inactiveCard = page.locator('div').filter({ hasText: title }).filter({ has: page.getByRole('button', { name: 'Activate' }) }).last()
-    await expect(inactiveCard.getByText('Inactive')).toBeVisible()
-  })
-
-  test('location name is required', async ({ page }) => {
-    await signInAs(page, 'manager')
-    await visit(page, '/manage/locations')
-    let posted = false
-    page.on('request', r => {
-      if (r.url().endsWith('/api/manage/locations') && r.method() === 'POST') posted = true
-    })
-    await page.getByRole('button', { name: '+ Add location' }).click()
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    expect(await page.getByPlaceholder('Location name').evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(false)
-    expect(posted).toBe(false)
+    for (const path of ['/api/manage/locations', '/api/manage/forms']) {
+      const res = await page.request.get(path)
+      expect(res.status(), path).toBe(404)
+    }
   })
 })
 
-test.describe('Clinic manager — Consent forms', () => {
-  test.setTimeout(180000)
+test.describe('Clinic manager — read-only views', () => {
+  test.setTimeout(120000)
+  test.beforeEach(() => requireRole('manager'))
 
-  test('empty form shows validation toast', async ({ page }) => {
+  test('dashboard loads the tenant numbers', async ({ page }) => {
+    const stats = page.waitForResponse(r => r.url().endsWith('/api/manage/stats'))
     await signInAs(page, 'manager')
-    await visit(page, '/manage/forms')
-    await page.getByRole('button', { name: '+ Add form' }).click()
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    await expect(page.getByText('Name and HTML content are required')).toBeVisible()
+    expect((await stats).status()).toBe(200)
+    await expect(page.getByText('Recent logins')).toBeVisible()
   })
 
-  test('manager creates an inactive form, edits it, then deletes it', async ({ page }) => {
+  test('flowboard and patient history open nothing clinical', async ({ page }) => {
     await signInAs(page, 'manager')
-    await visit(page, '/manage/forms')
-    const name = `Playwright Consent ${stamp()}`
+    await visit(page, '/manage/flowboard')
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveCount(0)
 
-    await page.getByRole('button', { name: '+ Add form' }).click()
-    // The "Form name" label isn't tied to its input.
-    await page.locator('label:text-is("Form name") + input').fill(name)
-    await page.getByRole('button', { name: 'HTML', exact: true }).click()
-    await page.locator('textarea').last().fill('<p>Playwright consent body {{patient_name}}</p>')
-    // Keep it off live encounters.
-    const active = page.getByLabel('Active (shown on encounters for this tenant)')
-    if (await active.isChecked()) await active.uncheck()
-
-    const created = page.waitForResponse(r => r.url().endsWith('/api/manage/forms') && r.request().method() === 'POST')
-    await page.getByRole('button', { name: 'Save', exact: true }).click()
-    expect((await created).ok()).toBeTruthy()
-
-    const row = page.locator('div').filter({ hasText: name }).filter({ has: page.getByRole('button', { name: 'Delete' }) }).last()
-    await expect(row.getByText('Inactive')).toBeVisible()
-
-    // Dismissed confirm keeps it
-    const dismissed = dismissDialogs(page)
-    await row.getByRole('button', { name: 'Delete' }).click()
-    await expect.poll(() => dismissed.length).toBe(1)
-    expect(dismissed[0]).toContain('permanently')
-    await expect(row).toBeVisible()
-    page.removeAllListeners('dialog')
-
-    // Accepted confirm deletes it
-    acceptDialogs(page)
-    const deleted = page.waitForResponse(r => /\/api\/manage\/forms\/[^/]+$/.test(r.url()) && r.request().method() === 'DELETE')
-    await row.getByRole('button', { name: 'Delete' }).click()
-    expect((await deleted).ok()).toBeTruthy()
-    await expect(page.getByText('Form deleted.')).toBeVisible()
-    await expect(page.getByText(name)).toBeHidden()
+    await visit(page, '/manage/patients-history')
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    await expect(page.getByRole('link', { name: /view file/i })).toHaveCount(0)
   })
 
-  test('manager cannot read another tenant’s form by id', async ({ page }) => {
+  test('support inbox is read-only', async ({ page }) => {
     await signInAs(page, 'manager')
-    const res = await page.request.patch('/api/manage/forms/999999999', { data: { is_active: false } })
-    // Any refusal is fine; what matters is that it isn't applied.
-    expect([400, 403, 404]).toContain(res.status())
+    await visit(page, '/manage/support')
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    const res = await page.request.patch('/api/support/tickets/00000000-0000-4000-8000-000000000000', {
+      data: { status: 'resolved' },
+    })
+    expect([403, 404]).toContain(res.status())
+  })
+
+  test('manager APIs answer for the tenant', async ({ page }) => {
+    await signInAs(page, 'manager')
+    for (const path of ['/api/manage/stats', '/api/manage/flowboard', '/api/manage/patients-history']) {
+      const res = await page.request.get(path)
+      expect(res.status(), path).toBe(200)
+    }
   })
 })

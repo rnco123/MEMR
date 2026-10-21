@@ -70,6 +70,15 @@ const adminNavItems = [
     ),
   },
   {
+    nameKey: 'admin.nav.qr',
+    href: '/admin/qr',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h6v6H4V4zm10 0h6v6h-6V4zM4 14h6v6H4v-6zm10 0h2v2h-2v-2zm4 0h2v2h-2v-2zm-4 4h2v2h-2v-2zm4 4v-2h2v2h-2z" />
+      </svg>
+    ),
+  },
+  {
     nameKey: 'admin.nav.pharmacies',
     href: '/admin/pharmacies',
     icon: (

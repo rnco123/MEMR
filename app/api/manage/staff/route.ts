@@ -57,7 +57,8 @@ export async function GET() {
         .eq('tenant_id', tenantId)
         .in('role', [...ADMIN_STAFF_ROLE_VALUES])
         .order('created_at', { ascending: false }),
-      admin.from('locations').select('id, title').eq('tenant_id', tenantId).order('title'),
+      // Locations are added by MEMR admins; managers assign staff to the active ones.
+      admin.from('locations').select('id, title').eq('tenant_id', tenantId).eq('is_active', true).order('title'),
     ])
     if (error) throw error
     if (locErr) throw locErr

@@ -25,8 +25,10 @@ const PROTECTED_PAGES = [
   '/admin/locations',
   '/admin/signups',
   '/manage',
-  '/manage/locations',
-  '/manage/forms',
+  '/manage/staff',
+  '/manage/flowboard',
+  '/manage/patients-history',
+  '/manage/support',
   '/video',
 ]
 
@@ -50,7 +52,7 @@ const ADMIN_PAGES = [
   '/admin/users',
 ]
 
-const MANAGE_PAGES = ['/manage', '/manage/locations', '/manage/forms']
+const MANAGE_PAGES = ['/manage', '/manage/staff', '/manage/flowboard', '/manage/patients-history', '/manage/support']
 
 const PUBLIC_PAGES = ['/', '/login', '/signup', '/welcome', '/offline']
 
@@ -69,7 +71,13 @@ const ADMIN_APIS = [
   '/api/admin/flowboard',
 ]
 
-const MANAGE_APIS = ['/api/manage/me', '/api/manage/locations', '/api/manage/forms', '/api/manage/staff']
+const MANAGE_APIS = [
+  '/api/manage/me',
+  '/api/manage/staff',
+  '/api/manage/stats',
+  '/api/manage/flowboard',
+  '/api/manage/patients-history',
+]
 
 const CLINICAL_APIS = [
   '/api/clinical/flowboard',
@@ -132,7 +140,7 @@ test.describe('Access control — signed out', () => {
       ['/api/admin/users', 'delete'],
       ['/api/admin/locations', 'post'],
       ['/api/admin/services', 'post'],
-      ['/api/manage/locations', 'post'],
+      ['/api/manage/staff', 'post'],
       ['/api/prescriptions', 'post'],
       ['/api/pharmacies', 'post'],
       ['/api/nurse/walk-in', 'post'],

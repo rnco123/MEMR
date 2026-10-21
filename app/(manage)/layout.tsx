@@ -8,7 +8,12 @@ import { LanguageToggle } from '@/components/LanguageToggle'
 import { useAuth } from '@/lib/auth-context'
 import { useT } from '@/lib/i18n'
 
-/** Clinic manager shell: staff and locations of one tenant. No clinical pages. */
+/**
+ * Clinic manager shell, scoped to one tenant. Staff is the only thing a manager
+ * changes; the dashboard, flowboard, patient list and support tickets are
+ * read-only views of their tenant. Locations and consent forms are managed by
+ * MEMR admins (Admin → Locations, Admin → Forms).
+ */
 export default function ManageLayout({ children }: { children: React.ReactNode }) {
   const { t } = useT()
   const { signOut } = useAuth()
@@ -23,9 +28,11 @@ export default function ManageLayout({ children }: { children: React.ReactNode }
   }, [])
 
   const nav = [
-    { href: '/manage', label: t('manage.nav.staff') },
-    { href: '/manage/locations', label: t('manage.nav.locations') },
-    { href: '/manage/forms', label: t('manage.nav.forms') },
+    { href: '/manage', label: t('manage.nav.dashboard') },
+    { href: '/manage/staff', label: t('manage.nav.staff') },
+    { href: '/manage/flowboard', label: t('manage.nav.flowboard') },
+    { href: '/manage/patients-history', label: t('manage.nav.patients') },
+    { href: '/manage/support', label: t('manage.nav.support') },
   ]
 
   return (
@@ -51,14 +58,14 @@ export default function ManageLayout({ children }: { children: React.ReactNode }
             </button>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-6xl gap-1 px-4 sm:px-6">
+        <nav className="mx-auto flex max-w-6xl gap-1 overflow-x-auto px-4 sm:px-6">
           {nav.map((item) => {
             const active = item.href === '/manage' ? pathname === '/manage' : pathname.startsWith(item.href)
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap border-b-2 px-3 pb-2.5 pt-1 text-sm font-medium transition-colors ${
                   active ? 'border-[#2E6EF3] text-[#2E6EF3]' : 'border-transparent text-slate-500 hover:text-slate-800'
                 }`}
               >

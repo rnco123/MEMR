@@ -69,7 +69,7 @@ export async function GET(_req: NextRequest) {
       await Promise.all([
         admin
           .from('profiles')
-          .select('uid, role, full_name, email, active, created_at, avatar_id, compliance_access')
+          .select('uid, role, full_name, email, active, created_at, avatar_id, compliance_access, tenant_id')
           .neq('role', 'admin')
           .order('created_at', { ascending: false }),
         fetchAllLocations(admin),
@@ -90,22 +90,43 @@ export async function GET(_req: NextRequest) {
       locationsByUser.set(row.user_uid, list)
     }
 
+    // A clinic manager covers every location of their tenant, including ones added
+    // later, so their locations are derived here rather than stored. They are not
+    // clinical staff, and a user_locations row is what makes someone assignable at
+    // a clinic — writing one would put them in provider lists.
+    const locationsByTenant = new Map<number, { id: number; title: string }[]>()
+    for (const l of locations ?? []) {
+      if (l.tenant_id == null) continue
+      const list = locationsByTenant.get(l.tenant_id) ?? []
+      list.push({ id: l.id, title: l.title })
+      locationsByTenant.set(l.tenant_id, list)
+    }
+    const tenantLocationsFor = (p: { role: string; tenant_id?: number | null }) =>
+      p.role === UserRole.CLINIC_MANAGER && p.tenant_id != null
+        ? (locationsByTenant.get(p.tenant_id) ?? [])
+        : null
+
     const npiByUserId = new Map<string, string | null>()
     for (const d of doctors ?? []) {
       if (!d.user_id) continue
       npiByUserId.set(d.user_id, (d.npi as string | null)?.trim() || null)
     }
 
-    const users = (profiles ?? []).map((p) => ({
-      ...p,
-      email: p.email ?? null,
-      active: p.active !== false,
-      compliance_access: p.compliance_access === true,
-      avatar_id: p.avatar_id ?? null,
-      avatar_url: resolveStaffAvatarUrl(p.avatar_id ?? null),
-      assigned_locations: locationsByUser.get(p.uid) ?? [],
-      npi: isPhysicianRole(p.role) ? (npiByUserId.get(p.uid) ?? null) : null,
-    }))
+    const users = (profiles ?? []).map((p) => {
+      const tenantLocations = tenantLocationsFor(p)
+      return {
+        ...p,
+        email: p.email ?? null,
+        active: p.active !== false,
+        compliance_access: p.compliance_access === true,
+        avatar_id: p.avatar_id ?? null,
+        avatar_url: resolveStaffAvatarUrl(p.avatar_id ?? null),
+        assigned_locations: tenantLocations ?? locationsByUser.get(p.uid) ?? [],
+        /** True when the locations are the tenant's, not an editable assignment. */
+        locations_from_tenant: tenantLocations !== null,
+        npi: isPhysicianRole(p.role) ? (npiByUserId.get(p.uid) ?? null) : null,
+      }
+    })
 
     return NextResponse.json({ users, locations: locations ?? [] })
   } catch (err) {

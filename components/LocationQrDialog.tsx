@@ -155,7 +155,7 @@ export function LocationQrDialog({
               </button>
             </>
           ) : (
-            !loading && result?.portal_location_id != null && (
+            !loading && result && (
               <button type="button" onClick={generate} disabled={generating}
                 className="h-10 rounded-lg bg-[#2E6EF3] px-4 text-sm font-semibold text-white hover:bg-[#1f5ad2] disabled:opacity-60">
                 {generating ? t('locations.qr.generating') : t('locations.qr.generate')}

@@ -11,6 +11,7 @@ import {
 import { resolveSupportActor } from '@/lib/support/resolve-actor'
 import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
 import { handleApiError } from '@/lib/api-error-handler'
+import { managerTicketCreatorUids } from '@/lib/manage/auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,9 +41,13 @@ export async function GET(_request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Ticket not found' }, { status: 404 })
     }
 
-    // Authorization
+    // Authorization. A clinic manager may read their tenant staff's tickets; the
+    // PATCH below still allows only admins and the ticket's creator.
     if (!isAdmin && ticket.created_by !== user.id) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      const managerScope = await managerTicketCreatorUids(adminClient, user.id, profile?.role)
+      if (!managerScope?.includes(ticket.created_by as string)) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+      }
     }
 
     // Fetch messages
