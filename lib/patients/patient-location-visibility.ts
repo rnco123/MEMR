@@ -4,6 +4,7 @@ import { getLocationScopeForUser, isAllowedByLocationScope } from '@/lib/locatio
 import { UserRole, isPhysicianRole, mapRoleToEnum } from '@/lib/roles'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { isEncounterCompleted, resolveDoctorRowId } from '@/lib/encounters/access-helpers'
+import { fetchAllPages } from '@/lib/supabase/fetch-pages'
 
 /** Patient visible when home clinic or any visit is in the user's assigned locations. */
 export async function isPatientVisibleInScope(
@@ -40,23 +41,30 @@ export async function listPatientIdsVisibleInScope(
 
   const ids = new Set<number>()
 
-  const { data: homePatients, error: homeErr } = await admin
-    .from('patients')
-    .select('id')
-    .in('location_id', scope.locationIds)
+  // Both reads grow with the clinic's history, so they are paged past PostgREST's row cap.
+  const [homePatients, visitPatients] = await Promise.all([
+    fetchAllPages<{ id: number | null }>((from, to) =>
+      admin
+        .from('patients')
+        .select('id')
+        .in('location_id', scope.locationIds)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+    fetchAllPages<{ patient_id: number | null }>((from, to) =>
+      admin
+        .from('appointments')
+        .select('patient_id')
+        .in('location_id', scope.locationIds)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+  ])
 
-  if (homeErr) throw homeErr
-  for (const row of homePatients ?? []) {
+  for (const row of homePatients) {
     if (row.id != null) ids.add(Number(row.id))
   }
-
-  const { data: visitPatients, error: visitErr } = await admin
-    .from('appointments')
-    .select('patient_id')
-    .in('location_id', scope.locationIds)
-
-  if (visitErr) throw visitErr
-  for (const row of visitPatients ?? []) {
+  for (const row of visitPatients) {
     if (row.patient_id != null) ids.add(Number(row.patient_id))
   }
 
