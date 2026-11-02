@@ -6,5 +6,6 @@ export const POST_LOGIN_REDIRECT_MIN_MS = 1800
 
 export function postLoginDestination(role: UserRole | string | null): string {
   if (role === UserRoleEnum.ADMIN || role === 'admin') return '/admin'
+  if (role === UserRoleEnum.CLINIC_MANAGER || role === 'clinic_manager') return '/manage'
   return '/dashboard'
 }

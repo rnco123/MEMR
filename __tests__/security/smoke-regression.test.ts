@@ -21,10 +21,17 @@ describe('M-10 — Test endpoints blocked in production', () => {
 })
 
 describe('H-10 — Daily API key source', () => {
-  it('daily/room route uses server-only env var', () => {
+  it('daily/room credentials use a server-only env var', () => {
+    // The room route no longer reads a Daily key at all: credentials are minted
+    // by mcm-bridge, and lib/daily/credentials.ts holds only the outage
+    // fallback. H-10 moves with the code rather than being dropped.
+    const creds = readFile('lib/daily/credentials.ts')
+    expect(creds).toContain('DAILY_API_KEY')
+
+    // And the route must not reach for one itself, by either name.
     const route = readFile('app/api/daily/room/route.ts')
-    expect(route).toContain('DAILY_API_KEY')
-    // Must not reference NEXT_PUBLIC_DAILY_API_KEY as the only source
+    expect(route).not.toContain('NEXT_PUBLIC_DAILY_API_KEY')
+    expect(route).not.toContain('api.daily.co')
   })
 
   it('daily/end-room route uses server-only env var', () => {

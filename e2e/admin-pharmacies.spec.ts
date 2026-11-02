@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
@@ -57,20 +58,20 @@ test.describe('Admin — Pharmacies', () => {
 
     // Fill phone — placeholder: "5551234567"
     const phoneInput = page.getByPlaceholder('5551234567')
-    if (await phoneInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(phoneInput, 2000)) {
       await phoneInput.fill('5551234567')
     }
 
     // Fill email — placeholder: "orders@pharmacy.com"
     const emailInput = page.getByPlaceholder('orders@pharmacy.com')
-    if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(emailInput, 2000)) {
       await emailInput.fill(`test${Date.now()}@pharmacy.com`)
     }
 
     // Address has no placeholder — find it by its label position (3rd input in form)
     // It's the md:col-span-2 input after phone
     const addressInput = page.locator('form').locator('input').filter({ hasText: '' }).nth(2)
-    if (await addressInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(addressInput, 2000)) {
       await addressInput.fill('123 Pharmacy St, Houston, TX 77002')
     }
 
@@ -124,7 +125,7 @@ test.describe('Admin — Pharmacies', () => {
 
     // Phone field in edit form — same placeholder "5551234567"
     const phoneInput = page.getByPlaceholder('5551234567').first()
-    if (await phoneInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(phoneInput, 2000)) {
       const currentPhone = await phoneInput.inputValue()
       if (!currentPhone) await phoneInput.fill('5559876543')
     }

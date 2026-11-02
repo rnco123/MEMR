@@ -11,12 +11,16 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { hasCredentials } from './helpers/auth'
+import { createDoctorEncounter } from './helpers/encounters'
+import { isShown } from './helpers/wait'
 
 const doctorEmail = process.env.PLAYWRIGHT_DOCTOR_EMAIL?.trim() || ''
 const doctorPassword = process.env.PLAYWRIGHT_DOCTOR_PASSWORD?.trim() || ''
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://mcm-testing.up.railway.app'
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const BASE_URL = ''
 
 async function signInAsDoctor(page: Page) {
   const json = await adaptiveSignIn(page, doctorEmail, doctorPassword)
@@ -120,7 +124,7 @@ async function openEncounterWithPrescriptions(page: Page, role: 'doctor' | 'nurs
   const statusSelect = page.locator('select').filter({
     has: page.locator(`option[value="${targetStatus}"]`)
   }).first()
-  if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await isShown(statusSelect, 3000)) {
     await statusSelect.selectOption(targetStatus)
     await page.waitForTimeout(500)
   }
@@ -131,20 +135,18 @@ async function openEncounterWithPrescriptions(page: Page, role: 'doctor' | 'nurs
   await viewBtn.click()
 
   await expect(
-    page.getByTestId('encounter-detail-modal').or(
-      page.getByRole('heading', { name: /encounter details/i }).first()
-    )
+    page.getByTestId('encounter-detail-modal')
   ).toBeVisible({ timeout: 20000 })
 
   // Click Details tab
   const detailsTab = page.getByRole('button', { name: /^Details$/i })
-  if (await detailsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+  if (await isShown(detailsTab, 3000)) {
     await detailsTab.click()
   }
 
   // Scroll to "Prescriptions & Pharmacy" section heading
   const rxHeading = page.getByText('Prescriptions & Pharmacy').first()
-  if (await rxHeading.isVisible({ timeout: 5000 }).catch(() => false)) {
+  if (await isShown(rxHeading, 5000)) {
     await rxHeading.scrollIntoViewIfNeeded()
     await page.waitForTimeout(300)
   }
@@ -154,6 +156,13 @@ async function openEncounterWithPrescriptions(page: Page, role: 'doctor' | 'nurs
 
 test.describe('Prescriptions & Pharmacy', () => {
   test.setTimeout(300000)
+
+  // Each test gets a fresh active encounter assigned to the Playwright doctor,
+  // since earlier specs (or the test itself) may complete the existing ones.
+  test.beforeEach(async ({ playwright }, testInfo) => {
+    if (!hasCredentials('doctor') || !hasCredentials('nurse')) return
+    await createDoctorEncounter(playwright, testInfo.project.use.baseURL!)
+  })
 
   // ── Doctor adds a prescription ────────────────────────────────────────────
   test('doctor can add a prescription on a non-completed encounter', async ({ page }) => {
@@ -185,7 +194,7 @@ test.describe('Prescriptions & Pharmacy', () => {
 
     // Save — button: "Save {n} prescription(s)"
     const saveBtn = page.getByRole('button', { name: /save.*prescription|save \d/i }).first()
-    if (await saveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(saveBtn, 5000)) {
       const saveResponsePromise = page.waitForResponse(
         r => r.url().includes('/prescriptions') && r.request().method() === 'POST',
         { timeout: 30000 }
@@ -213,7 +222,7 @@ test.describe('Prescriptions & Pharmacy', () => {
 
     // First add a prescription via the UI so we have something to delete
     const addBtn = page.getByRole('button', { name: /Add a new medicine/i })
-    if (!await addBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (!await isShown(addBtn, 5000)) {
       console.log('ℹ "+ Add a new medicine" not visible — cannot test delete')
       return
     }
@@ -226,7 +235,7 @@ test.describe('Prescriptions & Pharmacy', () => {
 
     // Save it
     const saveBtn = page.getByRole('button', { name: /save.*prescription|save \d/i }).first()
-    if (await saveBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(saveBtn, 5000)) {
       const savePromise = page.waitForResponse(
         r => r.url().includes('/prescriptions') && r.request().method() === 'POST',
         { timeout: 30000 }
@@ -317,7 +326,7 @@ test.describe('Prescriptions & Pharmacy', () => {
     // Filter flowboard by status
     const targetStatus = target.encounter_status ?? 'provider_assigned'
     const statusSelect = page.locator('select').filter({ has: page.locator(`option[value="${targetStatus}"]`) }).first()
-    if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(statusSelect, 3000)) {
       await statusSelect.selectOption(targetStatus)
       await page.waitForTimeout(500)
     }
@@ -327,14 +336,14 @@ test.describe('Prescriptions & Pharmacy', () => {
     await viewBtn.click()
 
     await expect(
-      page.getByTestId('encounter-detail-modal').or(page.getByRole('heading', { name: /encounter details/i }).first())
+      page.getByTestId('encounter-detail-modal')
     ).toBeVisible({ timeout: 20000 })
 
     const detailsTab = page.getByRole('button', { name: /^Details$/i })
-    if (await detailsTab.isVisible({ timeout: 3000 }).catch(() => false)) await detailsTab.click()
+    if (await isShown(detailsTab, 3000)) await detailsTab.click()
 
     const rxHeading = page.getByText('Prescriptions & Pharmacy').first()
-    if (await rxHeading.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(rxHeading, 5000)) {
       await rxHeading.scrollIntoViewIfNeeded()
       await page.waitForTimeout(300)
     }
@@ -368,31 +377,29 @@ test.describe('Prescriptions & Pharmacy', () => {
     const statusSelect = page.locator('select').filter({
       has: page.locator('option[value="completed"]')
     }).first()
-    if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(statusSelect, 3000)) {
       await statusSelect.selectOption('completed')
       await page.waitForTimeout(500)
     }
 
     const viewBtn = page.getByRole('button', { name: /^view$/i }).first()
-    if (!await viewBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (!await isShown(viewBtn, 5000)) {
       console.log('ℹ No completed encounters available')
       return
     }
     await viewBtn.click()
 
     await expect(
-      page.getByTestId('encounter-detail-modal').or(
-        page.getByRole('heading', { name: /encounter details/i }).first()
-      )
+      page.getByTestId('encounter-detail-modal')
     ).toBeVisible({ timeout: 20000 })
 
     const detailsTab = page.getByRole('button', { name: /^Details$/i })
-    if (await detailsTab.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(detailsTab, 3000)) {
       await detailsTab.click()
     }
 
     const rxHeading = page.getByText('Prescriptions & Pharmacy').first()
-    if (await rxHeading.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (await isShown(rxHeading, 5000)) {
       await rxHeading.scrollIntoViewIfNeeded()
     }
 

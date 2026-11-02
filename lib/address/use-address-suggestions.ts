@@ -10,6 +10,8 @@ type Options = {
   query: string
   minQueryLength?: number
   disabled?: boolean
+  /** Defaults to the signed-in route; public pages pass `/api/address/public-suggestions`. */
+  suggestionsUrl?: string
 }
 
 type Result = {
@@ -32,6 +34,7 @@ export function useAddressSuggestions({
   query,
   minQueryLength = 4,
   disabled = false,
+  suggestionsUrl = '/api/address/suggestions',
 }: Options): Result {
   const [lookupEnabled, setLookupEnabled] = useState<boolean | null>(null)
   const [suggestions, setSuggestions] = useState<AddressSuggestion[]>([])
@@ -79,7 +82,7 @@ export function useAddressSuggestions({
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(
-          `/api/address/suggestions?search=${encodeURIComponent(trimmed)}`,
+          `${suggestionsUrl}?search=${encodeURIComponent(trimmed)}`,
           { credentials: 'include' }
         )
         if (seq !== requestSeqRef.current) return
@@ -104,7 +107,7 @@ export function useAddressSuggestions({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [trimmed, lookupEnabled, disabled, minQueryLength, suppressed])
+  }, [trimmed, lookupEnabled, disabled, minQueryLength, suppressed, suggestionsUrl])
 
   const suppressUntilNextEdit = (appliedValue: string) => {
     requestSeqRef.current++

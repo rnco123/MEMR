@@ -6,6 +6,7 @@ import {
   type LocationScope,
 } from '@/lib/locations/scope'
 import { compareActivityDesc, latestActivityTimestamp } from '@/lib/flowboard/activity-sort'
+import { fetchAllPages, fetchInChunks } from '@/lib/supabase/fetch-pages'
 
 /** Appointment date (YYYY-MM-DD) is after today in clinic (Central) time. */
 export function isFutureFlowboardRow(
@@ -83,52 +84,74 @@ export async function buildFlowboardRows(
   const dateScope = options.dateScope ?? 'active'
   const todayDate = getClinicTodayDateString()
 
-  let appointmentsQuery = admin
-    .from('appointments')
-    .select('id, patient_id, appointment_date, appointment_time, onsite_type, service_id, created_at, location_id')
+  // Paged: an unpaged read here stopped at PostgREST's row cap and silently dropped the
+  // newest visits once the table outgrew it.
+  const appointments = await fetchAllPages((from, to) => {
+    let query = admin
+      .from('appointments')
+      .select('id, patient_id, appointment_date, appointment_time, onsite_type, service_id, created_at, location_id')
+      .order('id', { ascending: true })
+      .range(from, to)
 
-  // Same date bounds as isFutureFlowboardRow/isActiveFlowboardRow, pushed to the DB
-  // so the appointment_date index prunes the scan; exact filtering still happens below.
-  if (dateScope === 'future') {
-    appointmentsQuery = appointmentsQuery.gt('appointment_date', todayDate)
-  } else {
-    appointmentsQuery = appointmentsQuery.or(
-      `appointment_date.is.null,appointment_date.lte.${todayDate}`
-    )
-  }
+    // Same date bounds as isFutureFlowboardRow/isActiveFlowboardRow, pushed to the DB
+    // so the appointment_date index prunes the scan; exact filtering still happens below.
+    if (dateScope === 'future') {
+      query = query.gt('appointment_date', todayDate)
+    } else {
+      query = query.or(`appointment_date.is.null,appointment_date.lte.${todayDate}`)
+    }
+    return query
+  })
 
-  const { data: appointments, error: appointmentsError } = await appointmentsQuery
-
-  if (appointmentsError) throw appointmentsError
-  if (!appointments?.length) return []
+  if (!appointments.length) return []
 
   const patientIds = [...new Set(appointments.map((a) => a.patient_id).filter(Boolean))]
   const appointmentIds = appointments.map((a) => a.id)
 
   const serviceIds = [...new Set(appointments.map((a) => a.service_id).filter(Boolean))] as number[]
 
-  const [{ data: patients }, { data: encounters }, { data: services }] = await Promise.all([
-    admin
-      .from('patients')
-      .select('id, first_name, last_name, email, phone, date_of_birth, location_id, created_by_source')
-      .in('id', patientIds),
-    admin
-      .from('encounters')
-      .select('id, appointment_id, status, doctor_id, created_at, updated_at, ready_for_doctor_at')
-      .in('appointment_id', appointmentIds),
-    serviceIds.length > 0
-      ? admin.from('services').select('id, title_en, title_es').in('id', serviceIds)
-      : Promise.resolve({ data: [] as { id: number; title_en: string; title_es: string | null }[] }),
+  const [patients, encounters, services] = await Promise.all([
+    fetchInChunks(patientIds, (ids, from, to) =>
+      admin
+        .from('patients')
+        .select('id, first_name, last_name, email, phone, date_of_birth, location_id, created_by_source')
+        .in('id', ids)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+    fetchInChunks(appointmentIds, (ids, from, to) =>
+      admin
+        .from('encounters')
+        .select('id, appointment_id, status, doctor_id, created_at, updated_at, ready_for_doctor_at')
+        .in('appointment_id', ids)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
+    fetchInChunks(serviceIds, (ids, from, to) =>
+      admin
+        .from('services')
+        .select('id, title_en, title_es')
+        .in('id', ids)
+        .order('id', { ascending: true })
+        .range(from, to)
+    ),
   ])
 
   const servicesById: Record<number, { title_en: string; title_es: string | null }> = {}
-  for (const service of services ?? []) {
+  for (const service of services) {
     servicesById[service.id] = { title_en: service.title_en, title_es: service.title_es }
   }
 
   const locationIds = new Set<number>()
-  for (const p of patients ?? []) {
+  const patientsById = new Map(patients.map((p) => [p.id, p]))
+  for (const p of patients) {
     if (p.location_id != null) locationIds.add(p.location_id)
+  }
+
+  // First encounter per appointment, matching the earlier `find`.
+  const encountersByAppointmentId = new Map<number, (typeof encounters)[number]>()
+  for (const e of encounters) {
+    if (!encountersByAppointmentId.has(e.appointment_id)) encountersByAppointmentId.set(e.appointment_id, e)
   }
   for (const a of appointments) {
     if (a.location_id != null) locationIds.add(a.location_id)
@@ -147,7 +170,7 @@ export async function buildFlowboardRows(
     }
   }
 
-  const doctorIds = [...new Set((encounters ?? []).map((e) => e.doctor_id).filter(Boolean))] as number[]
+  const doctorIds = [...new Set(encounters.map((e) => e.doctor_id).filter(Boolean))] as number[]
   const doctorsById: Record<number, { id: number; full_name: string; email: string | null }> = {}
   if (doctorIds.length > 0) {
     const { data: docs } = await admin.from('doctors').select('id, full_name, email').in('id', doctorIds)
@@ -159,7 +182,7 @@ export async function buildFlowboardRows(
   const rows: FlowboardRow[] = []
 
   for (const appointment of appointments) {
-    const patient = patients?.find((p) => p.id === appointment.patient_id)
+    const patient = patientsById.get(appointment.patient_id)
     const effectiveLocationId = resolveEffectiveLocationId(
       patient?.location_id,
       appointment.location_id
@@ -173,7 +196,7 @@ export async function buildFlowboardRows(
       continue
     }
 
-    const encounter = encounters?.find((e) => e.appointment_id === appointment.id)
+    const encounter = encountersByAppointmentId.get(appointment.id)
 
     if (dateScope === 'future') {
       if (!isFutureFlowboardRow(appointment.appointment_date)) continue

@@ -42,5 +42,8 @@ export async function signIn(page: Page, email: string, password: string) {
   ).catch(() => {})
 
   await page.waitForLoadState('networkidle')
+  // withRoleProtection shows "Verifying access..." until the profile loads; on
+  // the dev server that request waits for the page bundle to compile.
+  await expect(page.getByText('Verifying access')).toBeHidden({ timeout: 45000 })
   return (await loginResponse.json()) as { role?: string | null }
 }

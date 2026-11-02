@@ -1,6 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
+import { isShown } from './helpers/wait'
 
-const DEPLOYED_URL = 'https://mcm-testing.up.railway.app'
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const DEPLOYED_URL = ''
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
 
@@ -79,9 +81,24 @@ test.describe('nurse flowboard — add new patient', () => {
       timeout: 15000,
     })
 
-    // Treatment type dropdown — select "Primary Care" (or first available option)
-    const treatmentSelect = page.locator('select').first()
-    await treatmentSelect.selectOption({ index: 1 })   // pick any non-blank option
+    // Nurses with several locations must pick one; single-location nurses get it pre-selected.
+    // Smallest container holding both the modal heading and its footer buttons.
+    const modal = page
+      .locator('div')
+      .filter({ has: page.getByRole('heading', { name: /register new patient/i }) })
+      .filter({ has: page.getByRole('button', { name: 'Cancel' }) })
+      .last()
+    const firstLocation = page.getByRole('listbox', { name: 'Clinic location' }).getByRole('option').first()
+    if (await isShown(firstLocation, 3000)) {
+      await firstLocation.click()
+    }
+
+    // Treatment type dropdown, when the modal shows one — pick any non-blank option.
+    // Scoped to the modal: the page behind it has its own filter selects.
+    const treatmentSelect = modal.locator('select').first()
+    if (await isShown(treatmentSelect, 3000)) {
+      await treatmentSelect.selectOption({ index: 1 })
+    }
 
     // Click Next to move to patient details
     await page.getByRole('button', { name: /^next$/i }).last().click()
@@ -90,6 +107,10 @@ test.describe('nurse flowboard — add new patient', () => {
     await expect(page.getByRole('heading', { name: /patient details/i })).toBeVisible({
       timeout: 15000,
     })
+
+    // Treatment type is required and lives on this step as a drawer picker (not a <select>).
+    await page.locator('#register-treatment-type').click()
+    await page.getByRole('listbox').last().getByRole('option').first().click()
 
     // First name (placeholder: "e.g. Maria")
     await page.getByPlaceholder('e.g. Maria').fill(PATIENT.firstName)
@@ -102,7 +123,9 @@ test.describe('nurse flowboard — add new patient', () => {
     const dobSection = page.locator('text=DOB').locator('..')
     const dobTextbox = dobSection.locator('input[type="text"], input:not([type="checkbox"]):not([type="hidden"])').first()
     await dobTextbox.click()
-    await dobTextbox.fill(PATIENT.dob)
+    // The DOB field is a masked MM/DD/YYYY input; type it digit by digit in that order.
+    const [y, m, d] = PATIENT.dob.split('-')
+    await dobTextbox.pressSequentially(`${m}${d}${y}`)
     // Press Tab/Enter to close the calendar picker if it opened
     await page.keyboard.press('Escape')
 
@@ -242,14 +265,15 @@ test.describe('nurse flowboard — add new patient', () => {
     }
 
     // ── Wizard closes → back on the flowboard ─────────────────────────────────
+    // The wizard closes once the document upload to storage finishes, which can be slow.
     await expect(page.getByRole('heading', { name: /register new patient/i })).toBeHidden({
-      timeout: 20000,
+      timeout: 90000,
     })
 
     // After wizard closes, an encounter detail modal may auto-open — close it first
     // so it doesn't block clicks on the flowboard table
     const autoOpenModal = page.locator('.fixed.inset-0').filter({ hasText: /appointment initiated/i })
-    const autoOpenVisible = await autoOpenModal.isVisible({ timeout: 5000 }).catch(() => false)
+    const autoOpenVisible = await isShown(autoOpenModal, 5000)
     if (autoOpenVisible) {
       await page.keyboard.press('Escape')
       await autoOpenModal.waitFor({ state: 'hidden', timeout: 10000 }).catch(() => {})
@@ -264,13 +288,10 @@ test.describe('nurse flowboard — add new patient', () => {
     await rowContainer.getByRole('button', { name: /^view$/i }).click({ force: true })
 
     // Verify encounter detail modal shows Ali Hassan + Appointment Initiated
-    const encounterModal = page.getByTestId('encounter-detail-modal').or(
-      page.locator('*')
-        .filter({ hasText: /Ali Hassan/i })
-        .filter({ hasText: /appointment initiated/i })
-        .first()
-    )
+    const encounterModal = page.getByTestId('encounter-detail-modal')
     await expect(encounterModal).toBeVisible({ timeout: 20000 })
+    await expect(encounterModal.getByText(/Ali Hassan/i).first()).toBeVisible()
+    await expect(encounterModal.getByText(/appointment initiated/i).first()).toBeVisible()
     await expect(page.getByText(/Ali Hassan/i).first()).toBeVisible({ timeout: 10000 })
     // Use a visible status badge/text, excluding hidden <option> elements
     await expect(

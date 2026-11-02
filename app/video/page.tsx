@@ -1092,7 +1092,10 @@ function VideoPage() {
   if (!user) return null
 
   // Do not replace the whole page while the Daily iframe is active (avoids kicking users out mid-call if a late error fires).
-  if (error && !showConnectionModal && !dailyJoinUrl) {
+  // The connection modal only opens once a room token exists; if the room fetch failed it
+  // never opens, so `showConnectionModal` alone must not hide the error (blank screen).
+  const connectionModalOpen = showConnectionModal && !!roomToken
+  if (error && !connectionModalOpen && !dailyJoinUrl) {
     return (
       <div className="flex min-h-[100dvh] flex-col items-center justify-center p-6 sm:p-12">
         <div className="text-red-500 mb-4 text-center max-w-md px-4">Error: {error}</div>

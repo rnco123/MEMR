@@ -174,7 +174,7 @@ test.describe('Compliance Access', () => {
     expect(json.role).toBe('nurse')
     await page.waitForURL(/\/dashboard/, { timeout: 45000 })
 
-    await page.goto(`${process.env.PLAYWRIGHT_BASE_URL}/dashboard/compliance`)
+    await page.goto(`/dashboard/compliance`)
     await page.waitForLoadState('networkidle')
 
     await expect(page).not.toHaveURL(/\/compliance/, { timeout: 10000 })

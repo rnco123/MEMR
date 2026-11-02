@@ -1,7 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn } from './helpers/sign-in'
 
-const DEPLOYED_URL = process.env.PLAYWRIGHT_BASE_URL!
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const DEPLOYED_URL = ''
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''

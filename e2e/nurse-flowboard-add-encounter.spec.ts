@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
@@ -51,7 +52,7 @@ test.describe('nurse flowboard add encounter', () => {
     // Wait for modal to open — detect by testid or heading
     const modalByTestId = page.getByTestId('nurse-add-encounter-modal')
     const modalByHeading = page.getByRole('heading', { name: /add encounter for existing patient/i })
-    const hasTestId = await modalByTestId.isVisible({ timeout: 5000 }).catch(() => false)
+    const hasTestId = await isShown(modalByTestId, 5000)
     if (!hasTestId) {
       await expect(modalByHeading).toBeVisible({ timeout: 30000 })
     }

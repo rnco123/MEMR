@@ -1,5 +1,8 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { hasCredentials } from './helpers/auth'
+import { createDoctorEncounter } from './helpers/encounters'
+import { isShown } from './helpers/wait'
 
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
@@ -19,6 +22,13 @@ async function signInAsNurse(page: Page) {
 
 test.describe('Nurse — Vitals', () => {
   test.setTimeout(300000)
+
+  // Each test gets a fresh active encounter assigned to the Playwright doctor,
+  // since earlier specs (or the test itself) may complete the existing ones.
+  test.beforeEach(async ({ playwright }, testInfo) => {
+    if (!hasCredentials('doctor') || !hasCredentials('nurse')) return
+    await createDoctorEncounter(playwright, testInfo.project.use.baseURL!)
+  })
 
   // Flow:
   // 1. Nurse opens flowboard
@@ -45,18 +55,20 @@ test.describe('Nurse — Vitals', () => {
     // AND where the encounter has an encounter_id (not just an appointment)
     // Try direct approach — look for "Vitals" button on any row
     const vitalsBtn = page.getByRole('button', { name: /^vitals$/i }).first()
-    let vitalsVisible = await vitalsBtn.isVisible({ timeout: 10000 }).catch(() => false)
+    let vitalsVisible = await isShown(vitalsBtn, 10000)
 
     if (!vitalsVisible) {
       // Filter flowboard to show only "Provider Assigned" encounters
-      const statusSelect = page.locator('select').filter({
-        has: page.locator('option').nth(1)
-      }).nth(1) // second select is status filter
+      // The status filter is the select that lists encounter statuses.
+      const statusSelect = page
+        .locator('select')
+        .filter({ has: page.locator('option', { hasText: 'Provider Assigned' }) })
+        .first()
 
-      if (await statusSelect.isVisible({ timeout: 5000 }).catch(() => false)) {
-        await statusSelect.selectOption('provider_assigned')
+      if (await isShown(statusSelect, 5000)) {
+        await statusSelect.selectOption({ label: 'Provider Assigned' })
         await page.waitForTimeout(500)
-        vitalsVisible = await vitalsBtn.isVisible({ timeout: 10000 }).catch(() => false)
+        vitalsVisible = await isShown(vitalsBtn, 10000)
       }
     }
 
@@ -96,31 +108,31 @@ test.describe('Nurse — Vitals', () => {
 
     // Fill Respiratory Rate (placeholder: "16")
     const rrInput = page.locator('input[type="number"]').nth(3)
-    if (await rrInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(rrInput, 2000)) {
       await rrInput.fill('16')
     }
 
     // Fill Temperature — value + unit select
     const tempInput = page.locator('input[type="number"]').nth(4)
-    if (await tempInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(tempInput, 2000)) {
       await tempInput.fill('98.6')
     }
 
     // Fill SpO2 (placeholder: "70-100")
     const spo2Input = page.locator('input[type="number"]').nth(5)
-    if (await spo2Input.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(spo2Input, 2000)) {
       await spo2Input.fill('98')
     }
 
     // Fill Weight
     const weightInput = page.locator('input[type="number"]').nth(6)
-    if (await weightInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(weightInput, 2000)) {
       await weightInput.fill('154')
     }
 
     // Fill Height
     const heightInput = page.locator('input[type="number"]').nth(7)
-    if (await heightInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(heightInput, 2000)) {
       await heightInput.fill('68')
     }
 
@@ -146,16 +158,19 @@ test.describe('Nurse — Vitals', () => {
 
     // Reset status filter to "all" so the vitals_assessed encounter is visible
     // (it was filtered to provider_assigned before, so after saving it disappears)
-    const statusSelect = page.locator('select').nth(1)
-    if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await statusSelect.selectOption('all')
+    const statusSelect = page
+      .locator('select')
+      .filter({ has: page.locator('option', { hasText: 'Provider Assigned' }) })
+      .first()
+    if (await isShown(statusSelect, 3000)) {
+      await statusSelect.selectOption({ label: 'All' })
       await page.waitForTimeout(500)
     }
 
     // Search for the patient by name to find their row
     if (patientName) {
       const searchInput = page.locator('input[type="text"]').first()
-      if (await searchInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+      if (await isShown(searchInput, 5000)) {
         await searchInput.fill(patientName.trim())
         await page.waitForTimeout(800) // debounce
         console.log(`✓ Searching for patient: ${patientName}`)

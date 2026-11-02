@@ -10,13 +10,17 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { hasCredentials } from './helpers/auth'
+import { createDoctorEncounter } from './helpers/encounters'
+import { isShown } from './helpers/wait'
 
 const doctorEmail = process.env.PLAYWRIGHT_DOCTOR_EMAIL?.trim() || ''
 const doctorPassword = process.env.PLAYWRIGHT_DOCTOR_PASSWORD?.trim() || ''
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
 
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'https://mcm-testing.up.railway.app'
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const BASE_URL = ''
 
 async function signInAsDoctor(page: Page) {
   const json = await adaptiveSignIn(page, doctorEmail, doctorPassword)
@@ -53,6 +57,13 @@ async function goToNurseFlowboard(page: Page) {
 test.describe('Doctor — Encounter Modal', () => {
   test.setTimeout(300000)
 
+  // Each test gets a fresh active encounter assigned to the Playwright doctor,
+  // since earlier specs (or the test itself) may complete the existing ones.
+  test.beforeEach(async ({ playwright }, testInfo) => {
+    if (!hasCredentials('doctor') || !hasCredentials('nurse')) return
+    await createDoctorEncounter(playwright, testInfo.project.use.baseURL!)
+  })
+
   // ── Test 1: Open encounter modal and see patient info ───────────────────
   test('doctor can open encounter detail modal and see patient info', async ({ page }) => {
     if (!doctorEmail || !doctorPassword) {
@@ -68,9 +79,7 @@ test.describe('Doctor — Encounter Modal', () => {
     await viewBtn.click()
 
     await expect(
-      page.getByTestId('encounter-detail-modal').or(
-        page.getByRole('heading', { name: /encounter details/i }).first()
-      )
+      page.getByTestId('encounter-detail-modal')
     ).toBeVisible({ timeout: 20000 })
 
     await expect(
@@ -166,9 +175,7 @@ test.describe('Doctor — Encounter Modal', () => {
     await expect(viewBtn).toBeVisible({ timeout: 20000 })
     await viewBtn.click()
 
-    const modal = page.getByTestId('encounter-detail-modal').or(
-      page.getByRole('heading', { name: /encounter details/i }).first()
-    )
+    const modal = page.getByTestId('encounter-detail-modal')
     await expect(modal).toBeVisible({ timeout: 20000 })
     console.log('✓ Step 2 — Encounter modal open')
 
@@ -181,10 +188,10 @@ test.describe('Doctor — Encounter Modal', () => {
     const editBtn = page.getByRole('button', { name: /^edit$/i }).last()
     const startBlankBtn = page.getByRole('button', { name: /start blank/i })
 
-    if (await editBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(editBtn, 3000)) {
       await editBtn.click()
       console.log('✓ Step 3 — Clicked "Edit"')
-    } else if (await startBlankBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+    } else if (await isShown(startBlankBtn, 2000)) {
       await startBlankBtn.click()
       console.log('✓ Step 3 — Clicked "Start blank"')
     } else {
@@ -221,9 +228,9 @@ test.describe('Doctor — Encounter Modal', () => {
     const completeBtn = page.getByRole('button', { name: /complete encounter/i })
 
     // If not visible, close and reopen modal (stale render state)
-    if (!await completeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+    if (!await isShown(completeBtn, 5000)) {
       const closeBtn = page.getByRole('button', { name: /close|✕|×/i }).first()
-      if (await closeBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+      if (await isShown(closeBtn, 3000)) {
         await closeBtn.click()
       } else {
         await page.keyboard.press('Escape')
@@ -232,7 +239,7 @@ test.describe('Doctor — Encounter Modal', () => {
       await page.waitForTimeout(300)
 
       const v2 = page.getByRole('button', { name: /^view$/i }).first()
-      if (await v2.isVisible({ timeout: 5000 }).catch(() => false)) {
+      if (await isShown(v2, 5000)) {
         await v2.click()
         await expect(modal).toBeVisible({ timeout: 15000 })
       }
@@ -278,9 +285,7 @@ test.describe('Doctor — Encounter Modal', () => {
     await viewBtn.click()
 
     await expect(
-      page.getByTestId('encounter-detail-modal').or(
-        page.getByRole('heading', { name: /encounter details/i }).first()
-      )
+      page.getByTestId('encounter-detail-modal')
     ).toBeVisible({ timeout: 20000 })
 
     // 1. Prescriptions — add button hidden for nurse
@@ -297,7 +302,7 @@ test.describe('Doctor — Encounter Modal', () => {
 
     // 3. SOAP edit — doctor-only
     const soapSection = page.getByText(/doctor soap notes/i).first()
-    if (await soapSection.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(soapSection, 3000)) {
       await soapSection.scrollIntoViewIfNeeded()
       await expect(
         page.getByRole('button', { name: /^edit$/i }).last()

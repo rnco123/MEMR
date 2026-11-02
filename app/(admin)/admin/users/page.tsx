@@ -30,6 +30,8 @@ interface StaffUser {
   avatar_id?: string | null
   avatar_url?: string | null
   assigned_locations?: Location[]
+  /** Clinic managers: the locations are their tenant's, not an editable assignment. */
+  locations_from_tenant?: boolean
   npi?: string | null
   compliance_access?: boolean
 }
@@ -64,9 +66,27 @@ function apiErrorMessage(data: { message?: string; error?: string }, fallback: s
   return data.message || data.error || fallback
 }
 
-function LocationCell({ assigned, t }: { assigned: Location[]; t: (key: string) => string }) {
+function LocationCell({
+  assigned,
+  fromTenant,
+  t,
+}: {
+  assigned: Location[]
+  fromTenant: boolean
+  t: (key: string, vars?: Record<string, string | number>) => string
+}) {
   if (assigned.length === 0) {
     return <span className="text-slate-400">{t('common.em_dash')}</span>
+  }
+  if (fromTenant) {
+    return (
+      <span
+        className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100"
+        title={assigned.map(l => l.title).join(', ')}
+      >
+        {t('admin.users.all_tenant_locations', { count: assigned.length })}
+      </span>
+    )
   }
   if (assigned.length > 1) {
     const allTitles = assigned.map(l => l.title).join(', ')
@@ -147,7 +167,7 @@ function UserRow({
         </span>
       </div>
       <div className="col-span-2 min-w-0">
-        <LocationCell assigned={assigned} t={t} />
+        <LocationCell assigned={assigned} fromTenant={user.locations_from_tenant === true} t={t} />
       </div>
       <div className="col-span-4 flex flex-wrap gap-1 justify-end">
         <button
@@ -166,6 +186,8 @@ function UserRow({
         </button>
         <button
           type="button"
+          disabled={user.locations_from_tenant === true}
+          title={user.locations_from_tenant ? t('admin.users.locations_from_tenant_hint') : undefined}
           onClick={() => onChangeLocations(user)}
           className={`${BTN} border-purple-200 text-purple-800 bg-purple-50 hover:bg-purple-100`}
         >
@@ -202,6 +224,9 @@ export default function AdminUsersPage() {
   const [selectedLocations, setSelectedLocations] = useState<number[]>([])
   const [complianceAccess, setComplianceAccess] = useState(false)
   const [roleFilter, setRoleFilter] = useState('')
+  const [locationFilter, setLocationFilter] = useState<number[]>([])
+  const [locationFilterOpen, setLocationFilterOpen] = useState(false)
+  const locationFilterRef = useRef<HTMLDivElement>(null)
   const [showInactive, setShowInactive] = useState(true)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -251,7 +276,16 @@ export default function AdminUsersPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [search, roleFilter, showInactive])
+  }, [search, roleFilter, showInactive, locationFilter])
+
+  useEffect(() => {
+    if (!locationFilterOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      if (!locationFilterRef.current?.contains(e.target as Node)) setLocationFilterOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [locationFilterOpen])
 
   const patchUser = async (body: Record<string, unknown>) => {
     const res = await fetch('/api/admin/users', {
@@ -403,6 +437,13 @@ export default function AdminUsersPage() {
     return users.filter(u => {
       if (!showInactive && !u.active) return false
       if (roleFilter && u.role !== roleFilter) return false
+      // A user matches when any of their locations is ticked.
+      if (
+        locationFilter.length > 0 &&
+        !(u.assigned_locations ?? []).some(l => locationFilter.includes(l.id))
+      ) {
+        return false
+      }
       if (q) {
         return (
           (u.full_name ?? '').toLowerCase().includes(q) || (u.email ?? '').toLowerCase().includes(q)
@@ -410,7 +451,7 @@ export default function AdminUsersPage() {
       }
       return true
     })
-  }, [users, roleFilter, search, showInactive])
+  }, [users, roleFilter, locationFilter, search, showInactive])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
 
@@ -692,6 +733,33 @@ export default function AdminUsersPage() {
             </option>
           ))}
         </select>
+        <div ref={locationFilterRef} className="relative">
+          <button
+            type="button"
+            aria-expanded={locationFilterOpen}
+            onClick={() => setLocationFilterOpen(o => !o)}
+            className={`h-9 border rounded-lg px-2.5 text-sm flex items-center gap-1.5 focus:outline-none focus:ring-2 focus:ring-purple-400 ${
+              locationFilter.length > 0
+                ? 'border-purple-300 bg-purple-50 text-purple-800'
+                : 'border-slate-200 text-slate-700'
+            }`}
+          >
+            {locationFilter.length > 0
+              ? t('admin.users.filter_locations_count', { count: locationFilter.length })
+              : t('admin.users.filter_all_locations')}
+            <span aria-hidden className="text-[10px] text-slate-400">▾</span>
+          </button>
+          {locationFilterOpen && (
+            <div className="absolute left-0 top-full mt-1 z-30 w-[min(22rem,calc(100vw-2rem))] bg-white rounded-xl border border-slate-200 shadow-xl p-3">
+              <LocationAssignmentChecklist
+                locations={locations}
+                selectedIds={locationFilter}
+                onChange={setLocationFilter}
+                listClassName="max-h-60"
+              />
+            </div>
+          )}
+        </div>
         <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer">
           <input
             type="checkbox"

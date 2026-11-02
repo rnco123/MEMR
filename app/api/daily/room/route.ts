@@ -11,6 +11,7 @@ import { fetchUserRole } from '@/lib/fetch-user-role'
 import { resolveClinicalApiRole } from '@/lib/locations/scope'
 import { UserRole, isPhysicianRole } from '@/lib/roles'
 import { auditPhi } from '@/lib/audit-phi'
+import { mintDailyCredentials } from '@/lib/daily/credentials'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,14 +36,6 @@ async function getUserFromRequest(request: Request): Promise<{ user: { id: strin
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.DAILY_API_KEY || process.env.NEXT_PUBLIC_DAILY_API_KEY
-
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: 'Daily.co API key not configured' },
-        { status: 500 }
-      )
-    }
 
     const authResult = await getUserFromRequest(request)
     const user = authResult?.user ?? null
@@ -110,120 +103,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const roomNameToUse = `encounter-${encounterId}`
-
-    const roomConfig: any = {
-      privacy: 'public',
-      properties: {
-        enable_screenshare: true,
-        enable_chat: true,
-        enable_knocking: true,
-        enable_prejoin_ui: false,
-        start_video_off: true,
-        start_audio_off: true,
-        enable_transcription: true,
-        enable_live_captions_ui: true,
-      },
+    // Display name and owner flag come from the EMR's own role model. Some
+    // profiles key on `id` and some on `uid`, so both are tried.
+    let profileForToken: { full_name?: string | null; role?: string } | null = null
+    const profileById = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
+    if (profileById.data) profileForToken = profileById.data
+    if (!profileForToken) {
+      const profileByUid = await supabase.from('profiles').select('full_name, role').eq('uid', user.id).maybeSingle()
+      if (profileByUid.data) profileForToken = profileByUid.data
     }
 
-    if (roomNameToUse) {
-      roomConfig.name = roomNameToUse
-    }
+    const userRole = (profileForToken?.role as string) ?? ''
+    const displayName = isPhysicianRole(userRole)
+      ? 'Doctor'
+      : userRole === 'nurse' || userRole === 'staff'
+        ? 'Nurse'
+        : 'Staff'
+    const userName = profileForToken?.full_name || displayName
 
-    // Try to get existing room first (for encounter-specific rooms)
-    let roomData: any = null
-    if (roomNameToUse) {
-      const getResponse = await fetch(
-        `https://api.daily.co/v1/rooms/${roomNameToUse}`,
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-          },
-        }
-      )
-      if (getResponse.ok) {
-        roomData = await getResponse.json()
-      }
-    }
-
-    if (!roomData) {
-      const response = await fetch('https://api.daily.co/v1/rooms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify(roomConfig),
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        const isRoomExists =
-          response.status === 400 &&
-          (errorText.includes('already exists') || errorText.includes('invalid-request-error'))
-
-        if (isRoomExists && roomNameToUse) {
-          const getResponse = await fetch(
-            `https://api.daily.co/v1/rooms/${roomNameToUse}`,
-            { headers: { Authorization: `Bearer ${apiKey}` } }
-          )
-          if (getResponse.ok) {
-            roomData = await getResponse.json()
-          }
-        }
-
-        if (!roomData) {
-          return NextResponse.json(
-            { error: 'Failed to create Daily.co room', details: errorText },
-            { status: response.status }
-          )
-        }
-      } else {
-        roomData = await response.json()
-      }
-    }
-
-    // Rooms created before transcription was enabled keep old config — merge so captions/transcription work.
-    if (roomNameToUse && roomData) {
-      const existingProps =
-        (roomData.config && roomData.config.properties) ||
-        roomData.properties ||
-        {}
-      const needsConfigPatch =
-        existingProps.enable_transcription !== true ||
-        existingProps.enable_prejoin_ui !== false
-      if (needsConfigPatch) {
-        const patchRes = await fetch(
-          `https://api.daily.co/v1/rooms/${encodeURIComponent(roomNameToUse)}`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              properties: {
-                ...existingProps,
-                enable_screenshare: true,
-                enable_chat: true,
-                enable_knocking: true,
-                enable_prejoin_ui: false,
-                start_video_off: true,
-                start_audio_off: true,
-                enable_transcription: true,
-                enable_live_captions_ui: true,
-              },
-            }),
-          }
-        )
-        if (patchRes.ok) {
-          roomData = await patchRes.json()
-        } else if (process.env.NODE_ENV === 'development') {
-          const errText = await patchRes.text()
-          console.error('[daily/room] Could not enable transcription on room', roomNameToUse, errText)
-        }
-      }
-    }
+    // Room and token in one call. mcm-bridge owns the room name and properties,
+    // so this route and the patient app cannot drift into separate rooms; it
+    // falls back to a direct Daily call only when the bridge is unconfigured or
+    // unreachable. Authorization has already happened above — this only mints.
+    const creds = await mintDailyCredentials({
+      encounterId: encounterIdNum,
+      userId: user.id,
+      userName,
+      // Owner can eject participants and start recordings: physicians only.
+      isOwner: isPhysicianRole(userRole),
+    })
 
     // If this is tied to an encounter, move status to in_consultation
     if (encounterId != null) {
@@ -252,58 +160,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Generate a meeting token for SDK usage (profiles.id then uid)
-    let profileForToken: { full_name?: string | null; role?: string } | null = null
-    const profileById = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
-    if (profileById.data) profileForToken = profileById.data
-    if (!profileForToken) {
-      const profileByUid = await supabase.from('profiles').select('full_name, role').eq('uid', user.id).maybeSingle()
-      if (profileByUid.data) profileForToken = profileByUid.data
-    }
-
-    const userRole = (profileForToken?.role as string) ?? ''
-    const displayName = isPhysicianRole(userRole)
-      ? 'Doctor'
-      : userRole === 'nurse' || userRole === 'staff'
-        ? 'Nurse'
-        : 'Staff'
-    const userName = profileForToken?.full_name || displayName
-
-    // Meeting token: room_name required; exp recommended by Daily
-    const exp = Math.floor(Date.now() / 1000) + 2 * 60 * 60 // 2 hours
-    const tokenPayload = {
-      properties: {
-        room_name: roomData.name,
-        user_id: user.id.slice(0, 36), // Daily limit 36 chars
-        user_name: userName ?? undefined,
-        is_owner: isPhysicianRole(userRole),
-        exp,
-      },
-    }
-
-    const tokenResponse = await fetch('https://api.daily.co/v1/meeting-tokens', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(tokenPayload),
-    })
-
-    let token: string | null = null
-    if (tokenResponse.ok) {
-      const tokenData = await tokenResponse.json()
-      token = tokenData.token ?? null
-    } else if (process.env.NODE_ENV === 'development') {
-      const errText = await tokenResponse.text()
-      console.error('Daily meeting-token error:', tokenResponse.status, errText)
-    }
-
-    // Build room URL with same domain as backend (so client joins the account that created the room)
-    const rawDomain = (process.env.NEXT_PUBLIC_DAILY_DOMAIN || '').trim() || 'demo.daily.co'
-    const dailyDomain = rawDomain.includes('.daily.co') ? rawDomain : `${rawDomain}.daily.co`
-    const roomUrl = roomData.name ? `https://${dailyDomain}/${roomData.name}` : undefined
-
     auditPhi({
       user,
       role: roleInfo?.role,
@@ -314,9 +170,10 @@ export async function POST(request: NextRequest) {
     })
 
     return NextResponse.json({
-      ...roomData,
-      token, // Include token for SDK usage
-      room_url: roomUrl, // Use this URL on the client so domain matches the account that created the room
+      ...(creds.room ?? {}),
+      name: creds.roomName,
+      token: creds.token, // Include token for SDK usage
+      room_url: creds.roomUrl, // Matches the account that created the room
     })
   } catch (error) {
     console.error('[daily/room]', error)

@@ -1,7 +1,7 @@
 'use client'
 
 import { useAuth } from '@/lib/auth-context'
-import { LoginScreen } from '@/components/auth/LoginScreen'
+import { LandingPage } from '@/components/landing/LandingPage'
 import { PostAuthRedirectScreen } from '@/components/auth/PostAuthRedirectScreen'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { BrandLogo } from '@/components/BrandLogo'
@@ -50,5 +50,6 @@ export default function Home() {
     )
   }
 
-  return <LoginScreen />
+  // Signed-out visitors get the landing page; login lives at /login.
+  return <LandingPage />
 }

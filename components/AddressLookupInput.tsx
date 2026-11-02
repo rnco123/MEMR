@@ -13,6 +13,10 @@ type Props = {
   className?: string
   disabled?: boolean
   minQueryLength?: number
+  /** Passed to useAddressSuggestions; public pages use the unauthenticated route. */
+  suggestionsUrl?: string
+  id?: string
+  required?: boolean
 }
 
 export function AddressLookupInput({
@@ -24,10 +28,13 @@ export function AddressLookupInput({
   className = 'mt-1 w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900',
   disabled = false,
   minQueryLength = 4,
+  suggestionsUrl,
+  id,
+  required,
 }: Props) {
   const { t } = useT()
   const { suggestions, loading, lookupEnabled, suppressUntilNextEdit, resumeLookup, suppressed } =
-    useAddressSuggestions({ query: value, minQueryLength, disabled })
+    useAddressSuggestions({ query: value, minQueryLength, disabled, suggestionsUrl })
 
   const applySuggestion = (suggestion: AddressSuggestion) => {
     suppressUntilNextEdit(suggestion.fullAddress)
@@ -46,6 +53,8 @@ export function AddressLookupInput({
     <div className="relative">
       {label ? <label className="text-sm text-slate-700">{label}</label> : null}
       <input
+        id={id}
+        required={required}
         value={value}
         onChange={(e) => onTyped(e.target.value)}
         className={className}

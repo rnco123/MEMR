@@ -1,11 +1,13 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const nurseEmail = process.env.PLAYWRIGHT_NURSE_EMAIL?.trim() || ''
 const nursePassword = process.env.PLAYWRIGHT_NURSE_PASSWORD?.trim() || ''
 const doctorEmail = process.env.PLAYWRIGHT_DOCTOR_EMAIL?.trim() || ''
 const doctorPassword = process.env.PLAYWRIGHT_DOCTOR_PASSWORD?.trim() || ''
-const BASE_URL = process.env.PLAYWRIGHT_BASE_URL!
+// Paths resolve against playwright.config.ts baseURL (PLAYWRIGHT_BASE_URL or local dev).
+const BASE_URL = ''
 
 async function signInAsNurse(page: Page) {
   const json = await adaptiveSignIn(page, nurseEmail, nursePassword)
@@ -39,7 +41,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
 
     // Find Assign Provider button
     let assignBtn = page.getByRole('button', { name: /^assign provider$/i }).first()
-    let hasAssignable = await assignBtn.isVisible({ timeout: 15000 }).catch(() => false)
+    let hasAssignable = await isShown(assignBtn, 15000)
 
     if (!hasAssignable) {
       console.log('ℹ No assignable encounter — creating one via Add Encounter')
@@ -67,7 +69,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
       const submitBtn = page.getByTestId('nurse-add-encounter-submit-button').or(
         page.getByRole('button', { name: 'Create encounter' })
       )
-      if (await submitBtn.isVisible({ timeout: 10000 }).catch(() => false)) await submitBtn.click()
+      if (await isShown(submitBtn, 10000)) await submitBtn.click()
 
       const walkInRes = await walkInPromise
       expect(walkInRes.ok()).toBeTruthy()
@@ -75,7 +77,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
       await page.waitForLoadState('networkidle')
 
       assignBtn = page.getByRole('button', { name: /^assign provider$/i }).first()
-      hasAssignable = await assignBtn.isVisible({ timeout: 15000 }).catch(() => false)
+      hasAssignable = await isShown(assignBtn, 15000)
       if (!hasAssignable) { console.log('ℹ No assignable encounter after creation — no doctors configured'); return }
     }
 
@@ -98,11 +100,11 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     await providerSelect.selectOption({ index: 1 })
 
     const dateInput = page.locator('#assign-appt-date')
-    if (await dateInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(dateInput, 2000)) {
       await dateInput.fill(new Date().toISOString().split('T')[0]!)
     }
     const timeInput = page.locator('#assign-appt-time')
-    if (await timeInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(timeInput, 2000)) {
       await timeInput.fill('09:00')
     }
 
@@ -121,7 +123,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     // ── Verify: search patient and check status badge ──────────────────────
     if (patientName?.trim()) {
       const searchInput = page.locator('input[type="text"]').first()
-      if (await searchInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      if (await isShown(searchInput, 3000)) {
         await searchInput.fill(patientName.trim())
         await page.waitForTimeout(800)
       }
@@ -157,7 +159,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     // Header checkbox in FlowboardBatchActionBar — target via label element
     // If not visible: no unassigned encounters = all already assigned = test passes
     const selectAllCb = page.locator('label').filter({ hasText: 'Select all on page' }).locator('input[type="checkbox"]').first()
-    const cbVisible = await selectAllCb.isVisible({ timeout: 10000 }).catch(() => false)
+    const cbVisible = await isShown(selectAllCb, 10000)
 
     if (!cbVisible) {
       console.log('ℹ "Select all on page" checkbox not visible — no unassigned encounters (all already assigned). Test passes.')
@@ -193,11 +195,11 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     await providerSelect.selectOption({ index: 1 })
 
     const dateInput = page.locator('#batch-assign-appt-date')
-    if (await dateInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(dateInput, 2000)) {
       await dateInput.fill(new Date().toISOString().split('T')[0]!)
     }
     const timeInput = page.locator('#batch-assign-appt-time')
-    if (await timeInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(timeInput, 2000)) {
       await timeInput.fill('09:00')
     }
 
@@ -219,7 +221,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
 
     // Filter status to "Appointment Initiated" to check no unassigned remain
     const statusSelect = page.locator('select').filter({ has: page.locator('option[value="appointment_initiated"]') }).first()
-    if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(statusSelect, 3000)) {
       await statusSelect.selectOption('appointment_initiated')
       await page.waitForTimeout(600)
 
@@ -228,7 +230,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
       const noResults = page.getByText(/no appointments|no results|0 appointment/i).first().or(
         page.locator('p, div, h3').filter({ hasText: /no.*appointment|empty|0 appointment/i }).first()
       )
-      const hasNoResults = await noResults.isVisible({ timeout: 5000 }).catch(() => false)
+      const hasNoResults = await isShown(noResults, 5000)
       if (hasNoResults) {
         console.log('✓ Verified: no more "Appointment Initiated" encounters — all assigned')
       } else {
@@ -263,7 +265,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     // Header checkbox in FlowboardBatchActionBar — target via label element
     // If not visible: no completable encounters = all already completed = test passes
     const selectAllCb = page.locator('label').filter({ hasText: 'Select all on page' }).locator('input[type="checkbox"]').first()
-    const cbVisible = await selectAllCb.isVisible({ timeout: 10000 }).catch(() => false)
+    const cbVisible = await isShown(selectAllCb, 10000)
 
     if (!cbVisible) {
       console.log('ℹ "Select all on page" checkbox not visible — no completable encounters (all already completed). Test passes.')
@@ -299,7 +301,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
     await page.waitForLoadState('networkidle')
 
     const statusSelect = page.locator('select').filter({ has: page.locator('option[value="final_review"]') }).first()
-    if (await statusSelect.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await isShown(statusSelect, 3000)) {
       await statusSelect.selectOption('final_review')
       await page.waitForTimeout(600)
 
@@ -307,7 +309,7 @@ test.describe('Encounter Lifecycle — Status Transitions', () => {
       const noResults = page.getByText(/no appointments|no results|0 appointment/i).first().or(
         page.locator('p, div, h3').filter({ hasText: /no.*appointment|empty|0 appointment/i }).first()
       )
-      const hasNoResults = await noResults.isVisible({ timeout: 5000 }).catch(() => false)
+      const hasNoResults = await isShown(noResults, 5000)
       if (hasNoResults) {
         console.log('✓ Verified: no more "Final Review" encounters — all completed')
       } else {

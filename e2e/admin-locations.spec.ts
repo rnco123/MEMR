@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 import { signIn as adaptiveSignIn } from './helpers/sign-in'
+import { isShown } from './helpers/wait'
 
 const adminEmail = process.env.PLAYWRIGHT_ADMIN_EMAIL?.trim() || ''
 const adminPassword = process.env.PLAYWRIGHT_ADMIN_PASSWORD?.trim() || ''
@@ -42,32 +43,32 @@ test.describe('Admin — Locations', () => {
 
     // 2. Group — placeholder: "e.g. A, B, C (optional)"
     const groupInput = page.getByPlaceholder('e.g. A, B, C (optional)')
-    if (await groupInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(groupInput, 2000)) {
       await groupInput.fill('A')
     }
 
     // 3. Phone — placeholder: "(817) 555-0100"
     const phoneInput = page.getByPlaceholder('(817) 555-0100')
-    if (await phoneInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(phoneInput, 2000)) {
       await phoneInput.fill('8175550100')
     }
 
     // 4. Email — placeholder: "clinic@example.com"
     const emailInput = page.getByPlaceholder('clinic@example.com')
-    if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(emailInput, 2000)) {
       await emailInput.fill(`test${Date.now()}@example.com`)
     }
 
     // 5. Address — placeholder: "Street, city, state, ZIP"
     const addressInput = page.getByPlaceholder('Street, city, state, ZIP')
-    if (await addressInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(addressInput, 2000)) {
       await addressInput.fill('123 Main St, Houston, TX 77002')
       // Wait for autofill suggestions dropdown to appear
       await page.waitForTimeout(1500)
 
       // Click the first suggestion to select it and close the dropdown
       const firstSuggestion = page.locator('button').filter({ hasText: /main st|houston/i }).first()
-      const suggestionVisible = await firstSuggestion.isVisible({ timeout: 3000 }).catch(() => false)
+      const suggestionVisible = await isShown(firstSuggestion, 3000)
       if (suggestionVisible) {
         await firstSuggestion.click()
         await page.waitForTimeout(300)
@@ -82,7 +83,7 @@ test.describe('Admin — Locations', () => {
 
     // 6. Google Maps link — placeholder: "Paste Google Maps URL or lat,lng"
     const mapInput = page.getByPlaceholder('Paste Google Maps URL or lat,lng')
-    if (await mapInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await isShown(mapInput, 2000)) {
       await mapInput.fill('29.7604,-95.3698')
       await page.waitForTimeout(500)
       // Verify map hint appears confirming the link is valid
@@ -192,7 +193,7 @@ test.describe('Admin — Locations', () => {
     )
 
     // Check if the API was called for address suggestions
-    const suggestionsVisible = await suggestionsList.isVisible({ timeout: 8000 }).catch(() => false)
+    const suggestionsVisible = await isShown(suggestionsList, 8000)
 
     if (suggestionsVisible) {
       console.log('✓ Address suggestions appeared')
@@ -258,7 +259,7 @@ test.describe('Admin — Locations', () => {
       page.locator('[data-testid*="hours-mon"], [data-testid*="monday"]').first()
     )
 
-    const mondayVisible = await mondayToggle.isVisible({ timeout: 5000 }).catch(() => false)
+    const mondayVisible = await isShown(mondayToggle, 5000)
     if (mondayVisible) {
       await mondayToggle.click()
       await page.waitForTimeout(300)
