@@ -9,6 +9,9 @@ import {
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
 import { moveAppointmentToFlowboardToday } from '@/lib/appointments/move-to-flowboard'
+import { getDoctorIdForUser } from '@/lib/locations/flowboard-data'
+import { getProfileId } from '@/lib/status-timeline'
+import { isPhysicianRole } from '@/lib/roles'
 import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +39,14 @@ export async function POST(request: Request, context: RouteContext) {
 
     const admin = createAdminClient()
     const scope = await getLocationScopeForUser(admin, user.id, clinicalRole)
-    const result = await moveAppointmentToFlowboardToday(admin, scope, appointmentId)
+    const isProvider = isPhysicianRole(clinicalRole)
+    const [assignToDoctorId, profileId] = isProvider
+      ? await Promise.all([getDoctorIdForUser(admin, user.id), getProfileId(supabase, user.id)])
+      : [null, null]
+    const result = await moveAppointmentToFlowboardToday(admin, scope, appointmentId, {
+      assignToDoctorId,
+      profileId,
+    })
 
     auditPhi({
       user,
@@ -48,6 +58,7 @@ export async function POST(request: Request, context: RouteContext) {
         scope: 'move_to_flowboard',
         previous_appointment_date: result.previous_appointment_date,
         appointment_date: result.appointment_date,
+        assigned_doctor_id: result.assigned_doctor_id,
       },
       request,
     })

@@ -204,8 +204,8 @@ function FutureAppointmentsPageInner() {
 
   const totalPages = Math.ceil(filteredAppointments.length / pageSize) || 1
 
-  const defaultLocationId =
-    selectedLocationId !== 'all' ? selectedLocationId : userLocations[0]?.id ?? null
+  // "All locations" must not narrow to the first location — match the waiting room modal.
+  const defaultLocationId = selectedLocationId === 'all' ? null : selectedLocationId
 
   const todayLabel = useMemo(
     () =>

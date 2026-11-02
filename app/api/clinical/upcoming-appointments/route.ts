@@ -27,7 +27,7 @@ export async function GET() {
     }
 
     const admin = createAdminClient()
-    const data = await loadUpcomingAppointmentsForDoctor(admin, user.id)
+    const data = await loadUpcomingAppointmentsForDoctor(admin, user.id, profile.role)
 
     return NextResponse.json({ data })
   } catch (err) {
