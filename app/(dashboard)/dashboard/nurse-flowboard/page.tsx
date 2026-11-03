@@ -136,6 +136,7 @@ function NurseFlowboardPage() {
     usePatientSearchParse(searchQuery, { includeProvider: true })
   const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const showCompleted = filterStatus === 'completed'
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
   const [selectedEncounter, setSelectedEncounter] = useState<{
@@ -200,6 +201,8 @@ function NurseFlowboardPage() {
         if (selectedLocationId !== 'all') {
           params.set('location_id', String(selectedLocationId))
         }
+        // Past completed visits are only loaded when filtering by Completed.
+        if (showCompleted) params.set('include_completed', '1')
         const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
         const json = await res.json().catch(() => ({}))
         if (!res.ok) {
@@ -210,10 +213,12 @@ function NurseFlowboardPage() {
 
         const appointmentsWithDetails = (json.data ?? []) as Appointment[]
         setAppointments(appointmentsWithDetails)
-        try {
-          sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
-        } catch {
-          // ignore storage errors
+        if (!showCompleted) {
+          try {
+            sessionStorage.setItem(NURSE_FLOWBOARD_CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+          } catch {
+            // ignore storage errors
+          }
         }
       } catch (error) {
         console.error('Error in fetchAllAppointments:', error)
@@ -222,7 +227,7 @@ function NurseFlowboardPage() {
         setIsRefreshing(false)
       }
     },
-    [selectedLocationId]
+    [selectedLocationId, showCompleted]
   )
 
   useEffect(() => {

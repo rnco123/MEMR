@@ -115,6 +115,7 @@ function FlowboardPage() {
   const { parsed: parsedSearch, isPending: searchPending, debouncedQuery } =
     usePatientSearchParse(searchQuery, { includeProvider: true })
   const [filterStatus, setFilterStatus] = useState<string>('all')
+  const showCompleted = filterStatus === 'completed'
   const [sortBy, setSortBy] = useState<'recent' | 'time' | 'name' | 'treatment'>('recent')
   const [pageSize, setPageSize] = useState(25)
   const [page, setPage] = useState(1)
@@ -193,6 +194,8 @@ function FlowboardPage() {
       if (selectedLocationId !== 'all') {
         params.set('location_id', String(selectedLocationId))
       }
+      // Past completed visits are only loaded when filtering by Completed.
+      if (showCompleted) params.set('include_completed', '1')
       const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
       const json = await res.json()
       if (!res.ok) {
@@ -203,10 +206,12 @@ function FlowboardPage() {
 
       const appointmentsWithDetails = (json.data ?? []) as Appointment[]
       setAppointments(appointmentsWithDetails)
-      try {
-        sessionStorage.setItem(CACHE_KEY, JSON.stringify(appointmentsWithDetails))
-      } catch {
-        // ignore storage errors
+      if (!showCompleted) {
+        try {
+          sessionStorage.setItem(CACHE_KEY, JSON.stringify(appointmentsWithDetails))
+        } catch {
+          // ignore storage errors
+        }
       }
     } catch (error) {
       console.error('Error in fetchAssignedAppointments:', error)
@@ -215,7 +220,7 @@ function FlowboardPage() {
       setLoading(false)
       setIsRefreshing(false)
     }
-  }, [selectedLocationId])
+  }, [selectedLocationId, showCompleted])
 
   useEffect(() => {
     if (user && isClinicalDashboardRole(role) && role !== UserRole.NURSE && !initialLoadDone.current) {

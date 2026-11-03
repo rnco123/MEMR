@@ -68,6 +68,7 @@ export async function GET(req: NextRequest) {
       doctorId,
       locationFilterId: locationFilter,
       dateScope,
+      includeCompleted: req.nextUrl.searchParams.get('include_completed') === '1',
     })
 
     return NextResponse.json({ data })

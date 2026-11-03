@@ -73,6 +73,8 @@ type BuildFlowboardOptions = {
   locationFilterId?: number
   /** active = flowboard (today + overdue); future = Appointments tab only */
   dateScope?: 'active' | 'future'
+  /** Active scope only: also include completed visits from past days (status filter "Completed"). */
+  includeCompleted?: boolean
 }
 
 export async function buildFlowboardRows(
@@ -177,7 +179,10 @@ export async function buildFlowboardRows(
 
     if (dateScope === 'future') {
       if (!isFutureFlowboardRow(appointment.appointment_date)) continue
-    } else if (!isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null)) {
+    } else if (
+      !isActiveFlowboardRow(appointment.appointment_date, encounter?.status ?? null) &&
+      !(options.includeCompleted && encounter?.status === 'completed')
+    ) {
       continue
     }
 
