@@ -809,7 +809,7 @@ const en: Dictionary = {
   'i693.immigration_cases': 'Immigration cases',
   'i693.no_cases_title': 'No immigration cases yet',
   'i693.no_cases_hint':
-    'Mark Immigration consent on rooming, or run npm run seed:immigration:demo for 10 sample Kanban cases.',
+    'Immigration cases appear here once Immigration consent is marked during rooming.',
   'i693.select_encounter': 'Select a case on the workflow board, then choose Fill digital form.',
   'i693.selected_patient': 'Selected patient',
   'i693.fill_digital_form': 'Fill digital form',
@@ -1351,6 +1351,12 @@ const en: Dictionary = {
   'flow.day': 'Day',
 
   // ---- vitals form modal ----
+  'vitals.err_required': 'Required',
+  'vitals.err_number': 'Must be a valid number',
+  'vitals.err_range': 'Must be between {min}-{max} {unit}',
+  'vitals.err_diastolic': 'Diastolic must be less than systolic',
+  'vitals.unit_breaths': 'breaths/min',
+  'vitals.unit_inches': 'inches',
   'vitals.modal_title': 'Add Vitals',
   'vitals.label_bp_systolic': 'Blood Pressure (Systolic)',
   'vitals.label_bp_diastolic': 'Blood Pressure (Diastolic)',
@@ -2781,7 +2787,7 @@ const es: Dictionary = {
   'i693.immigration_cases': 'Casos de inmigración',
   'i693.no_cases_title': 'Sin casos de inmigración',
   'i693.no_cases_hint':
-    'Marque consentimiento de inmigración en rooming, o ejecute npm run seed:immigration:demo.',
+    'Los casos de inmigración aparecen aquí cuando se marca el consentimiento de inmigración durante el rooming.',
   'i693.select_encounter': 'Seleccione un caso en el tablero y pulse Formulario digital.',
   'i693.selected_patient': 'Paciente seleccionado',
   'i693.fill_digital_form': 'Formulario digital',
@@ -3334,6 +3340,12 @@ const es: Dictionary = {
   'vitals.label_height': 'Estatura',
   'vitals.label_notes': 'Notas',
   'vitals.placeholder_notes': 'Notas adicionales...',
+  'vitals.err_required': 'Obligatorio',
+  'vitals.err_number': 'Debe ser un número válido',
+  'vitals.err_range': 'Debe estar entre {min}-{max} {unit}',
+  'vitals.err_diastolic': 'La diastólica debe ser menor que la sistólica',
+  'vitals.unit_breaths': 'resp/min',
+  'vitals.unit_inches': 'pulgadas',
   'vitals.save': 'Guardar signos vitales',
   'vitals.saving': 'Guardando…',
 

@@ -121,7 +121,7 @@ export function EncounterVitalsPanel({ encounterId, vitals, canEdit, onUpdated }
 
   const handleFormChange = (next: VitalsFormInput) => {
     setForm(next)
-    setErrors(validateVitalsForm(next))
+    setErrors(validateVitalsForm(next, t))
   }
 
   const resetForm = () => {
@@ -136,7 +136,7 @@ export function EncounterVitalsPanel({ encounterId, vitals, canEdit, onUpdated }
   }
 
   const saveVitals = async () => {
-    const validationErrors = validateVitalsForm(form)
+    const validationErrors = validateVitalsForm(form, t, { requireAll: true })
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors)
       return

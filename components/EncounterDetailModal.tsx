@@ -34,6 +34,7 @@ import {
 } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate } from '@/lib/datetime/date-input'
 import { isForbiddenResponse } from '@/lib/http/api-response'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 interface Patient {
   id: number
@@ -502,9 +503,10 @@ export function EncounterDetailModal({
     return isPhysicianRole(role) && canDoctorCompleteEncounter(encounter.status)
   }, [encounter, role, canEditClinicalEncounter, showI693Form])
 
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false)
+
   const handleCompleteEncounter = useCallback(async () => {
     if (!canCompleteEncounter || completingEncounter) return
-    if (!window.confirm(t('encounter_modal.complete_confirm'))) return
 
     setCompletingEncounter(true)
     try {
@@ -529,6 +531,7 @@ export function EncounterDetailModal({
 
       setEncounter(prev => (prev ? { ...prev, status: 'completed' } : prev))
       onEncounterStatusChange?.('completed')
+      setShowCompleteConfirm(false)
     } catch (error) {
       console.error('Error completing encounter:', error)
       alert(error instanceof Error ? error.message : t('encounter_modal.complete_failed'))
@@ -826,7 +829,7 @@ export function EncounterDetailModal({
             {canCompleteEncounter && (
               <button
                 type="button"
-                onClick={() => void handleCompleteEncounter()}
+                onClick={() => setShowCompleteConfirm(true)}
                 disabled={completingEncounter}
                 className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
               >
@@ -1283,6 +1286,19 @@ export function EncounterDetailModal({
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={showCompleteConfirm}
+        onClose={() => {
+          if (!completingEncounter) setShowCompleteConfirm(false)
+        }}
+        onConfirm={handleCompleteEncounter}
+        title={t('encounter_modal.complete_encounter')}
+        message={t('encounter_modal.complete_confirm')}
+        confirmLabel={t('encounter_modal.complete_encounter')}
+        loading={completingEncounter}
+        accent="blue"
+      />
     </div>
   )
 }

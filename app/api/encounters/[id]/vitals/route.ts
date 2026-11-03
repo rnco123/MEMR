@@ -20,17 +20,18 @@ import { auditPhi } from '@/lib/audit-phi'
 
 export const dynamic = 'force-dynamic'
 
+// Every vital is required: saving them moves the encounter to Vitals assessed.
 const vitalsRecordBodySchema = z.object({
-  bp_systolic: z.number().int().min(70).max(250).nullable().optional(),
-  bp_diastolic: z.number().int().min(40).max(150).nullable().optional(),
-  heart_rate: z.number().int().min(30).max(220).nullable().optional(),
-  respiratory_rate: z.number().int().min(8).max(40).nullable().optional(),
-  temperature: z.number().nullable().optional(),
+  bp_systolic: z.number().int().min(70).max(250),
+  bp_diastolic: z.number().int().min(40).max(150),
+  heart_rate: z.number().int().min(30).max(220),
+  respiratory_rate: z.number().int().min(8).max(40),
+  temperature: z.number(),
   temperature_unit: z.enum(['F', 'C']).optional().nullable(),
-  spo2: z.number().int().min(0).max(100).nullable().optional(),
-  weight: z.number().nullable().optional(),
+  spo2: z.number().int().min(0).max(100),
+  weight: z.number(),
   weight_unit: z.enum(['lbs', 'kg']).optional().nullable(),
-  height: z.number().nullable().optional(),
+  height: z.number(),
   height_unit: z.enum(['in', 'cm']).optional().nullable(),
   bmi: z.number().nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),

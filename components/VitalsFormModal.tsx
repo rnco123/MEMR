@@ -79,13 +79,13 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
 
   const handleFieldValidate = (next: VitalsFormInput) => {
     setFormData(next)
-    setErrors(validateVitalsForm(next))
+    setErrors(validateVitalsForm(next, t))
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const validationErrors = validateVitalsForm(formData)
+    const validationErrors = validateVitalsForm(formData, t, { requireAll: true })
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors)
       return

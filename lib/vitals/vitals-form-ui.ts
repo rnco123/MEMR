@@ -73,121 +73,85 @@ const VITALS_VALIDATED_FIELDS: (keyof VitalsFormInput)[] = [
   'height',
 ]
 
+/** i18n `t` from useT(); messages live under `vitals.err_*`. */
+export type VitalsTranslate = (key: string, vars?: Record<string, string | number>) => string
+
+function rangeError(
+  t: VitalsTranslate,
+  numValue: number,
+  range: { min: number; max: number },
+  unit: string
+): string | null {
+  if (numValue < range.min || numValue > range.max) {
+    return t('vitals.err_range', { min: range.min, max: range.max, unit })
+  }
+  return null
+}
+
 export function validateVitalsField(
   name: keyof VitalsFormInput,
   value: string,
-  data: VitalsFormInput
+  data: VitalsFormInput,
+  t: VitalsTranslate
 ): string | null {
   if (!value) return null
 
   const numValue = parseFloat(value)
-  if (Number.isNaN(numValue)) return 'Must be a valid number'
+  if (Number.isNaN(numValue)) return t('vitals.err_number')
 
+  const R = VITALS_VALIDATION_RANGES
   switch (name) {
     case 'bp_systolic':
-      if (
-        numValue < VITALS_VALIDATION_RANGES.bp_systolic.min ||
-        numValue > VITALS_VALIDATION_RANGES.bp_systolic.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.bp_systolic.min}-${VITALS_VALIDATION_RANGES.bp_systolic.max} mmHg`
-      }
-      break
-    case 'bp_diastolic':
-      if (
-        numValue < VITALS_VALIDATION_RANGES.bp_diastolic.min ||
-        numValue > VITALS_VALIDATION_RANGES.bp_diastolic.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.bp_diastolic.min}-${VITALS_VALIDATION_RANGES.bp_diastolic.max} mmHg`
-      }
+      return rangeError(t, numValue, R.bp_systolic, 'mmHg')
+    case 'bp_diastolic': {
+      const outOfRange = rangeError(t, numValue, R.bp_diastolic, 'mmHg')
+      if (outOfRange) return outOfRange
       if (data.bp_systolic && parseFloat(data.bp_systolic) <= numValue) {
-        return 'Diastolic must be less than systolic'
+        return t('vitals.err_diastolic')
       }
-      break
+      return null
+    }
     case 'heart_rate':
-      if (
-        numValue < VITALS_VALIDATION_RANGES.heart_rate.min ||
-        numValue > VITALS_VALIDATION_RANGES.heart_rate.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.heart_rate.min}-${VITALS_VALIDATION_RANGES.heart_rate.max} bpm`
-      }
-      break
+      return rangeError(t, numValue, R.heart_rate, 'bpm')
     case 'respiratory_rate':
-      if (
-        numValue < VITALS_VALIDATION_RANGES.respiratory_rate.min ||
-        numValue > VITALS_VALIDATION_RANGES.respiratory_rate.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.respiratory_rate.min}-${VITALS_VALIDATION_RANGES.respiratory_rate.max} breaths/min`
-      }
-      break
+      return rangeError(t, numValue, R.respiratory_rate, t('vitals.unit_breaths'))
     case 'temperature':
-      if (data.temperature_unit === 'F') {
-        if (
-          numValue < VITALS_VALIDATION_RANGES.temperature_f.min ||
-          numValue > VITALS_VALIDATION_RANGES.temperature_f.max
-        ) {
-          return `Must be between ${VITALS_VALIDATION_RANGES.temperature_f.min}-${VITALS_VALIDATION_RANGES.temperature_f.max}°F`
-        }
-      } else if (
-        numValue < VITALS_VALIDATION_RANGES.temperature_c.min ||
-        numValue > VITALS_VALIDATION_RANGES.temperature_c.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.temperature_c.min}-${VITALS_VALIDATION_RANGES.temperature_c.max}°C`
-      }
-      break
+      return data.temperature_unit === 'F'
+        ? rangeError(t, numValue, R.temperature_f, '°F')
+        : rangeError(t, numValue, R.temperature_c, '°C')
     case 'spo2':
-      if (numValue < VITALS_VALIDATION_RANGES.spo2.min || numValue > VITALS_VALIDATION_RANGES.spo2.max) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.spo2.min}-${VITALS_VALIDATION_RANGES.spo2.max}%`
-      }
-      break
+      return rangeError(t, numValue, R.spo2, '%')
     case 'weight':
-      if (data.weight_unit === 'lbs') {
-        if (
-          numValue < VITALS_VALIDATION_RANGES.weight_lbs.min ||
-          numValue > VITALS_VALIDATION_RANGES.weight_lbs.max
-        ) {
-          return `Must be between ${VITALS_VALIDATION_RANGES.weight_lbs.min}-${VITALS_VALIDATION_RANGES.weight_lbs.max} lbs`
-        }
-      } else if (
-        numValue < VITALS_VALIDATION_RANGES.weight_kg.min ||
-        numValue > VITALS_VALIDATION_RANGES.weight_kg.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.weight_kg.min}-${VITALS_VALIDATION_RANGES.weight_kg.max} kg`
-      }
-      break
+      return data.weight_unit === 'lbs'
+        ? rangeError(t, numValue, R.weight_lbs, 'lbs')
+        : rangeError(t, numValue, R.weight_kg, 'kg')
     case 'height':
-      if (data.height_unit === 'in') {
-        if (
-          numValue < VITALS_VALIDATION_RANGES.height_in.min ||
-          numValue > VITALS_VALIDATION_RANGES.height_in.max
-        ) {
-          return `Must be between ${VITALS_VALIDATION_RANGES.height_in.min}-${VITALS_VALIDATION_RANGES.height_in.max} inches`
-        }
-      } else if (
-        numValue < VITALS_VALIDATION_RANGES.height_cm.min ||
-        numValue > VITALS_VALIDATION_RANGES.height_cm.max
-      ) {
-        return `Must be between ${VITALS_VALIDATION_RANGES.height_cm.min}-${VITALS_VALIDATION_RANGES.height_cm.max} cm`
-      }
-      break
+      return data.height_unit === 'in'
+        ? rangeError(t, numValue, R.height_in, t('vitals.unit_inches'))
+        : rangeError(t, numValue, R.height_cm, 'cm')
   }
 
   return null
 }
 
-export function validateVitalsForm(data: VitalsFormInput): VitalsFormErrors {
+/**
+ * Validate the vitals form. `requireAll` (on save) also flags empty fields — every
+ * vital is required before the encounter can move to Vitals assessed.
+ */
+export function validateVitalsForm(
+  data: VitalsFormInput,
+  t: VitalsTranslate,
+  options: { requireAll?: boolean } = {}
+): VitalsFormErrors {
   const errors: VitalsFormErrors = {}
 
   for (const key of VITALS_VALIDATED_FIELDS) {
-    const error = validateVitalsField(key, data[key], data)
-    if (error) errors[key] = error
-  }
-
-  if (data.bp_systolic && data.bp_diastolic) {
-    const systolic = parseFloat(data.bp_systolic)
-    const diastolic = parseFloat(data.bp_diastolic)
-    if (diastolic >= systolic) {
-      errors.bp_diastolic = 'Diastolic must be less than systolic'
+    if (options.requireAll && !data[key].trim()) {
+      errors[key] = t('vitals.err_required')
+      continue
     }
+    const error = validateVitalsField(key, data[key], data, t)
+    if (error) errors[key] = error
   }
 
   return errors
