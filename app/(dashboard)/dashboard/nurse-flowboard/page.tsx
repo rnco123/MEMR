@@ -158,6 +158,9 @@ function NurseFlowboardPage() {
   const [showBatchAssignModal, setShowBatchAssignModal] = useState(false)
   const [batchAssigning, setBatchAssigning] = useState(false)
   const initialLoadDone = useRef(false)
+  // Only the latest flowboard request may update the list (e.g. a slow initial load
+  // must not overwrite the Completed-filter results that arrived first).
+  const latestFetchId = useRef(0)
 
   useEffect(() => {
     if (isPhysicianRole(role)) {
@@ -203,8 +206,10 @@ function NurseFlowboardPage() {
         }
         // Past completed visits are only loaded when filtering by Completed.
         if (showCompleted) params.set('include_completed', '1')
+        const fetchId = ++latestFetchId.current
         const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
         const json = await res.json().catch(() => ({}))
+        if (fetchId !== latestFetchId.current) return
         if (!res.ok) {
           console.error('Error fetching flowboard:', json)
           setAppointments([])

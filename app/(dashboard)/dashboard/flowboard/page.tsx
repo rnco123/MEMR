@@ -130,6 +130,9 @@ function FlowboardPage() {
   const [selectedEncounterIds, setSelectedEncounterIds] = useState<Set<number>>(new Set())
   const [batchCompleting, setBatchCompleting] = useState(false)
   const initialLoadDone = useRef(false)
+  // Only the latest flowboard request may update the list (e.g. a slow initial load
+  // must not overwrite the Completed-filter results that arrived first).
+  const latestFetchId = useRef(0)
 
   useEffect(() => {
     if (role === UserRole.NURSE) {
@@ -196,8 +199,10 @@ function FlowboardPage() {
       }
       // Past completed visits are only loaded when filtering by Completed.
       if (showCompleted) params.set('include_completed', '1')
+      const fetchId = ++latestFetchId.current
       const res = await fetch(`/api/clinical/flowboard?${params}`, { credentials: 'include' })
       const json = await res.json()
+      if (fetchId !== latestFetchId.current) return
       if (!res.ok) {
         console.error('[Flowboard] Error fetching appointments:', json)
         setAppointments([])
