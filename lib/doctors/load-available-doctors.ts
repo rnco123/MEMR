@@ -9,9 +9,15 @@ export type AvailableDoctorRow = {
   email: string | null
   specialty: string | null
   is_available: boolean
+  /** profiles.role: doctor, fnp or pa. */
+  role: string | null
 }
 
-export async function loadAvailableDoctors(
+/**
+ * Providers (doctor / FNP / PA) a nurse can assign at their locations. Unavailable
+ * providers are included (available first) so FNP/PA are never hidden from the list.
+ */
+export async function loadAssignableDoctors(
   admin: SupabaseClient,
   scope: LocationScope
 ): Promise<AvailableDoctorRow[]> {
@@ -37,12 +43,30 @@ export async function loadAvailableDoctors(
   if (scopedDoctors.length === 0) return []
 
   const doctorIds = scopedDoctors.map((d) => d.id)
-  const { data: availabilityData, error: availabilityError } = await admin
-    .from('doctor_availability')
-    .select('doctor_id, is_available')
-    .in('doctor_id', doctorIds)
+  const userIds = scopedDoctors.map((d) => d.user_id as string)
+  const [
+    { data: availabilityData, error: availabilityError },
+    { data: profilesByUid, error: uidError },
+    { data: profilesById, error: idError },
+  ] = await Promise.all([
+    admin.from('doctor_availability').select('doctor_id, is_available').in('doctor_id', doctorIds),
+    admin.from('profiles').select('uid, role').in('uid', userIds),
+    admin.from('profiles').select('id, role').in('id', userIds),
+  ])
 
   if (availabilityError) throw availabilityError
+  if (uidError) throw uidError
+  if (idError) throw idError
+
+  const roleByUserId = new Map<string, string>()
+  for (const row of profilesByUid ?? []) {
+    if (row.uid && row.role) roleByUserId.set(row.uid as string, row.role as string)
+  }
+  for (const row of profilesById ?? []) {
+    if (row.id && row.role && !roleByUserId.has(row.id as string)) {
+      roleByUserId.set(row.id as string, row.role as string)
+    }
+  }
 
   return scopedDoctors
     .map((doctor) => {
@@ -54,7 +78,8 @@ export async function loadAvailableDoctors(
         email: (doctor.email as string | null) ?? null,
         specialty: (doctor.specialty as string | null) ?? null,
         is_available: availability?.is_available ?? false,
+        role: roleByUserId.get(doctor.user_id as string) ?? null,
       }
     })
-    .filter((d) => d.is_available)
+    .sort((a, b) => Number(b.is_available) - Number(a.is_available))
 }

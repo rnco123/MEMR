@@ -84,6 +84,7 @@ interface AvailableDoctor {
   email: string | null
   specialty: string | null
   is_available?: boolean
+  role?: string | null
 }
 
 const NURSE_FLOWBOARD_CACHE_KEY = 'nurse_flowboard_appointments'
@@ -119,7 +120,12 @@ function NurseFlowboardPage() {
       return []
     }
   })
+  // All providers at the nurse's locations (available first); count only the available ones.
   const [availableDoctors, setAvailableDoctors] = useState<AvailableDoctor[]>([])
+  const availableProviderCount = useMemo(
+    () => availableDoctors.filter((d) => d.is_available).length,
+    [availableDoctors]
+  )
   const [loading, setLoading] = useState(() => {
     if (typeof window === 'undefined') return true
     return !sessionStorage.getItem(NURSE_FLOWBOARD_CACHE_KEY)
@@ -496,7 +502,7 @@ function NurseFlowboardPage() {
               <p className="text-slate-500 text-xs font-medium uppercase tracking-wide">
                 {t('flow.stat_available')}
               </p>
-              <p className="text-2xl font-bold text-slate-900 mt-1">{availableDoctors.length}</p>
+              <p className="text-2xl font-bold text-slate-900 mt-1">{availableProviderCount}</p>
             </div>
           </div>
         )}
@@ -607,9 +613,9 @@ function NurseFlowboardPage() {
                   : ''}
               </p>
               <div className="flex flex-wrap items-center gap-3">
-                {availableDoctors.length > 0 && (
+                {availableProviderCount > 0 && (
                   <p className="text-xs text-emerald-600 font-medium shrink-0">
-                    {t('flow.providers_available', { count: availableDoctors.length })}
+                    {t('flow.providers_available', { count: availableProviderCount })}
                   </p>
                 )}
                 {displayMode === 'list' && (

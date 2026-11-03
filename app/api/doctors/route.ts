@@ -8,7 +8,7 @@ import {
 } from '@/lib/api-error-handler'
 import { fetchUserRole } from '@/lib/fetch-user-role'
 import { getLocationScopeForUser, resolveClinicalApiRole } from '@/lib/locations/scope'
-import { loadAvailableDoctors } from '@/lib/doctors/load-available-doctors'
+import { loadAssignableDoctors } from '@/lib/doctors/load-available-doctors'
 import { UserRole } from '@/lib/roles'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +30,7 @@ export async function GET() {
 
     const admin = createAdminClient()
     const scope = await getLocationScopeForUser(admin, user.id, clinicalRole)
-    const data = await loadAvailableDoctors(admin, scope)
+    const data = await loadAssignableDoctors(admin, scope)
 
     return NextResponse.json({ data })
   } catch (err) {

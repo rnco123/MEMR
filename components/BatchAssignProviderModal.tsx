@@ -2,11 +2,14 @@
 
 import { useState } from 'react'
 import { useT } from '@/lib/i18n'
+import { formatProviderOptionLabel } from '@/lib/doctors/provider-option-label'
 
 type AvailableDoctor = {
   id: number
   full_name: string
   specialty: string | null
+  is_available?: boolean
+  role?: string | null
 }
 
 type Props = {
@@ -102,8 +105,7 @@ export function BatchAssignProviderModal({
               <option value="">{t('flow.assign_provider_placeholder')}</option>
               {availableDoctors.map((doctor) => (
                 <option key={doctor.id} value={doctor.id.toString()}>
-                  {doctor.full_name}
-                  {doctor.specialty ? ` (${doctor.specialty})` : ''}
+                  {formatProviderOptionLabel(doctor, t('dashboard.unavailable'))}
                 </option>
               ))}
             </select>

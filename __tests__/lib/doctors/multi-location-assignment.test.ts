@@ -6,7 +6,7 @@
  */
 
 import { scopeAllowsAnyLocation, type LocationScope } from '@/lib/locations/scope'
-import { loadAvailableDoctors } from '@/lib/doctors/load-available-doctors'
+import { loadAssignableDoctors } from '@/lib/doctors/load-available-doctors'
 
 describe('scopeAllowsAnyLocation', () => {
   const scope: LocationScope = { unrestricted: false, locationIds: [5] }
@@ -33,10 +33,11 @@ function mockAdmin(tables: {
   doctors: Array<Record<string, unknown>>
   user_locations: Array<{ user_uid: string; location_id: number }>
   doctor_availability: Array<{ doctor_id: number; is_available: boolean }>
+  profiles?: Array<Record<string, unknown>>
 }) {
   return {
     from(table: keyof typeof tables) {
-      const rows = tables[table]
+      const rows = tables[table] ?? []
       const builder: Record<string, unknown> = {
         select: () => builder,
         order: () => Promise.resolve({ data: rows, error: null }),
@@ -47,7 +48,7 @@ function mockAdmin(tables: {
   } as never
 }
 
-describe('loadAvailableDoctors — multi-location matching', () => {
+describe('loadAssignableDoctors — multi-location matching', () => {
   // Dr. Dallas: home location 28, but admin-assigned to clinics 5 and 28.
   const tables = {
     doctors: [
@@ -61,7 +62,7 @@ describe('loadAvailableDoctors — multi-location matching', () => {
   }
 
   it('shows the provider to a nurse at a NON-home assigned clinic (loc 5)', async () => {
-    const result = await loadAvailableDoctors(mockAdmin(tables), {
+    const result = await loadAssignableDoctors(mockAdmin(tables), {
       unrestricted: false,
       locationIds: [5],
     })
@@ -69,7 +70,7 @@ describe('loadAvailableDoctors — multi-location matching', () => {
   })
 
   it('shows the provider to a nurse at the home clinic (loc 28)', async () => {
-    const result = await loadAvailableDoctors(mockAdmin(tables), {
+    const result = await loadAssignableDoctors(mockAdmin(tables), {
       unrestricted: false,
       locationIds: [28],
     })
@@ -77,10 +78,38 @@ describe('loadAvailableDoctors — multi-location matching', () => {
   })
 
   it('hides the provider from a nurse at an unassigned clinic (loc 9)', async () => {
-    const result = await loadAvailableDoctors(mockAdmin(tables), {
+    const result = await loadAssignableDoctors(mockAdmin(tables), {
       unrestricted: false,
       locationIds: [9],
     })
     expect(result).toHaveLength(0)
+  })
+})
+
+describe('loadAssignableDoctors — FNP/PA and availability', () => {
+  const tables = {
+    doctors: [
+      { id: 7, user_id: 'fnp-user', full_name: 'Fiona', email: null, specialty: null },
+      { id: 5, user_id: 'dallas', full_name: 'Dallas', email: null, specialty: null },
+    ],
+    user_locations: [
+      { user_uid: 'fnp-user', location_id: 5 },
+      { user_uid: 'dallas', location_id: 5 },
+    ],
+    // FNP has never toggled availability (no row).
+    doctor_availability: [{ doctor_id: 5, is_available: true }],
+    profiles: [
+      { uid: 'fnp-user', id: 'fnp-user', role: 'fnp' },
+      { uid: 'dallas', id: 'dallas', role: 'doctor' },
+    ],
+  }
+
+  it('lists an unavailable FNP with its role, after available providers', async () => {
+    const result = await loadAssignableDoctors(mockAdmin(tables), {
+      unrestricted: false,
+      locationIds: [5],
+    })
+    expect(result.map((d) => d.id)).toEqual([5, 7])
+    expect(result[1]).toMatchObject({ role: 'fnp', is_available: false })
   })
 })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
@@ -536,6 +536,35 @@ export function EncounterDetailModal({
       setCompletingEncounter(false)
     }
   }, [canCompleteEncounter, completingEncounter, encounterId, onEncounterStatusChange, showI693Form, t])
+
+  // The assigned provider opening a concluded consultation starts the post-visit wrap-up:
+  // consultation_concluded -> final_review (then Complete -> completed).
+  const finalReviewStartedRef = useRef(false)
+  useEffect(() => {
+    if (finalReviewStartedRef.current) return
+    if (!encounter || encounter.status !== 'consultation_concluded') return
+    if (!isPhysicianRole(role) || !canEditClinicalEncounter) return
+    finalReviewStartedRef.current = true
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/encounters/${encounterId}/status`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'final_review' }),
+        })
+        if (!res.ok) {
+          console.error('Error starting final review:', await res.json().catch(() => ({})))
+          return
+        }
+        setEncounter(prev => (prev ? { ...prev, status: 'final_review' } : prev))
+        onEncounterStatusChange?.('final_review')
+      } catch (error) {
+        console.error('Error starting final review:', error)
+      }
+    })()
+  }, [encounter, role, canEditClinicalEncounter, encounterId, onEncounterStatusChange])
 
   const canEditPatientInfo = canEditSoap
 

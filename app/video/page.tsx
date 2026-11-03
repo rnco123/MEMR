@@ -946,7 +946,7 @@ function VideoPage() {
         method: 'PATCH',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'final_review' }),
+        body: JSON.stringify({ status: 'consultation_concluded' }),
       })
       const statusJson = await statusRes.json().catch(() => ({}))
       if (!statusRes.ok) throw new Error(statusJson.error || 'Failed to update encounter status')
