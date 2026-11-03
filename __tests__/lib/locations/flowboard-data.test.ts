@@ -3,8 +3,8 @@ import { isActiveFlowboardRow, isFutureFlowboardRow } from '@/lib/locations/flow
 const TODAY = '2026-06-25'
 
 describe('isActiveFlowboardRow', () => {
-  test('shows today completed', () => {
-    expect(isActiveFlowboardRow(TODAY, 'completed', TODAY)).toBe(true)
+  test('hides today completed', () => {
+    expect(isActiveFlowboardRow(TODAY, 'completed', TODAY)).toBe(false)
   })
 
   test('shows past in_consultation', () => {

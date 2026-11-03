@@ -15,6 +15,7 @@ import { toast } from 'sonner'
 import { formatCalendarDate } from '@/lib/datetime/date-input'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import type { I693FormData } from '@/lib/i693/types'
+import type { ImmigrationWorkflowStatus } from '@/lib/immigration/types'
 import { EMPTY_I693_FORM } from '@/lib/i693/types'
 import { extractFormDataFromApi, parseFormDataFromApi, countFilledI693Fields } from '@/lib/i693/form-api'
 import { I693PdfCharCellField } from '@/components/I693PdfCharCellField'
@@ -180,7 +181,7 @@ function formatTbValue(value: number | null): string {
 
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const { t } = useT()
-  const { caseRow: workflowCase, loading: workflowCaseLoading } = useImmigrationWorkflowCase(encounterId)
+  const { caseRow: workflowCase, loading: workflowCaseLoading, reload: reloadWorkflowCase } = useImmigrationWorkflowCase(encounterId)
   const [loading, setLoading] = useState(true)
   const [pdfReady, setPdfReady] = useState(false)
   const [printing, setPrinting] = useState(false)
@@ -200,7 +201,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const splitDragRef = useRef<{ startX: number; startRatio: number } | null>(null)
   const [splitResizing, setSplitResizing] = useState(false)
   const [patientId, setPatientId] = useState<number | null>(null)
-  const [lastVisitDate, setLastVisitDate] = useState<string | null>(null)
+  const [firstVisitDate, setFirstVisitDate] = useState<string | null>(null)
   const [patientChartDocs, setPatientChartDocs] = useState<PatientChartDocumentRef[]>([])
   const [patientChartDocsLoading, setPatientChartDocsLoading] = useState(false)
   const [locationAutofill, setLocationAutofill] = useState<I693LocationAutofillMeta | null>(null)
@@ -234,7 +235,6 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
       cache: 'no-store',
     })
     const json = await res.json()
-    if (!res.ok) throw new Error(json.error || 'Failed to load I-693')
     const raw =
       extractFormDataFromApi(json) ??
       (json.submission ? extractFormDataFromApi(json.submission) : null) ??
@@ -283,12 +283,8 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   const saveCurrent = useCallback(
     async (showToast: boolean): Promise<boolean> => {
-      // Commit the field the user is still editing: clicking Save doesn't blur
-      // the active widget, so pdf.js hasn't flushed the typed value into
-      // annotation storage yet. Blur it and wait a frame before extracting,
-      // otherwise a value typed over an AI/prefilled field is read as the old
-      // one and the edit appears not to save.
-      if (typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
+      // Commit the field the user is still editing on manual save click
+      if (showToast && typeof document !== 'undefined' && document.activeElement instanceof HTMLElement) {
         document.activeElement.blur()
         await new Promise((resolve) => requestAnimationFrame(() => resolve(null)))
       }
@@ -324,7 +320,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         if (showToast) toast.success(t('i693.saved'))
         return true
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Save failed')
+        if (showToast) toast.error(e instanceof Error ? e.message : 'Save failed')
         return false
       } finally {
         setSaving(false)
@@ -332,6 +328,68 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     },
     [encounterId, t]
   )
+
+  const [completingEncounter, setCompletingEncounter] = useState(false)
+
+  const handleCompleteEncounter = useCallback(async () => {
+    if (completingEncounter) return
+    if (!window.confirm(t('encounter_modal.complete_confirm'))) return
+
+    setCompletingEncounter(true)
+    try {
+      await saveCurrent(false)
+
+      const res = await fetch(`/api/encounters/${encounterId}/complete`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || t('encounter_modal.complete_failed'))
+
+      await fetch(`/api/i693/cases/${encounterId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'completed' }),
+      }).catch(() => {})
+
+      toast.success(t('encounter_modal.completed'))
+    } catch (error) {
+      console.error('Error completing encounter:', error)
+      toast.error(error instanceof Error ? error.message : t('encounter_modal.complete_failed'))
+    } finally {
+      setCompletingEncounter(false)
+    }
+  }, [completingEncounter, encounterId, saveCurrent, t])
+
+  const updateWorkflowStatus = useCallback(
+    async (nextStatus: ImmigrationWorkflowStatus) => {
+      try {
+        const res = await fetch(`/api/i693/cases/${encounterId}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        })
+        const json = await res.json()
+        if (!res.ok) throw new Error(json.error || 'Failed to update status')
+        toast.success(t('i693.saved'))
+        await reloadWorkflowCase()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : 'Failed to update status')
+      }
+    },
+    [encounterId, reloadWorkflowCase, t]
+  )
+
+  // Auto-save on every change after 800ms debounce
+  useEffect(() => {
+    if (!dirty || saving || printing || downloadLoading || !pdfReady) return
+    const timer = setTimeout(() => {
+      void saveCurrent(false)
+    }, 800)
+    return () => clearTimeout(timer)
+  }, [dirty, saving, printing, downloadLoading, pdfReady, saveCurrent])
 
   const loadLocationAutofillMeta = useCallback(async () => {
     try {
@@ -795,9 +853,9 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     }
   }, [patientId, t])
 
-  const loadLastVisit = useCallback(async () => {
+  const loadFirstVisit = useCallback(async () => {
     if (patientId == null) {
-      setLastVisitDate(null)
+      setFirstVisitDate(null)
       return
     }
     try {
@@ -814,30 +872,27 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         appointments?: { appointment_date?: string | null } | null
       }[]
 
-      // Latest visit across every encounter, including the one being documented, taking the
-      // later of the appointment date and the encounter's own activity — the same definition
-      // the Patients History "Last visit" column uses, so the two screens agree.
-      // Compare on the YYYY-MM-DD prefix since appointment dates carry no timezone.
-      let latest: string | null = null
+      // Earliest / 1st visit across every encounter for this patient
+      let earliest: string | null = null
       for (const row of rows) {
         for (const candidate of [
           row.appointments?.appointment_date,
-          row.updated_at,
           row.created_at,
+          row.updated_at,
         ]) {
           if (!candidate) continue
-          if (!latest || candidate.slice(0, 10) > latest.slice(0, 10)) latest = candidate
+          if (!earliest || candidate.slice(0, 10) < earliest.slice(0, 10)) earliest = candidate
         }
       }
-      setLastVisitDate(latest)
+      setFirstVisitDate(earliest)
     } catch {
-      setLastVisitDate(null)
+      setFirstVisitDate(null)
     }
   }, [patientId])
 
   useEffect(() => {
-    void loadLastVisit()
-  }, [loadLastVisit])
+    void loadFirstVisit()
+  }, [loadFirstVisit])
 
   const openSplitView = useCallback(async () => {
     if (patientId != null) {
@@ -965,17 +1020,12 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     })
   }, [combPlacements, form, pageHosts, updateCombField])
 
-  const clinicLocationLabel = useMemo(() => {
-    if (!locationAutofill) return null
-    const parts = [
-      locationAutofill.region_label,
-      locationAutofill.location_title,
-      locationAutofill.location_address,
-    ]
-      .map((s) => s?.trim())
-      .filter(Boolean)
-    return parts.length > 0 ? parts.join(' · ') : null
-  }, [locationAutofill])
+  // The clinic's name is enough to tell one location from another; the region and
+  // street address wrapped over five lines in a header that has to stay one.
+  const clinicLocationLabel = useMemo(
+    () => locationAutofill?.location_title?.trim() || null,
+    [locationAutofill]
+  )
 
   const displayPatientName = useMemo(() => {
     if (patientName?.trim()) return patientName.trim()
@@ -985,13 +1035,19 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   }, [form.applicant, patientName])
 
   const displayDate = useMemo(() => {
-    const examDate = form.civil_surgeon?.date_signed || form.applicant_contact?.applicant_signature_date
-    const dateStr = examDate || lastVisitDate
-    if (!dateStr) return null
+    const visitDateStr =
+      firstVisitDate ||
+      form.civil_surgeon?.date_signed ||
+      form.applicant_contact?.applicant_signature_date
+    if (!visitDateStr) return null
 
-    const isIso = /^\d{4}-\d{2}-\d{2}/.test(dateStr)
-    return isIso ? formatCalendarDate(dateStr, 'en-US', { month: 'short' }) : dateStr
-  }, [form.civil_surgeon?.date_signed, form.applicant_contact?.applicant_signature_date, lastVisitDate])
+    const isIso = /^\d{4}-\d{2}-\d{2}/.test(visitDateStr)
+    return isIso ? formatCalendarDate(visitDateStr, 'en-US', { month: 'short' }) : visitDateStr
+  }, [
+    firstVisitDate,
+    form.civil_surgeon?.date_signed,
+    form.applicant_contact?.applicant_signature_date,
+  ])
 
   if (loading) {
     return (
@@ -1003,59 +1059,65 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden text-slate-900">
-      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md px-3 py-2 shadow-sm">
-        <div className="flex items-center gap-3 min-w-0">
+      <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md shadow-sm">
+        {/* Context strip: the patient/date/location line used to share a row with the
+            action buttons, which squeezed it until the clinic name read "C…". It gets
+            its own thin band above them now, so all three read in one horizontal run. */}
+        <div className="flex items-center gap-2 border-b border-slate-100 px-3 py-1.5 min-w-0">
           {onBack ? (
             <>
               <button
                 type="button"
                 onClick={onBack}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors shadow-sm"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors"
                 aria-label={t('i693.back_to_workflow')}
                 title={`${t('i693.pdf_editor_title_short')}${patientName ? ` · ${patientName}` : ''} · #${encounterId}`}
               >
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.25} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <div className="hidden sm:block h-6 w-px bg-slate-200" aria-hidden />
+              <div className="h-4 w-px bg-slate-200 shrink-0" aria-hidden />
             </>
           ) : null}
-          <div className="min-w-0 flex-1 flex flex-wrap sm:flex-nowrap justify-between items-start gap-4">
-            <div className="min-w-0">
-              <h1 className="text-lg font-bold text-slate-900 truncate leading-tight">{t('i693.immigration_heading')}</h1>
-              <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-slate-500 min-w-0">
-                {displayPatientName ? (
-                  <div className="flex items-center gap-1.5 shrink-0" title={displayPatientName}>
-                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span className="font-medium text-slate-700">{displayPatientName}</span>
-                  </div>
-                ) : null}
-                {displayDate ? (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span>{displayDate}</span>
-                  </div>
-                ) : null}
-                {clinicLocationLabel ? (
-                  <div className="flex items-center gap-1.5">
-                    <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    <span>{clinicLocationLabel}</span>
-                  </div>
-                ) : null}
+          {/* No heading: this editor only ever opens on an I-693, so naming it
+              again costs a line and truncates to "I6…" in a narrow header. */}
+          <div className="flex items-center gap-x-3 text-xs text-slate-500 min-w-0 overflow-hidden">
+            {displayPatientName ? (
+              <div className="flex items-center gap-1.5 min-w-0" title={displayPatientName}>
+                <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span className="truncate font-medium text-slate-700">{displayPatientName}</span>
               </div>
-            </div>
+            ) : null}
+            {displayDate ? (
+              <>
+                <span className="h-3 w-px bg-slate-200 shrink-0" aria-hidden />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <svg className="h-3.5 w-3.5 text-slate-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <span className="whitespace-nowrap">{displayDate}</span>
+                </div>
+              </>
+            ) : null}
+            {clinicLocationLabel ? (
+              <>
+                <span className="h-3 w-px bg-slate-200 shrink-0" aria-hidden />
+                <div className="flex items-center gap-1.5 min-w-0" title={clinicLocationLabel}>
+                  <svg className="h-3.5 w-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.243-4.243a8 8 0 1111.314 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="truncate">{clinicLocationLabel}</span>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 px-3 py-2">
           {locationAutofill ? (
             <button
               type="button"
@@ -1147,14 +1209,28 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
           <button
             type="button"
             onClick={() => void saveCurrent(true)}
-            disabled={!dirty || saving || printing || downloadLoading || !pdfReady}
-            title={dirty ? t('common.save') : t('i693.nothing_to_save')}
+            disabled={saving || printing || downloadLoading || !pdfReady}
+            title={dirty ? t('common.save') : t('i693.saved')}
             className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50 transition-colors shadow-sm"
           >
-            {saving ? t('common.saving') : t('common.save')}
-            {dirty && !saving ? (
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.6)]" aria-hidden="true" />
-            ) : null}
+            {saving ? (
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-violet-600 animate-pulse" />
+                {t('common.saving')}
+              </span>
+            ) : dirty ? (
+              <span className="flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_4px_rgba(251,191,36,0.6)]" aria-hidden="true" />
+                {t('common.save')}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+                <svg className="w-3.5 h-3.5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                </svg>
+                {t('i693.saved')}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -1173,8 +1249,25 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
             {downloadLoading ? t('i693.pdf_running') : t('i693.download_pdf')}
           </button>
           
+          {workflowCase?.status !== 'completed' && (
+            <button
+              type="button"
+              onClick={() => void handleCompleteEncounter()}
+              disabled={completingEncounter || saving || printing || downloadLoading}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {completingEncounter
+                ? t('encounter_modal.completing')
+                : t('encounter_modal.complete_encounter')}
+            </button>
+          )}
+
           <div className="hidden sm:block h-5 w-px bg-slate-200 mx-1" aria-hidden />
-          <ImmigrationWorkflowStatusBadge caseRow={workflowCase} loading={workflowCaseLoading} />
+          <ImmigrationWorkflowStatusBadge
+            caseRow={workflowCase}
+            loading={workflowCaseLoading}
+            onStatusChange={(nextStatus) => void updateWorkflowStatus(nextStatus)}
+          />
         </div>
       </div>
 

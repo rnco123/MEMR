@@ -3,8 +3,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
+import { stripServiceFee } from '@/lib/services/service-title'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { buildI693Href, getI693BasePath } from '@/lib/i693/paths'
 import { useAuth } from '@/lib/auth-context'
 import { LoadingSpinner } from './LoadingSpinner'
@@ -13,6 +17,7 @@ import { EncounterRoomingPanel } from './EncounterRoomingPanel'
 import { EncounterPhysicalExamPanel } from './EncounterPhysicalExamPanel'
 import { EncounterPrescriptionsPanel } from './EncounterPrescriptionsPanel'
 import { EncounterIntakePanel } from './EncounterIntakePanel'
+import { EncounterImmigrationIntakePanel } from './EncounterImmigrationIntakePanel'
 import { EncounterVitalsPanel } from './EncounterVitalsPanel'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { EncounterConsentFormsTab } from './EncounterConsentFormsTab'
@@ -147,8 +152,10 @@ interface Appointment {
   appointment_date: string | null
   appointment_time: string | null
   onsite_type: string
-  services?: { title_en?: string | null; title_es?: string | null } | null
-  locations?: { title?: string | null; location_code?: string | null } | null
+  service_id?: number | null
+  location_id?: number | null
+  services?: { id?: number; title_en?: string | null; title_es?: string | null } | null
+  locations?: { title?: string | null; location_code?: string | null; tenant_id?: number | null } | null
 }
 
 interface Pharmacy {
@@ -209,6 +216,89 @@ export function EncounterDetailModal({
   const [canEditIntake, setCanEditIntake] = useState(false)
   const [canEditVitals, setCanEditVitals] = useState(false)
 
+  type ServiceOption = { id: number; title_en: string; title_es?: string | null }
+  const [allServices, setAllServices] = useState<ServiceOption[]>([])
+  const [editingService, setEditingService] = useState(false)
+  const [selectedServiceId, setSelectedServiceId] = useState<string>('')
+  const [savingService, setSavingService] = useState(false)
+
+  const loadServices = useCallback(async () => {
+    if (allServices.length > 0) return
+    try {
+      const res = await fetch('/api/services', { credentials: 'include' })
+      const json = await res.json()
+      if (res.ok && Array.isArray(json.services)) {
+        setAllServices(json.services as ServiceOption[])
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [allServices.length])
+
+  // The Loop tenant doesn't allow changing the treatment type (also enforced
+  // in the /service PATCH endpoint).
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(appointment?.location_id)
+
+  const serviceOptions = useMemo(() => {
+    const scoped = filterServices(allServices)
+
+    // Keep the encounter's current service selectable even if it has since been
+    // unassigned from this location — otherwise the dropdown would silently show
+    // a blank value for a record that does have a service.
+    const currentId = appointment?.service_id
+    if (currentId != null && !scoped.some((svc) => svc.id === currentId)) {
+      const current = allServices.find((svc) => svc.id === currentId)
+      if (current) return [current, ...scoped]
+    }
+    return scoped
+  }, [allServices, appointment?.service_id, filterServices])
+
+  const handleStartEditService = () => {
+    void loadServices()
+    const currentId = appointment?.services?.id ?? appointment?.service_id
+    setSelectedServiceId(currentId ? String(currentId) : '')
+    setEditingService(true)
+  }
+
+  const handleSaveService = async () => {
+    if (!selectedServiceId) return
+    setSavingService(true)
+    try {
+      const res = await fetch(`/api/encounters/${encounterId}/service`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ service_id: Number(selectedServiceId) }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to update treatment type')
+
+      const updatedService = json.service as ServiceOption
+      setAppointment((prev) =>
+        prev
+          ? {
+              ...prev,
+              service_id: updatedService.id,
+              services: {
+                id: updatedService.id,
+                title_en: updatedService.title_en,
+                title_es: updatedService.title_es,
+              },
+            }
+          : prev
+      )
+      setEditingService(false)
+      toast.success(t('common.saved_successfully') || 'Treatment type updated successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to update treatment type')
+    } finally {
+      setSavingService(false)
+    }
+  }
+
   type IcdSuggestionRow = {
     code: string
     description: string
@@ -238,9 +328,10 @@ export function EncounterDetailModal({
   const appointmentServiceTitle = useMemo(() => {
     const svc = appointment?.services
     if (!svc) return t('common.na')
-    if (language === 'es' && svc.title_es) return svc.title_es
-    return svc.title_en || t('common.na')
-  }, [appointment?.services, language, t])
+    const title = (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) || ''
+    if (!title) return t('common.na')
+    return stripServiceFee(title)
+  }, [appointment?.services, appointment?.locations?.tenant_id, language, t])
 
   const appointmentLocationTitle = useMemo(() => {
     return appointment?.locations?.title?.trim() || t('common.na')
@@ -282,6 +373,8 @@ export function EncounterDetailModal({
             appointment_date: appointmentData.appointment_date as string | null,
             appointment_time: appointmentData.appointment_time as string | null,
             onsite_type: appointmentData.onsite_type as string,
+            service_id: appointmentData.service_id as number | null,
+            location_id: appointmentData.location_id as number | null,
             services: appointmentData.services as Appointment['services'],
             locations: appointmentData.locations as Appointment['locations'],
           })
@@ -354,6 +447,19 @@ export function EncounterDetailModal({
     return json.encounter as Encounter
   }, [encounterId])
 
+  useEffect(() => {
+    if (!isOpen) return
+
+    const handleFocus = () => {
+      void refreshEncounterFromApi()
+    }
+
+    window.addEventListener('focus', handleFocus)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [isOpen, refreshEncounterFromApi])
+
   const refreshEncounterAndPharmacy = useCallback(async () => {
     const res = await fetch(`/api/encounters/${encounterId}/detail?pharmacy_registry=1`, {
       credentials: 'include',
@@ -390,8 +496,11 @@ export function EncounterDetailModal({
 
   const canCompleteEncounter = useMemo(() => {
     if (!encounter || !canEditClinicalEncounter) return false
+    if (showI693Form) {
+      return encounter.status !== 'completed'
+    }
     return isPhysicianRole(role) && canDoctorCompleteEncounter(encounter.status)
-  }, [encounter, role, canEditClinicalEncounter])
+  }, [encounter, role, canEditClinicalEncounter, showI693Form])
 
   const handleCompleteEncounter = useCallback(async () => {
     if (!canCompleteEncounter || completingEncounter) return
@@ -409,6 +518,15 @@ export function EncounterDetailModal({
         throw new Error(json.error || t('encounter_modal.complete_failed'))
       }
 
+      if (showI693Form) {
+        await fetch(`/api/i693/cases/${encounterId}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'completed' }),
+        }).catch(() => {})
+      }
+
       setEncounter(prev => (prev ? { ...prev, status: 'completed' } : prev))
       onEncounterStatusChange?.('completed')
     } catch (error) {
@@ -417,7 +535,7 @@ export function EncounterDetailModal({
     } finally {
       setCompletingEncounter(false)
     }
-  }, [canCompleteEncounter, completingEncounter, encounterId, onEncounterStatusChange, t])
+  }, [canCompleteEncounter, completingEncounter, encounterId, onEncounterStatusChange, showI693Form, t])
 
   const canEditPatientInfo = canEditSoap
 
@@ -688,7 +806,7 @@ export function EncounterDetailModal({
                   : t('encounter_modal.complete_encounter')}
               </button>
             )}
-            {onJoinTelemedicine && canJoinTelemedicine && (
+            {onJoinTelemedicine && canJoinTelemedicine && !showI693Form && (
               <button
                 type="button"
                 onClick={onJoinTelemedicine}
@@ -979,10 +1097,61 @@ export function EncounterDetailModal({
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4 pt-5 border-t border-slate-100">
                         <div className="min-w-0">
-                          <p className="text-slate-500 text-sm mb-1">{t('nurse_walkin.service')}</p>
-                          <p className="text-slate-900 font-semibold break-words">
-                            {appointmentServiceTitle}
-                          </p>
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="text-slate-500 text-sm">{t('nurse_walkin.service')}</p>
+                            {canEditWorkflow && !encounterLocked && !editingService && (
+                              <button
+                                type="button"
+                                onClick={handleStartEditService}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200/80 text-xs font-semibold shadow-xs transition-all hover:shadow-sm"
+                              >
+                                <svg className="w-3.5 h-3.5 text-violet-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                </svg>
+                                {t('common.edit')}
+                              </button>
+                            )}
+                          </div>
+                          {editingService ? (
+                            <div className="space-y-2 mt-1">
+                              <SelectDrawer
+                                value={selectedServiceId}
+                                onChange={setSelectedServiceId}
+                                disabled={savingService}
+                                placeholder={t('patient_register.treatment_type_ph')}
+                                searchPlaceholder={t('common.search')}
+                                emptyLabel={t('common.no_results')}
+                                options={serviceOptions.map((svc) => ({
+                                  value: String(svc.id),
+                                  label: stripServiceFee(
+                                    (language === 'es' && svc.title_es ? svc.title_es : svc.title_en) ?? ''
+                                  ),
+                                }))}
+                              />
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void handleSaveService()}
+                                  disabled={savingService || !selectedServiceId}
+                                  className="px-3 py-1 rounded-lg bg-[#2E6EF3] text-white text-xs font-medium hover:bg-[#256ae8] disabled:opacity-50"
+                                >
+                                  {savingService ? t('common.saving') : t('common.save')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingService(false)}
+                                  disabled={savingService}
+                                  className="px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-600 text-xs font-medium hover:bg-slate-50"
+                                >
+                                  {t('common.cancel')}
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-slate-900 font-semibold break-words">
+                              {appointmentServiceTitle}
+                            </p>
+                          )}
                         </div>
                         <div className="min-w-0">
                           <p className="text-slate-500 text-sm mb-1">
@@ -1005,6 +1174,44 @@ export function EncounterDetailModal({
                 />
 
                 {encounter && (
+                  <EncounterPhysicalExamPanel
+                    encounterId={encounterId}
+                    encounterStatus={encounter.status}
+                    canEdit={canEditPhysicalExam}
+                    onSaved={async () => {
+                      await refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
+                {showI693Form ? (
+                  <EncounterImmigrationIntakePanel
+                    encounterId={encounterId}
+                    canEdit={intakeEditable}
+                    patientGender={patient?.gender}
+                    patientAge={patientAgeYears}
+                  />
+                ) : (
+                  <EncounterIntakePanel
+                    encounterId={encounterId}
+                    intake={intake}
+                    canEdit={intakeEditable}
+                    onUpdated={() => {
+                      void refreshEncounterFromApi()
+                    }}
+                  />
+                )}
+
+                <EncounterVitalsPanel
+                  encounterId={encounterId}
+                  vitals={vitals}
+                  canEdit={vitalsEditable}
+                  onUpdated={() => {
+                    void refreshEncounterFromApi()
+                  }}
+                />
+
+                {encounter && (
                   <EncounterRoomingPanel
                     encounterId={encounterId}
                     encounter={encounter}
@@ -1015,16 +1222,13 @@ export function EncounterDetailModal({
                   />
                 )}
 
-                {encounter && (
-                  <EncounterPhysicalExamPanel
-                    encounterId={encounterId}
-                    encounterStatus={encounter.status}
-                    canEdit={canEditPhysicalExam}
-                    onSaved={async () => {
-                      await refreshEncounterFromApi()
-                    }}
-                  />
-                )}
+                <EncounterSoapPanel
+                  encounterId={encounterId}
+                  aiSoap={soapNotes}
+                  canEdit={canEditSoap}
+                  encounterStatus={encounter?.status ?? null}
+                  onDownloadDoctorPdf={soap => void handleDownloadDoctorSoapPdf(soap)}
+                />
 
                 {encounter && (
                   <EncounterPrescriptionsPanel
@@ -1045,32 +1249,6 @@ export function EncounterDetailModal({
                     onPharmaciesReload={reloadPharmacyRegistry}
                   />
                 )}
-
-                <EncounterIntakePanel
-                  encounterId={encounterId}
-                  intake={intake}
-                  canEdit={intakeEditable}
-                  onUpdated={() => {
-                    void refreshEncounterFromApi()
-                  }}
-                />
-
-                <EncounterVitalsPanel
-                  encounterId={encounterId}
-                  vitals={vitals}
-                  canEdit={vitalsEditable}
-                  onUpdated={() => {
-                    void refreshEncounterFromApi()
-                  }}
-                />
-
-                <EncounterSoapPanel
-                  encounterId={encounterId}
-                  aiSoap={soapNotes}
-                  canEdit={canEditSoap}
-                  encounterStatus={encounter?.status ?? null}
-                  onDownloadDoctorPdf={soap => void handleDownloadDoctorSoapPdf(soap)}
-                />
               </div>
             )}
           </div>

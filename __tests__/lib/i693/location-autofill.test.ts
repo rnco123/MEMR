@@ -1,22 +1,42 @@
-import { resolveI693TemplateGroup, resolveCivilSurgeonAddressForGroup } from '@/lib/i693/location-autofill'
+import {
+  resolveCivilSurgeonAddressForGroup,
+  resolveI693TemplateGroup,
+  resolveI693TemplateGroupForLocation,
+} from '@/lib/i693/location-autofill'
 
 describe('resolveI693TemplateGroup', () => {
   it('maps standard Clinica groups A/B/C', () => {
-    expect(resolveI693TemplateGroup('A', {})).toBe('A')
-    expect(resolveI693TemplateGroup('B', {})).toBe('B')
-    expect(resolveI693TemplateGroup('C', {})).toBe('C')
+    expect(resolveI693TemplateGroup('A')).toBe('A')
+    expect(resolveI693TemplateGroup('B')).toBe('B')
+    expect(resolveI693TemplateGroup('C')).toBe('C')
   })
 
-  it('maps Kempwood CLN-28 to Houston (B) template', () => {
-    expect(resolveI693TemplateGroup('CLN-28', {})).toBe('B')
+  // Kempwood used to be recognised by its tenant id and by the literal 'CLN-28'.
+  // Its row carries 'B' now, like every other Houston clinic, so nothing about the
+  // clinic is special-cased here.
+  it('returns null for a group outside A/B/C', () => {
+    expect(resolveI693TemplateGroup('CLN-28')).toBeNull()
+    expect(resolveI693TemplateGroup('D')).toBeNull()
+    expect(resolveI693TemplateGroup('TELE')).toBeNull()
   })
 
-  it('maps Kempwood tenant to Houston (B) template', () => {
-    expect(resolveI693TemplateGroup('', { tenant_id: 3 })).toBe('B')
+  it('returns null when a location has no group', () => {
+    expect(resolveI693TemplateGroup('')).toBeNull()
+  })
+})
+
+describe('resolveI693TemplateGroupForLocation', () => {
+  it('pins location 31 to Dallas (Group A) when its row carries no group', () => {
+    expect(resolveI693TemplateGroupForLocation(31, '')).toBe('A')
   })
 
-  it('returns null for unknown groups', () => {
-    expect(resolveI693TemplateGroup('CLN-99', { tenant_id: 1 })).toBeNull()
+  it('lets the location row override the pinned fallback', () => {
+    expect(resolveI693TemplateGroupForLocation(31, 'B')).toBe('B')
+  })
+
+  it('still returns null for an unpinned location with no usable group', () => {
+    expect(resolveI693TemplateGroupForLocation(30, 'TELE')).toBeNull()
+    expect(resolveI693TemplateGroupForLocation(null, '')).toBeNull()
   })
 })
 

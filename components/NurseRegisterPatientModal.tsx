@@ -5,14 +5,25 @@ import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { DobDateInput } from '@/components/DobDateInput'
 import { AddressLookupFields } from '@/components/AddressLookupFields'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { useT } from '@/lib/i18n'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { stripServiceFee } from '@/lib/services/service-title'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
 import type { PatientDocumentLabel } from '@/lib/validation'
 import {
   PATIENT_DOCUMENT_ACCEPT,
   validatePatientDocumentUpload,
 } from '@/lib/security/file-upload'
+
+/** Badge shown next to a queued upload. */
+function pendingFileKind(file: File): 'PDF' | 'DOC' | 'IMG' {
+  const name = file.name.toLowerCase()
+  if (name.endsWith('.pdf')) return 'PDF'
+  if (name.endsWith('.docx')) return 'DOC'
+  return 'IMG'
+}
 
 const INPUT =
   'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-500/35 focus:border-violet-400 transition-shadow'
@@ -104,6 +115,9 @@ export function NurseRegisterPatientModal({
   const [streetAddress, setStreetAddress] = useState('')
   const [state, setState] = useState('')
   const [zipCode, setZipCode] = useState('')
+  const [emergencyName, setEmergencyName] = useState('')
+  const [emergencyPhone, setEmergencyPhone] = useState('')
+  const [emergencyRelationship, setEmergencyRelationship] = useState('')
   const [locationId, setLocationId] = useState('')
   const [locationQuery, setLocationQuery] = useState('')
   const [textOptIn, setTextOptIn] = useState(false)
@@ -132,6 +146,9 @@ export function NurseRegisterPatientModal({
     setStreetAddress('')
     setState('')
     setZipCode('')
+    setEmergencyName('')
+    setEmergencyPhone('')
+    setEmergencyRelationship('')
     setLocationId('')
     setLocationQuery('')
     setTextOptIn(false)
@@ -192,9 +209,12 @@ export function NurseRegisterPatientModal({
     () => assignedLocations.find((loc) => String(loc.id) === locationId) ?? null,
     [assignedLocations, locationId]
   )
-  const isKempwoodTenant = selectedLocation?.tenant_id === 3
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than a hardcoded rule about its tenant. A location with
+  // no configuration keeps the full list.
+  const { filterServices } = useLocationServices(selectedLocation?.id)
 
-  const availableServices = services
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
 
   useEffect(() => {
     setServiceId((current) => {
@@ -207,7 +227,7 @@ export function NurseRegisterPatientModal({
     const title = language === 'es' && service.title_es
       ? service.title_es
       : service.title_en
-    return isKempwoodTenant ? title.replace(/\s*\$220\s*$/, '') : title
+    return stripServiceFee(title)
   }
 
   const filteredLocations = useMemo(() => {
@@ -226,18 +246,20 @@ export function NurseRegisterPatientModal({
     Boolean(locationId) && assignedLocations.some((loc) => String(loc.id) === locationId)
 
   const canSubmit = useMemo(() => {
-    const emailTrimmed = email.trim()
-    const emailOk = !emailTrimmed || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)
+    // Email and date of birth identify a returning patient, so both are required —
+    // without them the bridge cannot tell a repeat visit from a new chart.
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())
     return Boolean(
       firstName.trim() &&
         lastName.trim() &&
         locationReady &&
         serviceId &&
         emailOk &&
+        dob.trim() &&
         !submitting &&
         !servicesLoading
     )
-  }, [firstName, lastName, locationReady, serviceId, email, submitting, servicesLoading])
+  }, [firstName, lastName, locationReady, serviceId, email, dob, submitting, servicesLoading])
 
   const emailError = useMemo(() => {
     const emailTrimmed = email.trim()
@@ -287,6 +309,9 @@ export function NurseRegisterPatientModal({
           street_address: streetAddress.trim() || null,
           state: state.trim() || null,
           zip_code: zipCode.trim() || null,
+          emergency_contact_name: emergencyName.trim() || null,
+          emergency_contact_phone: emergencyPhone.trim() || null,
+          emergency_contact_relationship: emergencyRelationship.trim() || null,
           location_id: Number(locationId),
           is_text_opt_in: textOptIn,
           is_check_opt_in: checkOptIn,
@@ -586,23 +611,24 @@ export function NurseRegisterPatientModal({
                 <h3 className={SECTION}>{t('patient_register.treatment_type')}</h3>
                 <p className="text-xs text-slate-500 -mt-1">{t('patient_register.treatment_type_required')}</p>
                 <div>
-                  <label className={LABEL}>{t('patient_register.treatment_type')}</label>
-                  <select
-                    value={serviceId}
-                    onChange={(e) => setServiceId(e.target.value)}
-                    disabled={servicesLoading || availableServices.length === 0}
-                    className={`${INPUT} mt-1.5`}
-                    required
-                  >
-                    {availableServices.length === 0 ? (
-                      <option value="">{t('patient_register.treatment_type_ph')}</option>
-                    ) : null}
-                    {availableServices.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {serviceTitle(s)}
-                      </option>
-                    ))}
-                  </select>
+                  <label className={LABEL} htmlFor="register-treatment-type">
+                    {t('patient_register.treatment_type')}
+                  </label>
+                  <div className="mt-1.5">
+                    <SelectDrawer
+                      id="register-treatment-type"
+                      value={serviceId}
+                      onChange={setServiceId}
+                      disabled={servicesLoading || availableServices.length === 0}
+                      placeholder={t('patient_register.treatment_type_ph')}
+                      searchPlaceholder={t('common.search')}
+                      emptyLabel={t('common.no_results')}
+                      options={availableServices.map((s) => ({
+                        value: String(s.id),
+                        label: serviceTitle(s),
+                      }))}
+                    />
+                  </div>
                 </div>
                 <p className="text-xs text-slate-500 pt-2 leading-relaxed">{t('patient_register.visit_opens_hint')}</p>
               </section>
@@ -707,6 +733,41 @@ export function NurseRegisterPatientModal({
                       streetPlaceholder={t('encounter_modal.patient_street_placeholder')}
                       inputClassName={INPUT}
                     />
+                  </div>
+                  <div className="md:col-span-2 pt-1">
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">
+                      {t('patient_register.emergency_contact')}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_name')}</label>
+                        <input
+                          value={emergencyName}
+                          onChange={(e) => setEmergencyName(e.target.value)}
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_phone')}</label>
+                        <input
+                          value={emergencyPhone}
+                          onChange={(e) => setEmergencyPhone(phoneDigitsOnly(e.target.value).slice(0, 10))}
+                          inputMode="numeric"
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-600">{t('patient_register.emergency_relationship')}</label>
+                        <input
+                          value={emergencyRelationship}
+                          onChange={(e) => setEmergencyRelationship(e.target.value)}
+                          className={`${INPUT} mt-1`}
+                          autoComplete="off"
+                        />
+                      </div>
+                    </div>
                   </div>
                   <label className="flex items-center gap-2.5 text-sm text-slate-700 rounded-xl border border-slate-100 bg-slate-50/80 px-3 py-2.5 cursor-pointer hover:border-violet-200">
                     <input
@@ -832,11 +893,13 @@ export function NurseRegisterPatientModal({
                         }`}
                       >
                         <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${
-                          item.file.type === 'application/pdf'
+                          pendingFileKind(item.file) === 'PDF'
                             ? 'bg-red-100 text-red-700'
-                            : 'bg-blue-100 text-blue-700'
+                            : pendingFileKind(item.file) === 'DOC'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : 'bg-blue-100 text-blue-700'
                         }`}>
-                          {item.file.name.toLowerCase().endsWith('.pdf') ? 'PDF' : 'IMG'}
+                          {pendingFileKind(item.file)}
                         </span>
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-sm font-medium text-slate-800">{item.file.name}</span>

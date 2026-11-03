@@ -1,7 +1,7 @@
 import { splitAddressForPatientRecord } from '@/lib/address/parse-patient-address'
 
 describe('splitAddressForPatientRecord', () => {
-  it('splits Smarty-style US address into street, state, zip', () => {
+  it('splits a full US address into street, state, zip', () => {
     expect(
       splitAddressForPatientRecord('123 Main St, Houston, TX 77002')
     ).toEqual({

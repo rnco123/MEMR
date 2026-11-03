@@ -185,12 +185,32 @@ export async function syncLatestPhysicalExaminationToPatientChart(
 
   const patientName = [patient.first_name, patient.last_name].filter(Boolean).join(' ').trim() || `Patient ${patientId}`
 
+  // Find earliest / 1st encounter visit date for this patient
+  const { data: patientEncounters } = await admin
+    .from('encounters')
+    .select('created_at, appointments(appointment_date)')
+    .eq('patient_id', patientId)
+
+  let firstVisitDate: string | null = null
+  if (patientEncounters) {
+    for (const enc of patientEncounters) {
+      const appt = Array.isArray(enc.appointments) ? enc.appointments[0] : enc.appointments
+      const d = appt?.appointment_date || enc.created_at
+      if (d) {
+        if (!firstVisitDate || d.slice(0, 10) < firstVisitDate.slice(0, 10)) {
+          firstVisitDate = d
+        }
+      }
+    }
+  }
+
   const pdfContext: PhysicalExaminationPdfContext = {
     patientName,
     patientDob: patient.date_of_birth as string | null | undefined,
     encounterId: latest.encounter.id,
     encounterCode: latest.encounter.encounter_code,
-    encounterDate: appointmentDateFromEncounter(latest.encounter),
+    encounterDate: firstVisitDate ?? appointmentDateFromEncounter(latest.encounter),
+    examRecordedAt: latest.lastAudit?.recorded_at ?? null,
     lastAudit: latest.lastAudit,
     rosExam: latest.rosExam,
     legacyExam: latest.legacyExam,

@@ -25,11 +25,11 @@ export function isActiveFlowboardRow(
   encounterStatus: string | null | undefined,
   todayDate = getClinicTodayDateString()
 ): boolean {
+  if (encounterStatus === 'completed') return false
   const dateKey = appointmentDate?.trim().slice(0, 10) ?? ''
   if (!dateKey) return true
   if (isFutureFlowboardRow(dateKey, todayDate)) return false
-  if (dateKey >= todayDate) return true
-  return encounterStatus !== 'completed'
+  return true
 }
 
 export type FlowboardRow = {
@@ -48,6 +48,8 @@ export type FlowboardRow = {
   location_title: string | null
   encounter_status: string | null
   encounter_id: number | null
+  /** Set when rooming marked the patient ready for the provider (telemedicine handoff). */
+  ready_for_doctor_at: string | null
   assigned_doctor?: {
     id: number
     full_name: string
@@ -112,7 +114,7 @@ export async function buildFlowboardRows(
       .in('id', patientIds),
     admin
       .from('encounters')
-      .select('id, appointment_id, status, doctor_id, created_at, updated_at')
+      .select('id, appointment_id, status, doctor_id, created_at, updated_at, ready_for_doctor_at')
       .in('appointment_id', appointmentIds),
     serviceIds.length > 0
       ? admin.from('services').select('id, title_en, title_es').in('id', serviceIds)
@@ -212,6 +214,9 @@ export async function buildFlowboardRows(
       location_title: effectiveLocationId != null ? locationTitles[effectiveLocationId] ?? null : null,
       encounter_status: encounter?.status ?? null,
       encounter_id: encounter?.id ?? null,
+      ready_for_doctor_at:
+        (encounter as { ready_for_doctor_at?: string | null } | undefined)?.ready_for_doctor_at ??
+        null,
       assigned_doctor: assignedDoctor
         ? {
             id: assignedDoctor.id,

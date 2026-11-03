@@ -7,18 +7,26 @@ import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
 import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPreview'
 import { PatientPdfViewer } from '@/components/PatientPdfViewer'
+import { PatientDocxViewer } from '@/components/PatientDocxViewer'
 import { useT } from '@/lib/i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { printPatientDocument } from '@/lib/patient-documents/print-document'
 import { getEncounterProviderLabelKey } from '@/lib/roles'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
+import { DOCX_MIME_TYPE, PATIENT_DOCUMENT_ACCEPT } from '@/lib/security/file-upload'
 
 const DOCUMENTS_VIEW_STORAGE_KEY = 'memr.patientDocumentsView'
 
 const PATIENT_DOC_MAX_BYTES = 50 * 1024 * 1024
-const PATIENT_DOC_ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'application/pdf']
-const PATIENT_DOC_ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.pdf']
+const PATIENT_DOC_ALLOWED_TYPES = [
+  'image/png',
+  'image/jpeg',
+  'image/jpg',
+  'application/pdf',
+  DOCX_MIME_TYPE,
+]
+const PATIENT_DOC_ALLOWED_EXT = ['.png', '.jpg', '.jpeg', '.pdf', '.docx']
 
 function normalizedDocumentMime(fileType?: string | null): string {
   return fileType?.split(';', 1)[0]?.trim().toLowerCase() ?? ''
@@ -35,6 +43,11 @@ function isImageDocument(doc: Pick<PatientDocument, 'file_type' | 'file_name' | 
     normalizedDocumentMime(doc.file_type).startsWith('image/') ||
     /\.(png|jpe?g|webp|gif)$/i.test(name)
   )
+}
+
+function isDocxDocument(doc: Pick<PatientDocument, 'file_type' | 'file_name' | 'document_name'>): boolean {
+  const name = (doc.file_name || doc.document_name || '').toLowerCase()
+  return normalizedDocumentMime(doc.file_type) === DOCX_MIME_TYPE || name.endsWith('.docx')
 }
 
 const DOCUMENTS_GRID_DENSITY_STORAGE_KEY = 'memr.patientDocumentsGridDensity'
@@ -1925,7 +1938,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                 <input
                                   id="file-input"
                                   type="file"
-                                  accept=".pdf,.png,.jpg,.jpeg,image/png,image/jpeg,application/pdf"
+                                  accept={PATIENT_DOCUMENT_ACCEPT}
                                   onChange={(e) => {
                                     const file = e.target.files?.[0]
                                     applyPatientUploadFile(file, e.target)
@@ -2055,6 +2068,11 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                   onError={() => setImageLoading(false)}
                                 />
                               </div>
+                            ) : isDocxDocument(viewingDocument) ? (
+                              <PatientDocxViewer
+                                url={viewingDocument.file_url}
+                                title={viewingDocument.document_name}
+                              />
                             ) : (
                               <div className="flex flex-col items-center justify-center h-full text-center py-20">
                                 <svg className="w-16 h-16 text-slate-500 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

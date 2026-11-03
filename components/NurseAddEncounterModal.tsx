@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { SelectDrawer } from '@/components/SelectDrawer'
 import { SearchByDobDropdowns } from '@/components/SearchByDobDropdowns'
 import { useT } from '@/lib/i18n'
 import { calculateAgeFromDob } from '@/lib/nurse/walk-in-intake'
@@ -11,9 +12,20 @@ import { IntakeFormFields } from '@/components/IntakeFormFields'
 import { PatientSourceBadge } from '@/components/PatientSourceBadge'
 import type { NurseWalkInIntakeInput } from '@/lib/validation'
 import { phoneDigitsOnly } from '@/lib/phone-digits'
+import { AddressLookupInput } from '@/components/AddressLookupInput'
 import { normalizePharmacyRow, type PharmacyRecord } from '@/lib/pharmacies/normalize'
 import { formatDobShort } from '@/lib/datetime/date-input'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
+import { useLocationServices } from '@/lib/configurations/use-location-services'
+import { isImmigrationServiceId } from '@/lib/i693/immigration-eligibility'
+import { stripServiceFee } from '@/lib/services/service-title'
+import {
+  applyNurseScreeningToI693Form,
+  emptyNurseImmigrationScreening,
+  SCREENING_QUESTION_KEYS,
+  type NurseImmigrationScreening,
+} from '@/lib/i693/nurse-screening'
+import { ImmigrationScreeningFields } from '@/components/ImmigrationScreeningFields'
 import {
   formatClinicDateOnly,
   formatClinicTimeSlot,
@@ -102,6 +114,9 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const [submitting, setSubmitting] = useState(false)
   const [showFutureConfirm, setShowFutureConfirm] = useState(false)
   const [intakeForm, setIntakeForm] = useState<NurseWalkInIntakeInput>(emptyIntakeFormInput())
+  const [immScreening, setImmScreening] = useState<NurseImmigrationScreening>(
+    emptyNurseImmigrationScreening()
+  )
 
   const resetForm = useCallback(() => {
     setStep('search')
@@ -120,6 +135,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     setShowManualPharmacy(false)
     setManualPharmacy({ name: '', address: '', phone: '', email: '' })
     setIntakeForm(emptyIntakeFormInput())
+    setImmScreening(emptyNurseImmigrationScreening())
     setShowFutureConfirm(false)
   }, [])
 
@@ -141,12 +157,27 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
       .finally(() => setOptionsLoading(false))
   }, [isOpen, resetForm, t])
 
+  const effectiveLocationId = defaultLocationId ?? selectedPatient?.location_id ?? null
+
+  // Which sections to show follows the service being booked, not the clinic's tenant.
+  // An immigration exam gets the USCIS screening; anything else gets general intake
+  // and pharmacy. This used to be a list of tenant ids, which meant a clinic that
+  // offered both got the wrong form for one of them.
+  const immigrationEncounter = isImmigrationServiceId(serviceId)
+
+  // What a clinic offers is configured in Admin → Configurations, so the list comes
+  // from the location rather than from a hardcoded rule about its tenant. A location
+  // with no configuration keeps the full list.
+  const { filterServices } = useLocationServices(effectiveLocationId)
+
+  const availableServices = useMemo(() => filterServices(services), [services, filterServices])
+
   useEffect(() => {
     setServiceId((current) => {
-      if (services.some((service) => String(service.id) === current)) return current
-      return services[0]?.id ? String(services[0].id) : ''
+      if (availableServices.some((service) => String(service.id) === current)) return current
+      return availableServices[0]?.id ? String(availableServices[0].id) : ''
     })
-  }, [services])
+  }, [availableServices])
 
   // Preload every patient in the nurse's assigned location(s) when the modal opens.
   useEffect(() => {
@@ -229,6 +260,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
   const selectPatient = (p: PatientRow) => {
     setSelectedPatient(p)
     setIntakeForm(emptyIntakeFormInput())
+    setImmScreening(emptyNurseImmigrationScreening())
     setStep('form')
   }
 
@@ -302,16 +334,42 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     }
   }
 
-  const effectiveLocationId = defaultLocationId ?? selectedPatient?.location_id ?? null
-  const isKempwoodTenant = useMemo(() => {
-    if (effectiveLocationId == null) return false
-    const loc = locations.find((l) => l.id === effectiveLocationId)
-    return loc?.tenant_id === 3
-  }, [effectiveLocationId, locations])
-
   const serviceTitle = (s: ServiceRow) => {
     const title = language === 'es' && s.title_es ? s.title_es : s.title_en
-    return isKempwoodTenant ? title.replace(/\s*\$220\s*$/, '') : title
+    return stripServiceFee(title)
+  }
+
+  // Booking-app rule: Female matched on the first letter (Female / Femenino) and age > 15.
+  const showWomensHealth =
+    immigrationEncounter &&
+    (selectedPatient?.gender ?? '').trim().toLowerCase().startsWith('f') &&
+    (calculateAgeFromDob(selectedPatient?.date_of_birth ?? null) ?? 0) > 15
+
+  const screeningComplete =
+    SCREENING_QUESTION_KEYS.every((key) => immScreening[key] !== '') &&
+    immScreening.has_allergies !== '' &&
+    (immScreening.has_allergies !== 'yes' || immScreening.allergies.trim() !== '') &&
+    (!showWomensHealth || immScreening.pregnant !== '')
+
+  // Best-effort after encounter creation: merge the nurse-entered answers into
+  // the patient's I-693 form data so the PDF editor starts pre-filled.
+  const saveScreeningToI693 = async (encounterId: number) => {
+    try {
+      const getRes = await fetch(`/api/encounters/${encounterId}/i693`, { credentials: 'include' })
+      const getJson = await getRes.json().catch(() => ({}))
+      const existing = getJson?.submission?.form_data ?? null
+      const merged = applyNurseScreeningToI693Form(existing, immScreening)
+      const putRes = await fetch(`/api/encounters/${encounterId}/i693`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ form_data: merged, status: 'draft' }),
+      })
+      if (!putRes.ok) throw new Error('save failed')
+      toast.success(t('imm_intake.saved_to_i693'))
+    } catch {
+      toast.error(t('imm_intake.save_to_i693_failed'))
+    }
   }
 
   const submitWalkIn = async () => {
@@ -322,6 +380,10 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
     }
     if (!serviceId) {
       toast.error(t('patient_register.treatment_type_required'))
+      return
+    }
+    if (immigrationEncounter && !screeningComplete) {
+      toast.error(t('imm_intake.screening_required'))
       return
     }
     const isFuture = isFutureAppointmentDate(appointmentDate)
@@ -338,13 +400,17 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
           service_id: Number(serviceId),
           location_id: defaultLocationId ?? selectedPatient.location_id,
           onsite_type: onsiteType,
-          pharmacy_id: pharmacyId ? Number(pharmacyId) : null,
-          intake: Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
+          pharmacy_id: !immigrationEncounter && pharmacyId ? Number(pharmacyId) : null,
+          intake:
+            !immigrationEncounter && Object.keys(intakeForm).length > 0 ? intakeForm : undefined,
         }),
       })
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json.error || json.message || 'Failed')
       toast.success(isFuture ? t('nurse_walkin.created_future') : t('nurse_walkin.created'))
+      if (immigrationEncounter) {
+        await saveScreeningToI693(Number(json.data.encounter_id))
+      }
       onCreated({
         appointmentId: json.data.appointment_id,
         encounterId: json.data.encounter_id,
@@ -603,14 +669,24 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-slate-600">{t('nurse_walkin.service')}</label>
-                    <select value={serviceId} onChange={(e) => setServiceId(e.target.value)} className={`${INPUT} mt-1`}>
-                      {services.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {serviceTitle(s)}
-                        </option>
-                      ))}
-                    </select>
+                    <label className="text-xs text-slate-600" htmlFor="walkin-service">
+                      {t('nurse_walkin.service')}
+                    </label>
+                    <div className="mt-1">
+                      <SelectDrawer
+                        id="walkin-service"
+                        value={serviceId}
+                        onChange={setServiceId}
+                        disabled={availableServices.length === 0}
+                        placeholder={t('patient_register.treatment_type_ph')}
+                        searchPlaceholder={t('common.search')}
+                        emptyLabel={t('common.no_results')}
+                        options={availableServices.map((s) => ({
+                          value: String(s.id),
+                          label: serviceTitle(s),
+                        }))}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="text-xs text-slate-600">{t('nurse_walkin.visit_type')}</label>
@@ -626,15 +702,29 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                 </div>
               </section>
 
-              <IntakeFormFields
-                value={intakeForm}
-                onChange={setIntakeForm}
-                fieldPrefix="walkin"
-                inputClassName={INPUT}
-                sectionClassName={SECTION}
-                showOptionalHint
-              />
+              {immigrationEncounter && (
+                <ImmigrationScreeningFields
+                  value={immScreening}
+                  onChange={setImmScreening}
+                  showWomensHealth={showWomensHealth}
+                  fieldPrefix="walkin-imm"
+                  inputClassName={INPUT}
+                  sectionClassName={SECTION}
+                />
+              )}
 
+              {!immigrationEncounter && (
+                <IntakeFormFields
+                  value={intakeForm}
+                  onChange={setIntakeForm}
+                  fieldPrefix="walkin"
+                  inputClassName={INPUT}
+                  sectionClassName={SECTION}
+                  showOptionalHint
+                />
+              )}
+
+              {!immigrationEncounter && (
               <section>
                 <h3 className={SECTION}>{t('nurse_walkin.pharmacy')}</h3>
                 <input
@@ -671,9 +761,9 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                       placeholder={t('pharmacies.name_req')}
                       className={INPUT}
                     />
-                    <input
+                    <AddressLookupInput
                       value={manualPharmacy.address}
-                      onChange={e => setManualPharmacy(f => ({ ...f, address: e.target.value }))}
+                      onChange={address => setManualPharmacy(f => ({ ...f, address }))}
                       placeholder={t('pharmacies.address')}
                       className={INPUT}
                     />
@@ -701,6 +791,7 @@ export function NurseAddEncounterModal({ isOpen, onClose, onCreated, defaultLoca
                   </div>
                 )}
               </section>
+              )}
 
               <p className="text-xs text-slate-500 bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                 {t('nurse_walkin.no_signature_hint')}

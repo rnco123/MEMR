@@ -350,10 +350,12 @@ export async function syncImmigrationCase(
     .eq('encounter_id', encounterId)
     .maybeSingle()
 
-  const priorDelivered = options?.is_delivered ?? existing?.is_delivered ?? false
+  const priorDelivered =
+    options?.is_delivered ??
+    (existing?.is_delivered != null ? existing.is_delivered : existing?.status === 'delivered')
   const flags = await deriveCaseFlags(admin, encounterId, Boolean(priorDelivered))
 
-  if (options?.is_delivered === true) flags.is_delivered = true
+  if (options?.is_delivered === true || existing?.status === 'delivered') flags.is_delivered = true
 
   let status: ImmigrationWorkflowStatus
   let status_color: ImmigrationStatusColor
@@ -374,7 +376,7 @@ export async function syncImmigrationCase(
     const computedOrder = WORKFLOW_STATUS_ORDER[computed.status] ?? 0
     const manuallyMoved = Boolean(existing.status_updated_by)
     const advancedOnBoard = existingOrder > computedOrder
-    if (manuallyMoved || advancedOnBoard) {
+    if (manuallyMoved || advancedOnBoard || existing.status === 'delivered') {
       status = existing.status as ImmigrationWorkflowStatus
       status_color = existing.status_color as ImmigrationStatusColor
       missing_items = computed.missing_items
@@ -419,6 +421,10 @@ export async function syncImmigrationCase(
   }
 
   const caseRow = await saveImmigrationCaseRow(admin, row)
+
+  if (caseRow.status === 'completed') {
+    await admin.from('encounters').update({ status: 'completed' }).eq('id', encounterId)
+  }
 
   await syncTasks(admin, caseRow.id, missing_items, flags)
   return caseRow
@@ -483,7 +489,7 @@ async function listImmigrationCasesInner(
         location_id,
         appointment_date,
         appointment_time,
-        services:service_id ( title_en, title_es ),
+        services:service_id ( id, title_en, title_es ),
         patients:patient_id ( first_name, last_name, location_id )
       )
     `

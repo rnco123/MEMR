@@ -446,14 +446,24 @@ function NurseFlowboardPage() {
             <p className="text-slate-500 text-sm">{t('flow.subtitle_nurse')}</p>
           </div>
           {role === UserRole.NURSE && (
-            <button
-              type="button"
-              onClick={() => setShowAddVisitModal(true)}
-              data-testid="nurse-flowboard-add-encounter-button"
-              className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shrink-0"
-            >
-              + {t('flow.add_encounter')}
-            </button>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowRegisterPatientModal(true)}
+                data-testid="nurse-flowboard-register-patient-button"
+                className="h-11 px-4 rounded-xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              >
+                + {t('flow.add_patient')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowAddVisitModal(true)}
+                data-testid="nurse-flowboard-add-encounter-button"
+                className="h-11 px-4 rounded-xl bg-[#2E6EF3] text-white text-sm font-semibold hover:bg-[#1f5ad2] transition-colors"
+              >
+                + {t('flow.add_encounter')}
+              </button>
+            </div>
           )}
         </div>
 

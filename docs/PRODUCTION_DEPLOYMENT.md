@@ -17,8 +17,8 @@ Set the following environment variables in your hosting platform:
 
 **Required:**
 - `NEXT_PUBLIC_SUPABASE_URL` - Your Supabase project URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key
-- `SUPABASE_SERVICE_ROLE_KEY` - Supabase service role key (keep secret!)
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` - Supabase publishable key (`sb_publishable_…`)
+- `SUPABASE_SECRET_KEY` - Supabase secret key (`sb_secret_…`, keep secret!)
 - `NEXT_PUBLIC_DAILY_API_KEY` - Daily.co API key
 - `NEXT_PUBLIC_DAILY_DOMAIN` - Daily.co domain
 - `ADMIN_SIGNUP_PIN` - Secure 4-digit PIN for user signup

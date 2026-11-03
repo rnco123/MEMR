@@ -19,6 +19,10 @@ import {
 
 type View = 'list' | 'thread' | 'new'
 
+// Kept in sync with the attachment allowlists in the support ticket API routes.
+const SUPPORT_FILE_ACCEPT =
+  'image/png,image/jpeg,image/jpg,image/gif,image/webp,application/pdf,.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+
 export default function SupportPage() {
   const { user } = useAuth()
   const [view, setView] = useState<View>('list')
@@ -432,7 +436,7 @@ export default function SupportPage() {
                   ref={fileInputRef}
                   type="file"
                   multiple
-                  accept="image/png,image/jpeg,image/jpg,image/gif,image/webp,application/pdf"
+                  accept={SUPPORT_FILE_ACCEPT}
                   className="hidden"
                   onChange={(e) => addFiles(e.target.files)}
                 />
@@ -689,7 +693,7 @@ export default function SupportPage() {
                 ref={replyFileInputRef}
                 type="file"
                 multiple
-                accept="image/*"
+                accept={SUPPORT_FILE_ACCEPT}
                 className="hidden"
                 onChange={(e) => addReplyFiles(e.target.files)}
               />
@@ -697,7 +701,7 @@ export default function SupportPage() {
                 type="button"
                 onClick={() => replyFileInputRef.current?.click()}
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400 hover:text-blue-500 hover:border-blue-200 hover:bg-blue-50 transition-colors"
-                title="Add image"
+                title="Add attachment"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}

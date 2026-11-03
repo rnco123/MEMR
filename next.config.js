@@ -4,19 +4,13 @@ const { withSentryConfig } = require('@sentry/nextjs')
 const nextConfig = {
   reactStrictMode: true,
   // Ensure client bundle gets public Supabase vars in environments
-  // that only set SUPABASE_URL / SUPABASE_ANON_KEY (e.g. some Railway setups).
+  // that only set SUPABASE_URL (e.g. some Railway setups).
   env: {
     NEXT_PUBLIC_SUPABASE_URL:
       process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '',
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:
       process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
-      '',
-    NEXT_PUBLIC_SUPABASE_ANON_KEY:
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-      process.env.SUPABASE_ANON_KEY ||
+      process.env.SUPABASE_PUBLISHABLE_KEY ||
       '',
     // APP_ENV has no NEXT_PUBLIC_ prefix but lib/config/environment.ts is imported from
     // client components (e.g. Sentry's client config, PostHog gating) — bake it into every

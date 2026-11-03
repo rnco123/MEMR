@@ -99,6 +99,16 @@ export const WIDGET_TEXT_TO_KEY: Record<string, { key: string; slot?: WidgetSlot
   P10_Remarks: { key: 'civil_surgeon.vaccination_remarks' },
   P10_USCIS_Remarks: { key: 'civil_surgeon.summary_remarks' },
 
+  // Part 8 remarks boxes. Left unbound they were raw passthrough only: a civil
+  // surgeon could type in them, but nurse screening answers and the AI chart
+  // fill write to these keys and never reached the printed form.
+  // Part 8 C.(3) gonorrhea and D.(2) Hansen's disease stay unbound — neither has
+  // a form key of its own, so they remain hand-entered passthrough.
+  Pt8Line1A7_Remarks: { key: 'tb_screening.remarks' },
+  Pt8Line1B3_Remarks: { key: 'syphilis_sti.remarks' },
+  Pt8Line2B_Remarks: { key: 'physical_mental.remarks' },
+  Pt8Line3B_Remarks: { key: 'drug_abuse.remarks' },
+
   // Part 8 — Syphilis serologic test (page 7). Section (c) text boxes are
   // read-only in the USCIS PDF but must be editable in our editor.
   Pt8Line1B1a_name: { key: 'syphilis_sti.syphilis_test_type' },

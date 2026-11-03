@@ -21,7 +21,7 @@ Run migration `059_staff_avatars.sql` (adds `profiles.avatar_id` and `staff-avat
 npm run seed:avatars
 ```
 
-Requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` in `.env.local`.
+Requires `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SECRET_KEY` in `.env.local`.
 
 Until seeded, the app serves these files from `/avatars/*.svg`.
 

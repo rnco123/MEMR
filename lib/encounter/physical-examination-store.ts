@@ -131,6 +131,7 @@ export async function saveEncounterPhysicalExamination(
       editor_name: editorName,
       editor_role: args.role,
       updated_at: String(savedRow.updated_at ?? now),
+      recorded_at: savedRow.created_at ? String(savedRow.created_at) : null,
     } satisfies NonNullable<PhysicalExamAuditSummary>,
     editable: canEditPhysicalExamination(encounter.status as string, args.role),
   }

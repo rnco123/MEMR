@@ -2,12 +2,23 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { IMMIGRATION_PROGRAM } from '@/lib/immigration/types'
 import { isImmigrationEncounter } from '@/lib/i693/types'
 
-export function isImmigrationServiceTitle(title: string | null | undefined): boolean {
-  if (!title?.trim()) return false
-  return /\bimmigration\b/i.test(title.trim())
+/**
+ * The USCIS immigration medical exam.
+ *
+ * Services carry the same ids in every project, so the id identifies this one. Titles
+ * do not: they are edited from Admin → Configurations, they differ by language — the
+ * Spanish title reads "Inmigración" — and matching on a word meant a rename silently
+ * changed which encounters counted as I-693 cases.
+ */
+export const IMMIGRATION_SERVICE_ID = 25
+
+export function isImmigrationServiceId(id: number | string | null | undefined): boolean {
+  return Number(id) === IMMIGRATION_SERVICE_ID
 }
 
 type AppointmentServiceShape = {
+  /** Identity. Titles are display only — see IMMIGRATION_SERVICE_ID. */
+  id?: number | null
   title_en?: string | null
   title_es?: string | null
 } | null
@@ -64,7 +75,7 @@ export function isImmigrationEncounterForI693(enc: EncounterImmigrationShape | n
   if (isImmigrationEncounter(enc.consent_ack)) return true
   if (enc.program_type === IMMIGRATION_PROGRAM) return true
   const svc = resolveAppointmentService(enc.appointments)
-  return isImmigrationServiceTitle(svc?.title_en) || isImmigrationServiceTitle(svc?.title_es)
+  return isImmigrationServiceId(svc?.id)
 }
 
 const ENCOUNTER_IMMIGRATION_SELECT = `
@@ -74,7 +85,7 @@ const ENCOUNTER_IMMIGRATION_SELECT = `
   program_type,
   appointments:appointment_id (
     patient_id,
-    services:service_id ( title_en, title_es )
+    services:service_id ( id, title_en, title_es )
   )
 `
 

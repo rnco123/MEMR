@@ -13,6 +13,7 @@ import {
   serializeOpeningHours,
 } from '@/lib/locations/hours'
 import { suggestNextTenantCode } from '@/lib/locations/suggest-codes'
+import { useTenantColors } from '@/lib/configurations/use-tenant-colors'
 import { useT } from '@/lib/i18n'
 import { UserRole } from '@/lib/roles'
 import type { TenantRow } from '@/lib/tenants/types'
@@ -105,6 +106,8 @@ function MapLinkHint({
 
 function AdminLocationsPage() {
   const { t } = useT()
+  // Tenant brand colors come from Admin → Configurations.
+  const { badgeStyleForTenant } = useTenantColors()
   const [rows, setRows] = useState<LocationRow[]>([])
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -663,7 +666,10 @@ function AdminLocationsPage() {
                               {t('locations.id_label', { id: row.id })}
                             </span>
                             {row.tenant_id != null && row.tenant_name && row.tenant_code ? (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-purple-50 text-purple-700">
+                              <span
+                                className="text-xs font-medium px-2 py-0.5 rounded-full border"
+                                style={badgeStyleForTenant(row.tenant_id)}
+                              >
                                 {t('locations.tenant_badge', {
                                   name: row.tenant_name,
                                   code: row.tenant_code,

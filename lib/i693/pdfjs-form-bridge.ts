@@ -91,13 +91,20 @@ function isEditableTextWidget(el: HTMLInputElement | HTMLTextAreaElement): boole
   return !['checkbox', 'radio', 'button', 'submit', 'reset', 'file', 'hidden'].includes(el.type)
 }
 
-/** USCIS marks these syphilis follow-up boxes read-only; unlock in the web editor. */
+/**
+ * Widgets USCIS marks read-only that we unlock in the web editor: the syphilis
+ * follow-up boxes, and the Part 10 "FOR USCIS USE ONLY — Remarks" box that
+ * carries civil_surgeon.summary_remarks. pdf.js gives a read-only text widget
+ * its own canvas and hides the <input>, so the box rendered blank even after an
+ * AI fill and there was nothing to type into.
+ */
 export const FORCE_EDITABLE_WIDGET_SHORT_NAMES = new Set([
   'Pt8Line1B1c_DateNontreponemalTest',
   'Pt7Line1B1c_TiterOne',
+  'P10_USCIS_Remarks',
 ])
 
-/** Enable typing in USCIS read-only syphilis text widgets after pdf.js renders. */
+/** Enable typing in USCIS read-only text widgets after pdf.js renders. */
 export function unlockForceEditablePdfWidgets(formLayer: HTMLElement): void {
   for (const el of formLayer.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
     'input, textarea'
@@ -124,8 +131,10 @@ type PdfPageAnnotation = {
 }
 
 /**
- * USCIS marks section (c) syphilis boxes read-only with hasOwnCanvas, so pdf.js
- * hides the real <input> and only paints a static canvas appearance.
+ * pdf.js sets hasOwnCanvas on every read-only text widget, hides the real
+ * <input>/<textarea> and only paints a static canvas appearance — which, with
+ * no annotationCanvasMap, never shows the stored value at all. Clear both flags
+ * so the widget renders as an ordinary editable field.
  */
 export function patchForceEditableAnnotations(annotations: PdfPageAnnotation[]): void {
   for (const annotation of annotations) {

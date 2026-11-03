@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom'
 import { useT } from '@/lib/i18n'
 import { splitAddressForPatientRecord } from '@/lib/address/parse-patient-address'
 import { normalizeStateAbbrev } from '@/lib/i693/ai-fill'
+import { useAddressSuggestions, type AddressSuggestion } from '@/lib/address/use-address-suggestions'
 
 type Props = {
   streetAddress: string
@@ -75,92 +76,31 @@ export function AddressLookupFields({
   addressColSpanClass = 'md:col-span-2',
 }: Props) {
   const { t } = useT()
-  const [lookupEnabled, setLookupEnabled] = useState<boolean | null>(null)
-  const [suggestions, setSuggestions] = useState<string[]>([])
-  const [loadingSuggestions, setLoadingSuggestions] = useState(false)
-  const lastSelectedRef = useRef('')
-  const suppressLookupRef = useRef(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const requestSeqRef = useRef(0)
   const streetFieldRef = useRef<HTMLDivElement>(null)
+  const { suggestions, loading, lookupEnabled, suppressUntilNextEdit, resumeLookup, suppressed } =
+    useAddressSuggestions({ query: streetAddress, minQueryLength: 4, disabled })
 
-  useEffect(() => {
-    fetch('/api/address/status', { credentials: 'include' })
-      .then((r) => r.json())
-      .then((data) => setLookupEnabled(Boolean(data?.enabled)))
-      .catch(() => setLookupEnabled(false))
-  }, [])
+  const applySuggestion = (suggestion: AddressSuggestion) => {
+    // Prefer Mapbox's structured components; fall back to parsing the label.
+    const parsed = splitAddressForPatientRecord(suggestion.fullAddress)
+    const nextStreet = (suggestion.streetAddress || parsed.street_address).trim()
+    const nextState = normalizeStateAbbrev(suggestion.state || parsed.state)
+    const nextZip = suggestion.zipCode || parsed.zip_code
 
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-
-    const query = streetAddress.trim()
-
-    // Skip lookup after a suggestion was applied until the user types again.
-    if (suppressLookupRef.current || lastSelectedRef.current === query) {
-      setSuggestions([])
-      setLoadingSuggestions(false)
-      return
-    }
-
-    if (!query || query.length < 4 || lookupEnabled !== true || disabled) {
-      setSuggestions([])
-      setLoadingSuggestions(false)
-      return
-    }
-
-    setLoadingSuggestions(true)
-    const seq = ++requestSeqRef.current
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/address/suggestions?search=${encodeURIComponent(query)}`, {
-          credentials: 'include',
-        })
-        if (seq !== requestSeqRef.current) return
-        if (!res.ok) {
-          setSuggestions([])
-          return
-        }
-        const data = await res.json()
-        if (seq !== requestSeqRef.current) return
-        const list = Array.isArray(data.suggestions)
-          ? data.suggestions.map((s: { fullAddress?: string }) => s.fullAddress).filter(Boolean)
-          : []
-        setSuggestions(list as string[])
-      } catch {
-        if (seq === requestSeqRef.current) setSuggestions([])
-      } finally {
-        if (seq === requestSeqRef.current) setLoadingSuggestions(false)
-      }
-    }, 300)
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-    }
-  }, [streetAddress, lookupEnabled, disabled])
-
-  const applySuggestion = (suggestion: string) => {
-    requestSeqRef.current++
-    const split = splitAddressForPatientRecord(suggestion)
-    const nextStreet = split.street_address.trim()
     // Remember the value written into the street field (not the full place label),
     // otherwise the lookup effect treats it as new typing and reopens the list.
-    suppressLookupRef.current = true
-    lastSelectedRef.current = nextStreet
-    setSuggestions([])
-    setLoadingSuggestions(false)
-    onStreetAddressChange(split.street_address)
-    onStateChange(normalizeStateAbbrev(split.state).toUpperCase().slice(0, 2))
-    onZipCodeChange(split.zip_code)
+    suppressUntilNextEdit(nextStreet)
+    onStreetAddressChange(nextStreet)
+    onStateChange(nextState.toUpperCase().slice(0, 2))
+    onZipCodeChange(nextZip)
   }
 
   const onStreetTyped = (value: string) => {
-    suppressLookupRef.current = false
-    lastSelectedRef.current = ''
+    resumeLookup()
     onStreetAddressChange(value)
   }
 
-  const showSuggestions = suggestions.length > 0 && !disabled && !suppressLookupRef.current
+  const showSuggestions = suggestions.length > 0 && !disabled && !suppressed
   const dropdownStyle = useDropdownPosition(streetFieldRef, showSuggestions)
 
   return (
@@ -175,7 +115,7 @@ export function AddressLookupFields({
           disabled={disabled}
           autoComplete="street-address"
         />
-        {loadingSuggestions ? (
+        {loading ? (
           <p className="text-xs text-slate-400 mt-1">{t('address.lookup_searching')}</p>
         ) : null}
         {lookupEnabled === false && streetAddress.trim().length >= 4 ? (
@@ -195,14 +135,14 @@ export function AddressLookupFields({
               className="max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white shadow-lg"
             >
               {suggestions.map((suggestion, index) => (
-                <li key={`${suggestion}-${index}`}>
+                <li key={`${suggestion.fullAddress}-${index}`}>
                   <button
                     type="button"
                     className="w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50 border-b border-slate-100 last:border-b-0"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => applySuggestion(suggestion)}
                   >
-                    {suggestion}
+                    {suggestion.fullAddress}
                   </button>
                 </li>
               ))}

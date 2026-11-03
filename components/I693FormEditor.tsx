@@ -96,7 +96,7 @@ export function I693FormEditor({ encounterId, patientName, isImmigration }: Prop
     void load()
   }, [load])
 
-  const save = async () => {
+  const save = async (showToast = true) => {
     setSaving(true)
     try {
       const res = await fetch(`/api/encounters/${encounterId}/i693`, {
@@ -108,10 +108,10 @@ export function I693FormEditor({ encounterId, patientName, isImmigration }: Prop
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Save failed')
-      toast.success(t('i693.saved'))
+      if (showToast) toast.success(t('i693.saved'))
       setStatus(json.data?.status ?? 'draft')
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed')
+      if (showToast) toast.error(e instanceof Error ? e.message : 'Save failed')
     } finally {
       setSaving(false)
     }

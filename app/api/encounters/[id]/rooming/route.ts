@@ -10,6 +10,22 @@ import { guardEncounterAccess, ENCOUNTER_WRITE_ACCESS } from '@/lib/encounters/g
 import { auditPhi } from '@/lib/audit-phi'
 export const dynamic = 'force-dynamic'
 
+/**
+ * Legacy patient-signing rows hold booleans ({telemedicine: true}) instead of
+ * the documented key -> ISO-timestamp shape, and the client echoes the whole
+ * map back. Normalize on write: true becomes the packet's signed_at (or now),
+ * false is dropped, strings pass through.
+ */
+function normalizeConsentAck(consent: Record<string, string | boolean>): Record<string, string> {
+  const signedAt = typeof consent.signed_at === 'string' ? consent.signed_at : new Date().toISOString()
+  const normalized: Record<string, string> = {}
+  for (const [key, value] of Object.entries(consent)) {
+    if (typeof value === 'string') normalized[key] = value
+    else if (value === true) normalized[key] = signedAt
+  }
+  return normalized
+}
+
 export async function PATCH(request: Request, { params }: { params: { id: string } }) {
   try {
     const encounterId = Number(params.id)
@@ -51,7 +67,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
         : {}
 
     // Client sends the full desired consent_ack map; replace (do not merge) so unchecked keys are removed.
-    const nextConsent = v.consent_ack
+    const nextConsent = v.consent_ack === undefined ? undefined : normalizeConsentAck(v.consent_ack)
 
     const patch: Record<string, unknown> = {
       updated_at: new Date().toISOString(),
