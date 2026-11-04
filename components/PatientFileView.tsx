@@ -168,6 +168,27 @@ export type PatientFileViewProps = {
  * Render full-screen overlays under <body>: inside the dashboard shell a `fixed inset-0`
  * overlay leaves an uncovered strip at the top of the screen.
  */
+/** True when the Medical History tab has at least one section to show (else the empty state). */
+function hasMedicalHistoryContent(h: any): boolean {
+  if (!h) return false
+  const family = h.family_history ?? {}
+  const lifestyle = h.lifestyle ?? {}
+  return Boolean(
+    h.latest_vitals ||
+      h.vitals?.length > 1 ||
+      h.medical_conditions?.length ||
+      h.surgeries?.length ||
+      h.allergies?.length ||
+      family.diabetes ||
+      family.hypertension ||
+      family.cancer ||
+      family.heart_disease ||
+      lifestyle.tobacco_use ||
+      lifestyle.alcohol_use ||
+      lifestyle.drug_use
+  )
+}
+
 function portalToBody(node: React.ReactNode) {
   return typeof document === 'undefined' ? node : createPortal(node, document.body)
 }
@@ -1053,7 +1074,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                       <div className="text-center py-12">
                         <LoadingSpinner message={t('patient_file.loading_history')} />
                       </div>
-                    ) : !medicalHistory ? (
+                    ) : !hasMedicalHistoryContent(medicalHistory) ? (
                       <div className="text-center py-12 bg-slate-50 border border-slate-200 rounded-xl">
                         <svg className="w-16 h-16 text-slate-500 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -1521,7 +1542,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                         <button
                           type="button"
                           onClick={() => setShowUploadModal(true)}
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shadow-sm"
+                          className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap px-4 py-2 bg-[#2E6EF3] text-white rounded-xl text-sm font-semibold hover:bg-[#1f5ad2] transition-colors shadow-sm"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1953,7 +1974,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                   <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                                   </svg>
-                                  Choose file
+                                  {t('patient_file.choose_file')}
                                 </label>
                                 <input
                                   id="file-input"
@@ -1970,7 +1991,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                     {uploadForm.file.name} ({formatFileSize(uploadForm.file.size)})
                                   </p>
                                 ) : (
-                                  <p className="mt-2 text-center text-xs text-slate-400">No file chosen</p>
+                                  <p className="mt-2 text-center text-xs text-slate-400">{t('patient_file.no_file_chosen')}</p>
                                 )}
                               </div>
                               <p className="text-xs text-slate-500 mt-2">
