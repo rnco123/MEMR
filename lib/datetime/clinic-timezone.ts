@@ -1,5 +1,6 @@
 import type { Language } from '@/lib/i18n'
 import { parseCalendarDate } from '@/lib/datetime/date-input'
+import { dictionaries, formatTemplate } from '@/lib/i18n/dictionaries'
 
 /** Clinic display timezone — values are stored in UTC (TIMESTAMPTZ / ISO strings). */
 export const CLINIC_TIME_ZONE = 'America/Chicago'
@@ -247,17 +248,18 @@ export function formatClinicChatTime(dateString: string, language: Language = 'e
   const days = Math.floor(hours / 24)
 
   const timeLabel = appendCtSuffix(centralTimeOnly(date, locale))
+  const dict = dictionaries[language] ?? dictionaries.en
 
   if (dateDay === nowDay) {
-    if (minutes < 1) return `Just now (${timeLabel})`
-    if (minutes < 60) return `${timeLabel} (${minutes}m ago)`
+    if (minutes < 1) return `${dict['chat.just_now'] ?? 'Just now'} (${timeLabel})`
+    if (minutes < 60) return `${timeLabel} (${formatTemplate(dict['chat.minutes_ago'] ?? '{minutes}m ago', { minutes })})`
     return timeLabel
   }
 
   const yesterday = new Date(now)
   yesterday.setDate(yesterday.getDate() - 1)
   if (dateDay === centralDayKey(yesterday)) {
-    return `Yesterday ${timeLabel}`
+    return `${dict['chat.yesterday'] ?? 'Yesterday'} ${timeLabel}`
   }
 
   if (days < 7) {

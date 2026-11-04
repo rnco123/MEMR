@@ -86,24 +86,25 @@ function ChatAvatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' | 
 }
 
 function RoleBadge({ role }: { role: string }) {
+  const { t } = useT()
   const r = (role || '').toLowerCase()
   if (r === 'admin') {
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200/80">
-        Admin
+        {t('chat.role_admin')}
       </span>
     )
   }
   if (r === 'doctor' || r === 'fnp' || r === 'pa') {
     return (
       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200/80">
-        Doctor
+        {t(`chat.role_${r}`)}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200/80 capitalize">
-      {role}
+      {r === 'nurse' || r === 'staff' ? t('chat.role_nurse') : role}
     </span>
   )
 }
@@ -467,10 +468,11 @@ export function Chat({ isOpen, onClose }: ChatProps) {
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">{t('chat.hello')}</p>
                 <h2 className="text-lg font-bold text-slate-900 truncate">{displayName}</h2>
               </div>
+              {/* On desktop an open conversation has its own close button — show only one. */}
               <button
                 type="button"
                 onClick={onClose}
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-sm"
+                className={`${selectedConversation ? 'md:hidden ' : ''}flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:text-slate-900 hover:bg-slate-50 transition-colors shadow-sm`}
                 aria-label="Close"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

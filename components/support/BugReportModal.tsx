@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from 'react'
 import { toast } from 'sonner'
 import { usePathname } from 'next/navigation'
+import { useT } from '@/lib/i18n'
 
 interface Props {
   isOpen: boolean
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function BugReportModal({ isOpen, onClose }: Props) {
+  const { t } = useT()
   const pathname = usePathname()
   const [description, setDescription] = useState('')
   const [screenshot, setScreenshot] = useState<File | null>(null)
@@ -106,7 +108,7 @@ export function BugReportModal({ isOpen, onClose }: Props) {
       setDescription(improved)
       toast.success('Text improved')
     } catch {
-      toast.error('Could not improve text')
+      toast.error(t('support.ai_improve_failed'))
     } finally {
       setIsImproving(false)
     }

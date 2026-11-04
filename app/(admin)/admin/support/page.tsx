@@ -189,9 +189,9 @@ export default function AdminSupportPage() {
       if (!res.ok) throw new Error()
       const { improved } = await res.json()
       setReplyContent(improved)
-      toast.success('Text improved with AI')
+      toast.success(t('support.ai_improved'))
     } catch {
-      toast.error('Could not improve text')
+      toast.error(t('support.ai_improve_failed'))
     } finally {
       setImprovingReply(false)
     }

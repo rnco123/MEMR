@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth-context'
+import { useT } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
 import type {
   SupportTicket,
@@ -25,6 +26,7 @@ const SUPPORT_FILE_ACCEPT =
 
 export default function SupportPage() {
   const { user } = useAuth()
+  const { t } = useT()
   const [view, setView] = useState<View>('list')
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null)
@@ -173,9 +175,9 @@ export default function SupportPage() {
       if (!res.ok) throw new Error()
       const { improved } = await res.json()
       setText(improved)
-      toast.success('Text improved with AI')
+      toast.success(t('support.ai_improved'))
     } catch {
-      toast.error('Could not improve text')
+      toast.error(t('support.ai_improve_failed'))
     } finally {
       setImproving(false)
     }

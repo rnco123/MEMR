@@ -23,9 +23,9 @@ interface VitalsFormModalProps {
  * intentionally decoupled from the vitals save so that a SOAP failure never
  * surfaces as a "vitals save failed" error to the nurse.
  */
-async function triggerSoapCompletion(encounterId: number) {
-  toast.info('AI is completing SOAP note…', {
-    description: 'Objective, assessment, and plan will appear when ready.',
+async function triggerSoapCompletion(encounterId: number, t: (key: string) => string) {
+  toast.info(t('vitals.soap_starting'), {
+    description: t('vitals.soap_starting_hint'),
   })
   try {
     const soapRes = await fetch('/api/soap/complete-soap', {
@@ -38,6 +38,7 @@ async function triggerSoapCompletion(encounterId: number) {
       | {
           success?: boolean
           message?: string
+          mode?: 'full' | 'chart_only'
           error?: string
           details?: { message?: string } | string
         }
@@ -51,7 +52,7 @@ async function triggerSoapCompletion(encounterId: number) {
           : typeof soapJson?.details === 'string'
             ? soapJson.details
             : undefined
-      toast.error('SOAP note could not be started', {
+      toast.error(t('vitals.soap_failed'), {
         description:
           soapJson?.message ||
           detailMessage ||
@@ -59,14 +60,17 @@ async function triggerSoapCompletion(encounterId: number) {
           `Server returned ${soapRes.status}. Check console.`,
       })
     } else {
-      toast.success('SOAP note saved successfully', {
-        description: soapJson.message || 'SOAP data stored successfully.',
+      toast.success(t('vitals.soap_saved'), {
+        description:
+          soapJson.mode === 'chart_only'
+            ? t('vitals.soap_saved_chart_only')
+            : t('vitals.soap_saved_full'),
       })
     }
   } catch (apiError) {
     console.error('Error calling SOAP complete-soap:', apiError)
-    toast.error('SOAP note could not be started', {
-      description: apiError instanceof Error ? apiError.message : 'Network or server error.',
+    toast.error(t('vitals.soap_failed'), {
+      description: apiError instanceof Error ? apiError.message : t('vitals.soap_failed_network'),
     })
   }
 }
@@ -140,7 +144,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       // SOAP generation is a separate, best-effort step. It runs after the
       // vitals save is confirmed so a SOAP failure can never make a successful
       // vitals save look like it failed.
-      void triggerSoapCompletion(encounterId)
+      void triggerSoapCompletion(encounterId, t)
     } catch (error) {
       console.error('Error in handleSubmit:', error)
       toast.error('Failed to save vitals', {
