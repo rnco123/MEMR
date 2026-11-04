@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { useAuth } from '@/lib/auth-context'
 import { useT } from '@/lib/i18n'
 import { createClient } from '@/lib/supabase/client'
+import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import type {
   SupportTicket,
   TicketMessage,
@@ -12,9 +13,7 @@ import type {
 } from '@/lib/support/types'
 import {
   PRIORITY_COLORS,
-  PRIORITY_LABELS,
   STATUS_COLORS,
-  STATUS_LABELS,
   TICKET_PRIORITIES,
 } from '@/lib/support/types'
 
@@ -26,7 +25,9 @@ const SUPPORT_FILE_ACCEPT =
 
 export default function SupportPage() {
   const { user } = useAuth()
-  const { t } = useT()
+  const { t, language } = useT()
+  const statusLabel = (s: SupportTicket['status']) => t(`support.status.${s}`)
+  const priorityLabel = (p: TicketPriority) => t(`support.priority.${p}`)
   const [view, setView] = useState<View>('list')
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null)
@@ -66,11 +67,11 @@ export default function SupportPage() {
       const { tickets } = await res.json()
       setTickets(tickets)
     } catch {
-      toast.error('Failed to load tickets')
+      toast.error(t('support.load_failed'))
     } finally {
       setLoadingTickets(false)
     }
-  }, [])
+  }, [t])
 
   const loadThread = useCallback(async (ticketId: string, scroll = false) => {
     setLoadingThread(true)
@@ -81,11 +82,11 @@ export default function SupportPage() {
       setActiveTicket(ticket)
       if (scroll) scrollToBottom('instant')
     } catch {
-      toast.error('Failed to load ticket')
+      toast.error(t('support.thread_load_failed'))
     } finally {
       setLoadingThread(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { loadTickets() }, [loadTickets])
 
@@ -186,7 +187,7 @@ export default function SupportPage() {
   const submitNewTicket = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newContent.trim() || !newSubject.trim()) {
-      toast.error('Please fill in subject and description')
+      toast.error(t('support.fill_required'))
       return
     }
     setSubmitting(true)
@@ -202,9 +203,9 @@ export default function SupportPage() {
       const res = await fetch('/api/support/tickets', { method: 'POST', body: form })
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error || 'Failed')
+        throw new Error(err.error || t('support.submit_failed'))
       }
-      toast.success('Ticket submitted successfully')
+      toast.success(t('support.submitted'))
       setNewSubject('')
       setNewContent('')
       setNewPriority('normal')
@@ -214,7 +215,7 @@ export default function SupportPage() {
       await loadTickets()
       setView('list')
     } catch (err: any) {
-      toast.error(err.message || 'Failed to submit ticket')
+      toast.error(err.message || t('support.submit_failed'))
     } finally {
       setSubmitting(false)
     }
@@ -275,7 +276,7 @@ export default function SupportPage() {
         return { ...prev, messages: (prev.messages || []).filter((m) => m.id !== optimisticId) }
       })
       setReplyContent(text)
-      toast.error('Failed to send reply')
+      toast.error(t('support.reply_failed'))
     } finally {
       setSendingReply(false)
     }
@@ -292,11 +293,11 @@ export default function SupportPage() {
         body: JSON.stringify({ status: 'closed' }),
       })
       if (!res.ok) throw new Error()
-      toast.success('Ticket closed')
+      toast.success(t('support.ticket_closed'))
       loadTickets()
     } catch {
       setActiveTicket((t) => t ? { ...t, status: prev } : t)
-      toast.error('Failed to close ticket')
+      toast.error(t('support.close_failed'))
     }
   }
 
@@ -311,17 +312,14 @@ export default function SupportPage() {
         body: JSON.stringify({ status: 'in_progress' }),
       })
       if (!res.ok) throw new Error()
-      toast.success('Ticket reopened')
+      toast.success(t('support.reopened'))
     } catch {
       setActiveTicket((t) => t ? { ...t, status: prev } : t)
-      toast.error('Failed to reopen ticket')
+      toast.error(t('support.reopen_failed'))
     }
   }
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString('en-US', {
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-    })
+  const formatDate = (iso: string) => formatClinicDateTimeForLanguage(iso, language)
 
   // ── New ticket ─────────────────────────────────────────────────────────────
   if (view === 'new') {
@@ -338,27 +336,27 @@ export default function SupportPage() {
               </svg>
             </button>
             <div>
-              <h1 className="text-xl font-bold text-slate-800">New Support Ticket</h1>
-              <p className="text-sm text-slate-500">Describe your issue and our team will help you</p>
+              <h1 className="text-xl font-bold text-slate-800">{t('support.new_title')}</h1>
+              <p className="text-sm text-slate-500">{t('support.new_subtitle')}</p>
             </div>
           </div>
 
           <form onSubmit={submitNewTicket} className="space-y-4">
             <div className="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm space-y-4">
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Subject</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">{t('support.subject')}</label>
                 <input
                   type="text"
                   value={newSubject}
                   onChange={(e) => setNewSubject(e.target.value)}
-                  placeholder="Brief description of your issue"
+                  placeholder={t('support.subject_placeholder')}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                   maxLength={200}
                 />
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Priority</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">{t('support.priority')}</label>
                 <div className="flex gap-2 flex-wrap">
                   {TICKET_PRIORITIES.map((p) => (
                     <button
@@ -371,19 +369,19 @@ export default function SupportPage() {
                           : 'border-slate-200 text-slate-500 hover:border-slate-300'
                       }`}
                     >
-                      {PRIORITY_LABELS[p]}
+                      {priorityLabel(p)}
                     </button>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="mb-1.5 block text-sm font-medium text-slate-700">Description</label>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">{t('support.description')}</label>
                 <div className="relative">
                   <textarea
                     value={newContent}
                     onChange={(e) => setNewContent(e.target.value)}
-                    placeholder="Describe the issue in detail. What happened? What did you expect?"
+                    placeholder={t('support.description_placeholder')}
                     rows={5}
                     className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 pr-10 text-sm text-slate-800 placeholder-slate-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                     maxLength={4000}
@@ -392,7 +390,7 @@ export default function SupportPage() {
                     type="button"
                     onClick={() => improveText(newContent, setNewContent, setImprovingNew)}
                     disabled={improvingNew || !newContent.trim()}
-                    title="Improve with AI"
+                    title={t('support.improve_ai')}
                     className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-lg bg-violet-100 hover:bg-violet-200 disabled:opacity-40 transition-colors"
                   >
                     {improvingNew ? (
@@ -408,12 +406,12 @@ export default function SupportPage() {
                     )}
                   </button>
                 </div>
-                <p className="mt-1 text-xs text-slate-400">Click the ✦ icon to improve text with AI</p>
+                <p className="mt-1 text-xs text-slate-400">{t('support.ai_hint')}</p>
               </div>
 
               <div>
                 <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                  Attachments <span className="text-slate-400 font-normal">(optional, up to 5)</span>
+                  {t('support.attachments')} <span className="text-slate-400 font-normal">{t('support.attachments_hint')}</span>
                 </label>
                 {newFilePreviews.length > 0 && (
                   <div className="mb-2 flex flex-wrap gap-2">
@@ -450,7 +448,7 @@ export default function SupportPage() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Add Screenshots or Files
+                  {t('support.add_files')}
                 </button>
               </div>
             </div>
@@ -461,7 +459,7 @@ export default function SupportPage() {
                 onClick={() => setView('list')}
                 className="flex-1 rounded-xl border border-slate-200 bg-white py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
               >
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 type="submit"
@@ -474,9 +472,9 @@ export default function SupportPage() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                     </svg>
-                    Submitting…
+                    {t('support.submitting')}
                   </>
-                ) : 'Submit Ticket'}
+                ) : t('support.submit')}
               </button>
             </div>
           </form>
@@ -514,10 +512,10 @@ export default function SupportPage() {
               {activeTicket && (
                 <div className="mt-1 flex flex-wrap items-center gap-2">
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[activeTicket.status]}`}>
-                    {STATUS_LABELS[activeTicket.status]}
+                    {statusLabel(activeTicket.status)}
                   </span>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${PRIORITY_COLORS[activeTicket.priority]}`}>
-                    {PRIORITY_LABELS[activeTicket.priority]}
+                    {priorityLabel(activeTicket.priority)}
                   </span>
                   <span className="text-xs text-slate-400">{formatDate(activeTicket.created_at)}</span>
                 </div>
@@ -529,13 +527,13 @@ export default function SupportPage() {
                   onClick={reopenTicket}
                   className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 transition-colors whitespace-nowrap"
                 >
-                  Not Fixed
+                  {t('support.not_fixed')}
                 </button>
                 <button
                   onClick={closeTicket}
                   className="rounded-lg border border-green-200 bg-green-50 px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-100 transition-colors whitespace-nowrap"
                 >
-                  ✓ Verify &amp; Close
+                  ✓ {t('support.verify_close')}
                 </button>
               </div>
             )}
@@ -568,7 +566,7 @@ export default function SupportPage() {
                           </svg>
                         </div>
                         <span className="text-xs font-medium text-slate-600">
-                          {msg.sender_name || 'Support Team'}
+                          {msg.sender_name || t('support.team')}
                         </span>
                       </div>
                     )}
@@ -618,7 +616,7 @@ export default function SupportPage() {
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Issue marked as resolved — please verify and close above
+                {t('support.resolved_banner')}
               </div>
             </div>
           )}
@@ -626,7 +624,7 @@ export default function SupportPage() {
           {isClosed && (
             <div className="flex justify-center">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-4 py-2 text-sm text-slate-600">
-                Ticket closed
+                {t('support.ticket_closed')}
               </div>
             </div>
           )}
@@ -661,7 +659,7 @@ export default function SupportPage() {
                 <textarea
                   value={replyContent}
                   onChange={(e) => setReplyContent(e.target.value)}
-                  placeholder="Type your reply… (Enter to send)"
+                  placeholder={t('support.reply_placeholder')}
                   rows={2}
                   className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 pr-9 text-sm placeholder-slate-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
                   onKeyDown={(e) => {
@@ -675,7 +673,7 @@ export default function SupportPage() {
                   type="button"
                   onClick={() => improveText(replyContent, setReplyContent, setImprovingReply)}
                   disabled={improvingReply || !replyContent.trim()}
-                  title="Improve with AI"
+                  title={t('support.improve_ai')}
                   className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-lg bg-violet-100 hover:bg-violet-200 disabled:opacity-40 transition-colors"
                 >
                   {improvingReply ? (
@@ -703,7 +701,7 @@ export default function SupportPage() {
                 type="button"
                 onClick={() => replyFileInputRef.current?.click()}
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-400 hover:text-blue-500 hover:border-blue-200 hover:bg-blue-50 transition-colors"
-                title="Add attachment"
+                title={t('support.add_attachment')}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -739,8 +737,8 @@ export default function SupportPage() {
       <div className="mx-auto max-w-3xl">
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800">Support</h1>
-            <p className="mt-0.5 text-sm text-slate-500">View and manage your support requests</p>
+            <h1 className="text-2xl font-bold text-slate-800">{t('support.title')}</h1>
+            <p className="mt-0.5 text-sm text-slate-500">{t('support.subtitle')}</p>
           </div>
           <button
             onClick={() => setView('new')}
@@ -749,7 +747,7 @@ export default function SupportPage() {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            New Ticket
+            {t('support.new_ticket')}
           </button>
         </div>
 
@@ -760,7 +758,7 @@ export default function SupportPage() {
               <div key={s} className="rounded-2xl bg-white border border-slate-200 p-3 text-center shadow-sm">
                 <div className="text-2xl font-bold text-slate-800">{count}</div>
                 <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[s]}`}>
-                  {STATUS_LABELS[s]}
+                  {statusLabel(s)}
                 </div>
               </div>
             )
@@ -782,8 +780,8 @@ export default function SupportPage() {
                   d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-3 3v-3z" />
               </svg>
             </div>
-            <h3 className="text-base font-semibold text-slate-700">No tickets yet</h3>
-            <p className="mt-1 text-sm text-slate-500">Create a new ticket whenever you need help</p>
+            <h3 className="text-base font-semibold text-slate-700">{t('support.empty_title')}</h3>
+            <p className="mt-1 text-sm text-slate-500">{t('support.empty_hint')}</p>
             <button
               onClick={() => setView('new')}
               className="mt-4 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
@@ -791,7 +789,7 @@ export default function SupportPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              Create Ticket
+              {t('support.create_ticket')}
             </button>
           </div>
         ) : (
@@ -814,14 +812,14 @@ export default function SupportPage() {
                     </p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${STATUS_COLORS[ticket.status]}`}>
-                        {STATUS_LABELS[ticket.status]}
+                        {statusLabel(ticket.status)}
                       </span>
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${PRIORITY_COLORS[ticket.priority]}`}>
-                        {PRIORITY_LABELS[ticket.priority]}
+                        {priorityLabel(ticket.priority)}
                       </span>
                       {ticket.source === 'floating_button' && (
                         <span className="rounded-full px-2 py-0.5 text-[10px] font-medium bg-red-50 text-red-600">
-                          Bug Button
+                          {t('support.bug_button')}
                         </span>
                       )}
                       <span className="text-[10px] text-slate-400">{formatDate(ticket.created_at)}</span>

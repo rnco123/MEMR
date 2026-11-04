@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { isStaffAvatarId } from '@/lib/avatars/catalog'
+import { useT } from '@/lib/i18n'
 
 type AvatarOption = {
   id: string
@@ -18,6 +19,7 @@ type AvatarPickerProps = {
 }
 
 export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
+  const { t } = useT()
   const [avatars, setAvatars] = useState<AvatarOption[]>([])
   const [selected, setSelected] = useState<string | null>(currentAvatarId)
   const [loading, setLoading] = useState(true)
@@ -33,10 +35,10 @@ export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
       try {
         const res = await fetch('/api/avatars')
         const data = await res.json()
-        if (!res.ok) throw new Error(data.error || 'Failed to load avatars')
+        if (!res.ok) throw new Error(data.error || t('avatar.load_failed'))
         if (!cancelled) setAvatars(data.avatars ?? [])
       } catch (err) {
-        if (!cancelled) toast.error(err instanceof Error ? err.message : 'Failed to load avatars')
+        if (!cancelled) toast.error(err instanceof Error ? err.message : t('avatar.load_failed'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -44,11 +46,11 @@ export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [t])
 
   const save = async () => {
     if (!selected || !isStaffAvatarId(selected)) {
-      toast.error('Please select an avatar')
+      toast.error(t('avatar.select_required'))
       return
     }
     setSaving(true)
@@ -59,25 +61,25 @@ export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
         body: JSON.stringify({ avatar_id: selected }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.message || data.error || 'Save failed')
+      if (!res.ok) throw new Error(data.message || data.error || t('avatar.save_failed'))
       const picked = avatars.find((a) => a.id === selected)
-      toast.success('Avatar updated')
+      toast.success(t('avatar.updated'))
       onSaved?.(selected, data.avatar_url ?? picked?.url ?? '')
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Save failed')
+      toast.error(err instanceof Error ? err.message : t('avatar.save_failed'))
     } finally {
       setSaving(false)
     }
   }
 
   if (loading) {
-    return <p className="text-sm text-slate-500">Loading avatars…</p>
+    return <p className="text-sm text-slate-500">{t('avatar.loading')}</p>
   }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-slate-600">
-        Choose a healthcare worker avatar. Your selection is saved to your profile.
+        {t('avatar.hint')}
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {avatars.map((a) => {
@@ -95,10 +97,10 @@ export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
             >
               <div className="h-20 w-20 overflow-hidden rounded-full bg-slate-100 ring-1 ring-slate-200">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={a.url} alt={a.label} className="h-full w-full object-cover" />
+                <img src={a.url} alt={t(`avatar.${a.id}`)} className="h-full w-full object-cover" />
               </div>
-              <span className="mt-2 text-xs font-semibold text-slate-900">{a.roleLabel}</span>
-              <span className="text-[10px] text-slate-500 capitalize">{a.gender}</span>
+              <span className="mt-2 text-xs font-semibold text-slate-900">{t(`avatar.${a.id}`)}</span>
+              <span className="text-[10px] text-slate-500">{t(`avatar.gender_${a.gender}`)}</span>
               {isSelected && (
                 <span className="absolute top-2 right-2 flex h-5 w-5 items-center justify-center rounded-full bg-purple-600 text-white text-[10px]">
                   ✓
@@ -114,7 +116,7 @@ export function AvatarPicker({ currentAvatarId, onSaved }: AvatarPickerProps) {
         onClick={save}
         className="h-10 px-5 rounded-xl bg-purple-600 text-white text-sm font-semibold hover:bg-purple-700 disabled:opacity-50"
       >
-        {saving ? 'Saving…' : 'Save avatar'}
+        {saving ? t('common.saving') : t('avatar.save')}
       </button>
     </div>
   )

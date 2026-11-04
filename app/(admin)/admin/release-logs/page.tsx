@@ -11,6 +11,7 @@ import { RELEASE_LOGS_MANAGER_EMAIL } from '@/lib/release-logs/manager'
 import { RELEASE_LOGS_UI, releaseLogCardClass, releaseLogTitleClass } from '@/lib/release-logs/ui-styles'
 import type { ReleaseLogRow, ReleaseLogStatus } from '@/lib/release-logs/types'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 type EditState = { task: string; description: string }
 
@@ -336,8 +337,11 @@ function AdminReleaseLogsPage() {
     }
   }
 
+  const [pendingDelete, setPendingDelete] = useState<ReleaseLogRow | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
   const deleteRow = async (row: ReleaseLogRow) => {
-    if (!window.confirm(t('admin.release_logs.delete_confirm', { task: row.task }))) return
+    setDeleting(true)
     try {
       const res = await fetch(`/api/admin/release-logs/${row.id}`, {
         method: 'DELETE',
@@ -346,9 +350,12 @@ function AdminReleaseLogsPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || t('admin.release_logs.delete_failed'))
       toast.success(t('admin.release_logs.deleted'))
+      setPendingDelete(null)
       await afterMutation()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('admin.release_logs.delete_failed'))
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -569,7 +576,7 @@ function AdminReleaseLogsPage() {
                         onSaveEdit={submitEdit}
                         onMarkReleased={() => setStatus(row, 'released')}
                         onMarkUpcoming={() => setStatus(row, 'upcoming')}
-                        onDelete={() => deleteRow(row)}
+                        onDelete={() => setPendingDelete(row)}
                       />
                     ))}
                   </div>
@@ -579,6 +586,21 @@ function AdminReleaseLogsPage() {
           )}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        onClose={() => {
+          if (!deleting) setPendingDelete(null)
+        }}
+        onConfirm={async () => {
+          if (pendingDelete) await deleteRow(pendingDelete)
+        }}
+        title={t('common.delete')}
+        message={t('admin.release_logs.delete_confirm', { task: pendingDelete?.task ?? '' })}
+        confirmLabel={t('common.delete')}
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   )
 }
