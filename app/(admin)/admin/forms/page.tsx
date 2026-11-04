@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { withRoleProtection } from '@/lib/hoc/withRoleProtection'
 import { UserRole } from '@/lib/roles'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { useT } from '@/lib/i18n'
 import type { TenantRow } from '@/lib/tenants/types'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
@@ -252,8 +253,11 @@ function AdminFormsPage() {
     }
   }
 
+  const [pendingAction, setPendingAction] = useState<{ kind: 'deactivate' | 'delete'; row: FormRow } | null>(
+    null
+  )
+
   const deactivate = async (row: FormRow) => {
-    if (!window.confirm(t('admin.forms.deactivate_confirm', { name: row.name }))) return
     try {
       const res = await fetch(`/api/admin/forms/${row.id}`, {
         method: 'PATCH',
@@ -264,6 +268,7 @@ function AdminFormsPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || t('admin.forms.save_failed'))
       toast.success(t('admin.forms.deactivated'))
+      setPendingAction(null)
       await Promise.all([loadForms(), refreshAllForms()])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('admin.forms.save_failed'))
@@ -271,7 +276,6 @@ function AdminFormsPage() {
   }
 
   const deleteForm = async (row: FormRow) => {
-    if (!window.confirm(t('admin.forms.delete_confirm', { name: row.name }))) return
     try {
       const res = await fetch(`/api/admin/forms/${row.id}`, {
         method: 'DELETE',
@@ -280,6 +284,7 @@ function AdminFormsPage() {
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || t('admin.forms.delete_failed'))
       toast.success(t('admin.forms.deleted'))
+      setPendingAction(null)
       await Promise.all([loadForms(), refreshAllForms()])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t('admin.forms.delete_failed'))
@@ -636,7 +641,7 @@ function AdminFormsPage() {
                       {row.is_active ? (
                         <button
                           type="button"
-                          onClick={() => void deactivate(row)}
+                          onClick={() => setPendingAction({ kind: 'deactivate', row })}
                           className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50"
                         >
                           {t('admin.forms.deactivate')}
@@ -644,7 +649,7 @@ function AdminFormsPage() {
                       ) : (
                         <button
                           type="button"
-                          onClick={() => void deleteForm(row)}
+                          onClick={() => setPendingAction({ kind: 'delete', row })}
                           className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100"
                         >
                           {t('admin.forms.delete')}
@@ -658,6 +663,23 @@ function AdminFormsPage() {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingAction != null}
+        onClose={() => setPendingAction(null)}
+        onConfirm={async () => {
+          if (!pendingAction) return
+          if (pendingAction.kind === 'delete') await deleteForm(pendingAction.row)
+          else await deactivate(pendingAction.row)
+        }}
+        title={t(pendingAction?.kind === 'delete' ? 'admin.forms.delete' : 'admin.forms.deactivate')}
+        message={t(
+          pendingAction?.kind === 'delete' ? 'admin.forms.delete_confirm' : 'admin.forms.deactivate_confirm',
+          { name: pendingAction?.row.name ?? '' }
+        )}
+        confirmLabel={t(pendingAction?.kind === 'delete' ? 'admin.forms.delete' : 'admin.forms.deactivate')}
+        variant="danger"
+      />
     </div>
   )
 }

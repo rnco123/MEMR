@@ -25,6 +25,11 @@ export default function AdminSupportPage() {
   const { t } = useT()
   const statusLabel = (s: TicketStatus) => t(`support.status.${s}`)
   const priorityLabel = (p: TicketPriority) => t(`support.priority.${p}`)
+  const senderRoleLabel = (role: string | null) => {
+    const r = (role ?? '').toLowerCase()
+    if (['admin', 'doctor', 'fnp', 'pa', 'nurse'].includes(r)) return t(`chat.role_${r}`)
+    return r === 'staff' ? t('chat.role_nurse') : (role ?? '')
+  }
   const [view, setView] = useState<View>('list')
   const [tickets, setTickets] = useState<SupportTicket[]>([])
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null)
@@ -246,7 +251,7 @@ export default function AdminSupportPage() {
         return { ...prev, messages: (prev.messages || []).filter((m) => m.id !== optimisticId) }
       })
       setReplyContent(text)
-      toast.error('Failed to send reply')
+      toast.error(t('support.reply_failed'))
     } finally {
       setSendingReply(false)
     }
@@ -305,7 +310,7 @@ export default function AdminSupportPage() {
                   {activeTicket.source === 'floating_button' && (
                     <>
                       <span>·</span>
-                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-600 font-medium">Bug Button</span>
+                      <span className="rounded-full bg-red-50 px-2 py-0.5 text-red-600 font-medium">{t('support.bug_button')}</span>
                     </>
                   )}
                 </div>
@@ -364,7 +369,7 @@ export default function AdminSupportPage() {
         {/* Page URL bar */}
         {activeTicket?.page_url && (
           <div className="flex-shrink-0 bg-amber-50 border-b border-amber-100 px-4 py-1.5 text-xs text-amber-700 truncate">
-            <span className="font-medium">Page:</span> {activeTicket.page_url}
+            <span className="font-medium">{t('support.page_label')}</span> {activeTicket.page_url}
           </div>
         )}
 
@@ -393,8 +398,8 @@ export default function AdminSupportPage() {
                           </svg>
                         </div>
                         <span className="text-xs font-medium text-slate-600">
-                          {msg.sender_name || 'User'}{' '}
-                          <span className="text-slate-400 font-normal capitalize">({msg.sender_role})</span>
+                          {msg.sender_name || t('support.user')}{' '}
+                          <span className="text-slate-400 font-normal">({senderRoleLabel(msg.sender_role)})</span>
                         </span>
                       </div>
                     )}
@@ -420,7 +425,7 @@ export default function AdminSupportPage() {
                                     />
                                     {att.is_screenshot && (
                                       <span className="absolute top-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
-                                        Screenshot
+                                        {t('support.screenshot')}
                                       </span>
                                     )}
                                   </div>
@@ -445,7 +450,7 @@ export default function AdminSupportPage() {
           {isClosed && (
             <div className="flex justify-center">
               <div className="flex items-center gap-2 rounded-full bg-slate-100 border border-slate-200 px-4 py-2 text-sm text-slate-600">
-                Ticket closed by user
+                {t('support.closed_by_user')}
               </div>
             </div>
           )}
@@ -461,7 +466,7 @@ export default function AdminSupportPage() {
                 type="button"
                 onClick={improveText}
                 disabled={improvingReply || !replyContent.trim()}
-                title="AI Correct"
+                title={t('support.ai_correct')}
                 className="relative flex-shrink-0 flex flex-col items-center justify-center gap-1 h-[4.5rem] w-14 rounded-xl bg-violet-50 border border-violet-200 hover:bg-violet-100 disabled:opacity-40 transition-colors group"
               >
                 {improvingReply ? (
@@ -476,7 +481,7 @@ export default function AdminSupportPage() {
                   </svg>
                 )}
                 <span className="text-[9px] font-semibold text-violet-600 leading-none">
-                  {improvingReply ? 'Working…' : 'AI Correct'}
+                  {improvingReply ? t('support.working') : t('support.ai_correct')}
                 </span>
               </button>
 
@@ -484,7 +489,7 @@ export default function AdminSupportPage() {
                 <textarea
                   value={replyContent}
                   onChange={(e) => setReplyContent(e.target.value)}
-                  placeholder="Reply to this ticket… (Enter to send, Shift+Enter for newline)"
+                  placeholder={t('support.admin_reply_placeholder')}
                   rows={2}
                   className="w-full resize-none rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm placeholder-slate-400 focus:border-violet-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-100 transition-all"
                   onKeyDown={(e) => {
@@ -507,7 +512,7 @@ export default function AdminSupportPage() {
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    Resolved
+                    {t('support.status.resolved')}
                   </button>
                 )}
                 <button
@@ -521,14 +526,14 @@ export default function AdminSupportPage() {
                         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                       </svg>
-                      Sending…
+                      {t('support.sending')}
                     </>
                   ) : (
                     <>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                       </svg>
-                      Send
+                      {t('support.send')}
                     </>
                   )}
                 </button>

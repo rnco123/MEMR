@@ -133,7 +133,9 @@ function AdminConfigurationsPage() {
           : (locationRows[0]?.id ?? null)
       )
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t('admin.config.toast_load_failed'))
+      toast.error(e instanceof Error ? e.message : t('admin.config.toast_load_failed'), {
+        id: 'admin-config-load-error',
+      })
     } finally {
       setLoading(false)
     }
@@ -150,7 +152,9 @@ function AdminConfigurationsPage() {
         setSavedConfig(stored)
         setDraftConfig(stored)
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : t('admin.config.toast_load_failed'))
+        toast.error(e instanceof Error ? e.message : t('admin.config.toast_load_failed'), {
+        id: 'admin-config-load-error',
+      })
       }
     })()
 
