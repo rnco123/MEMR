@@ -127,8 +127,8 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       const vitalsJson = await vitalsRes.json().catch(() => ({}))
       if (!vitalsRes.ok) {
         console.error('Error saving vitals:', vitalsJson)
-        toast.error('Failed to save vitals', {
-          description: vitalsJson.error || vitalsJson.message || 'Please try again.',
+        toast.error(t('vitals.save_failed'), {
+          description: vitalsJson.error || vitalsJson.message || t('vitals.try_again'),
         })
         setSaving(false)
         return
@@ -147,8 +147,8 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       void triggerSoapCompletion(encounterId, t)
     } catch (error) {
       console.error('Error in handleSubmit:', error)
-      toast.error('Failed to save vitals', {
-        description: error instanceof Error ? error.message : 'Please try again.',
+      toast.error(t('vitals.save_failed'), {
+        description: error instanceof Error ? error.message : t('vitals.try_again'),
       })
     } finally {
       setSaving(false)
