@@ -8,6 +8,7 @@ import { guardPatientAccess } from '@/lib/encounters/guard'
 import { handleApiError } from '@/lib/api-error-handler'
 import { PATIENT_DOCUMENT_SELECT } from '@/lib/encounters/encounter-detail-selects'
 import { createSignedUrlMap } from '@/lib/storage/signed-url-map'
+import { physicalExaminationSpanishPath } from '@/lib/encounter/sync-physical-examination-document'
 import { auditPhi } from '@/lib/audit-phi'
 import { PATIENT_DOCUMENT_LABELS } from '@/lib/validation'
 
@@ -64,6 +65,19 @@ export async function GET(
       3600
     )
 
+    // Generated Physical Examination PDFs have a Spanish copy next to them. Signed separately
+    // so a chart created before the copy existed can't fail the main batch.
+    const spanishPathByPath = new Map<string, string>()
+    for (const doc of documents ?? []) {
+      const path = (doc as { file_path?: string | null }).file_path
+      if (path?.endsWith('/clinical/physical-examination.pdf')) {
+        spanishPathByPath.set(path, physicalExaminationSpanishPath(path))
+      }
+    }
+    const signedSpanishUrlByPath = spanishPathByPath.size
+      ? await createSignedUrlMap(supabaseAdmin, 'patient-documents', [...spanishPathByPath.values()], 3600)
+      : new Map<string, string>()
+
     // Batch uploader profiles (one query instead of one per document).
     const uploaderIds = [...new Set((documents ?? []).map((doc: any) => doc.uploaded_by).filter(Boolean))]
     const { data: uploaderProfiles } = uploaderIds.length
@@ -85,6 +99,9 @@ export async function GET(
         document_name: doc.file_name, // Use file_name as document_name
         document_label: doc.document_category || 'other', // Use document_category as document_label
         file_url: doc.file_path ? signedUrlByPath.get(doc.file_path) ?? '' : '',
+        file_url_es: doc.file_path
+          ? signedSpanishUrlByPath.get(spanishPathByPath.get(doc.file_path) ?? '') ?? null
+          : null,
         file_name: doc.file_name,
         file_size: doc.file_size,
         file_type: doc.file_type,

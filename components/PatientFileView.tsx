@@ -68,6 +68,8 @@ interface PatientDocument {
   document_name: string
   document_label: string
   file_url: string
+  /** Spanish copy of generated chart documents (Physical Examination). */
+  file_url_es?: string | null
   file_name: string
   file_size: number
   file_type: string
@@ -180,6 +182,14 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
   
   // Document management state
   const [documents, setDocuments] = useState<PatientDocument[]>([])
+  // Show the Spanish copy of generated documents when the UI is in Spanish.
+  const displayDocuments = useMemo(
+    () =>
+      language === 'es'
+        ? documents.map((doc) => (doc.file_url_es ? { ...doc, file_url: doc.file_url_es } : doc))
+        : documents,
+    [documents, language]
+  )
   const [loadingDocuments, setLoadingDocuments] = useState(false)
   const [showUploadModal, setShowUploadModal] = useState(false)
   const [uploadDropActive, setUploadDropActive] = useState(false)
@@ -1541,7 +1551,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                             : 'space-y-3'
                         }
                       >
-                        {documents.map((doc: PatientDocument) => {
+                        {displayDocuments.map((doc: PatientDocument) => {
                           const isDefault = (doc as { is_default?: boolean }).is_default || doc.id?.toString().startsWith('default-')
                           const isSystemDoc = doc.is_system || doc.source === 'i693' || doc.source === 'immigration'
                           const hasFile = Boolean(doc.file_url)

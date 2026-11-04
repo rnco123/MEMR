@@ -25,6 +25,121 @@ export type PhysicalExaminationPdfContext = {
   lastAudit: PhysicalExamAuditSummary
   rosExam: RosExamData
   legacyExam?: PhysicalExaminationData
+  /** Document language; the chart keeps an English and a Spanish copy. Defaults to English. */
+  language?: PhysicalExamPdfLanguage
+}
+
+export type PhysicalExamPdfLanguage = 'en' | 'es'
+
+const PDF_TEXT = {
+  en: {
+    title: 'Physical Examination',
+    subtitle: 'Patient chart · latest saved record',
+    patient: 'PATIENT',
+    visit: 'VISIT',
+    encounter: 'Encounter',
+    dob: 'DOB',
+    firstVisit: 'First visit date',
+    lastSavedBy: 'Last saved by',
+    unknown: 'Unknown',
+    summary: 'Summary',
+    normalCount: ['normal', 'normal'],
+    abnormalCount: ['abnormal', 'abnormal'],
+    notAssessedCount: ['not assessed', 'not assessed'],
+    system: 'SYSTEM',
+    status: 'STATUS',
+    details: 'DETAILS',
+    normal: 'Normal',
+    abnormal: 'Abnormal',
+    notAssessed: 'Not assessed',
+    notRecorded: 'Not recorded',
+    abnormalPrefix: 'Abnormal',
+    rosTitle: 'Review of Systems (ROS)',
+    examTitle: 'Physical Examination (EXAM)',
+    remarks: 'Remarks',
+    findings: 'Examination findings',
+    footer: 'Generated from the latest saved physical examination in MEMR.',
+  },
+  es: {
+    title: 'Examen físico',
+    subtitle: 'Expediente del paciente · último registro guardado',
+    patient: 'PACIENTE',
+    visit: 'VISITA',
+    encounter: 'Encuentro',
+    dob: 'F. nac.',
+    firstVisit: 'Fecha de primera visita',
+    lastSavedBy: 'Guardado por última vez por',
+    unknown: 'Desconocido',
+    summary: 'Resumen',
+    normalCount: ['normal', 'normales'],
+    abnormalCount: ['anormal', 'anormales'],
+    notAssessedCount: ['no evaluado', 'no evaluados'],
+    system: 'SISTEMA',
+    status: 'ESTADO',
+    details: 'DETALLES',
+    normal: 'Normal',
+    abnormal: 'Anormal',
+    notAssessed: 'No evaluado',
+    notRecorded: 'No registrado',
+    abnormalPrefix: 'Anormal',
+    rosTitle: 'Revisión por sistemas (ROS)',
+    examTitle: 'Examen físico (EXAM)',
+    remarks: 'Observaciones',
+    findings: 'Hallazgos del examen',
+    footer: 'Generado a partir del último examen físico guardado en MEMR.',
+  },
+} as const
+
+type PdfText = (typeof PDF_TEXT)[PhysicalExamPdfLanguage]
+
+/** Spanish row labels (English labels come from the row definitions). */
+const ES_ROS_LABELS: Record<string, string> = {
+  cons: 'Generales',
+  skin: 'Piel',
+  eyes: 'Ojos',
+  ears: 'Oídos',
+  nose: 'Nariz',
+  throat: 'Garganta',
+  cv_resp: 'CV/Resp',
+  gi: 'GI',
+  gu: 'GU',
+  gyn: 'GIN',
+  male: 'Masculino',
+  ms: 'Musculoesq.',
+  neu: 'Neuro',
+  psych: 'Psiq.',
+  hemat_lymph: 'Hemat/Linf',
+}
+const ES_EXAM_LABELS: Record<string, string> = {
+  general: 'General',
+  skin: 'Piel',
+  head: 'Cabeza',
+  eyes: 'Ojos',
+  ears: 'Oídos',
+  nose: 'Nariz',
+  throat: 'Garganta',
+  neck: 'Cuello',
+  cv: 'CV',
+  respir: 'Resp',
+  abdomen: 'Abdomen',
+  gu: 'GU fem/masc',
+  rectal: 'Rectal',
+  ms: 'Musculoesq.',
+  neuro: 'Neuro',
+}
+const ES_EXTRA_LABELS: Record<string, string> = {
+  gyn_lmp: 'FUM',
+  neu_numbness: 'Entumecimiento',
+  neu_tingling: 'Hormigueo',
+  ms_sites: 'Sitios examinados',
+}
+const ES_ROLES: Record<string, string> = {
+  doctor: 'médico',
+  fnp: 'FNP',
+  pa: 'PA',
+  nurse: 'enfermera',
+  staff: 'enfermera',
+  admin: 'administrador',
 }
 
 type JsPdfDoc = import('jspdf').jsPDF
@@ -43,25 +158,39 @@ const BRAND = { r: 46, g: 110, b: 243 } as const
 
 const STATUS_META: Record<
   NonNullable<SystemStatus>,
-  { label: string; rowFill: [number, number, number]; pillFill: [number, number, number]; text: [number, number, number] }
+  {
+    labelKey: 'normal' | 'abnormal' | 'notAssessed'
+    rowFill: [number, number, number]
+    pillFill: [number, number, number]
+    text: [number, number, number]
+  }
 > = {
-  N: { label: 'Normal', rowFill: [240, 253, 244], pillFill: [209, 250, 229], text: [4, 120, 87] },
-  A: { label: 'Abnormal', rowFill: [254, 242, 242], pillFill: [254, 226, 226], text: [185, 28, 28] },
-  NA: { label: 'Not assessed', rowFill: [248, 250, 252], pillFill: [241, 245, 249], text: [71, 85, 105] },
+  N: { labelKey: 'normal', rowFill: [240, 253, 244], pillFill: [209, 250, 229], text: [4, 120, 87] },
+  A: { labelKey: 'abnormal', rowFill: [254, 242, 242], pillFill: [254, 226, 226], text: [185, 28, 28] },
+  NA: { labelKey: 'notAssessed', rowFill: [248, 250, 252], pillFill: [241, 245, 249], text: [71, 85, 105] },
 }
 
-function formatUsDate(dateString: string | null | undefined): string {
+function formatDocDate(dateString: string | null | undefined, language: PhysicalExamPdfLanguage): string {
   if (!dateString?.trim()) return '—'
   const d = new Date(dateString.includes('T') ? dateString : `${dateString.trim().slice(0, 10)}T12:00:00`)
   if (Number.isNaN(d.getTime())) return dateString.trim()
-  return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })
+  return d.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+  })
 }
 
-function formatAuditLine(audit: NonNullable<PhysicalExamAuditSummary>): string {
-  const when = formatUsDate(audit.updated_at)
-  const name = audit.editor_name?.trim() || 'Unknown'
-  const role = audit.editor_role?.trim() || ''
-  return role ? `Last saved by ${name} (${role}) · ${when}` : `Last saved by ${name} · ${when}`
+function formatAuditLine(
+  audit: NonNullable<PhysicalExamAuditSummary>,
+  text: PdfText,
+  language: PhysicalExamPdfLanguage
+): string {
+  const when = formatDocDate(audit.updated_at, language)
+  const name = audit.editor_name?.trim() || text.unknown
+  const rawRole = audit.editor_role?.trim() || ''
+  const role = language === 'es' ? ES_ROLES[rawRole.toLowerCase()] ?? rawRole : rawRole
+  return role ? `${text.lastSavedBy} ${name} (${role}) · ${when}` : `${text.lastSavedBy} ${name} · ${when}`
 }
 
 function rosExamHasContent(data: RosExamData | null | undefined): boolean {
@@ -90,14 +219,16 @@ export function physicalExaminationHasChartContent(args: {
 
 function collectExtras(
   data: Record<string, unknown> | undefined,
-  extras?: Array<{ key: string; placeholder: string }>
+  extras: Array<{ key: string; placeholder: string }> | undefined,
+  language: PhysicalExamPdfLanguage
 ): string[] {
   if (!extras?.length || !data) return []
   return extras
     .map((ex) => {
       const value = data[ex.key]
       if (typeof value !== 'string' || !value.trim()) return null
-      return `${ex.placeholder}: ${value.trim()}`
+      const label = language === 'es' ? ES_EXTRA_LABELS[ex.key] ?? ex.placeholder : ex.placeholder
+      return `${label}: ${value.trim()}`
     })
     .filter(Boolean) as string[]
 }
@@ -117,8 +248,14 @@ function countStatuses(data: RosExamData): Record<NonNullable<SystemStatus>, num
 
 class PhysicalExamPdfLayout {
   private y = MARGIN
+  private text: PdfText
 
-  constructor(private doc: JsPdfDoc) {}
+  constructor(
+    private doc: JsPdfDoc,
+    private language: PhysicalExamPdfLanguage
+  ) {
+    this.text = PDF_TEXT[language]
+  }
 
   private newPageIfNeeded(height: number) {
     if (this.y + height > BOTTOM) {
@@ -135,10 +272,10 @@ class PhysicalExamPdfLayout {
 
   drawDocumentHeader(ctx: PhysicalExaminationPdfContext) {
     this.setInk(22, 'bold')
-    this.doc.text('Physical Examination', MARGIN, this.y)
+    this.doc.text(this.text.title, MARGIN, this.y)
     this.setInk(9, 'normal')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-    this.doc.text('Patient chart · latest saved record', PAGE_W - MARGIN, this.y, { align: 'right' })
+    this.doc.text(this.text.subtitle, PAGE_W - MARGIN, this.y, { align: 'right' })
     this.y += 26
 
     const boxH = ctx.lastAudit ? 84 : 68
@@ -153,29 +290,31 @@ class PhysicalExamPdfLayout {
 
     this.setInk(9, 'bold')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-    this.doc.text('PATIENT', innerX, innerY)
-    this.doc.text('VISIT', innerX + colW, innerY)
+    this.doc.text(this.text.patient, innerX, innerY)
+    this.doc.text(this.text.visit, innerX + colW, innerY)
 
     this.setInk(12, 'bold')
     this.doc.setTextColor(INK.r, INK.g, INK.b)
     this.doc.text(ctx.patientName, innerX, innerY + 16)
     const visitLine = ctx.encounterCode?.trim()
-      ? `Encounter ${ctx.encounterCode.trim()}`
-      : `Encounter #${ctx.encounterId}`
+      ? `${this.text.encounter} ${ctx.encounterCode.trim()}`
+      : `${this.text.encounter} #${ctx.encounterId}`
     this.doc.text(visitLine, innerX + colW, innerY + 16)
 
     this.setInk(10, 'normal')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-    if (ctx.patientDob) this.doc.text(`DOB ${formatUsDate(ctx.patientDob)}`, innerX, innerY + 34)
+    if (ctx.patientDob) {
+      this.doc.text(`${this.text.dob} ${formatDocDate(ctx.patientDob, this.language)}`, innerX, innerY + 34)
+    }
     const examDate = ctx.encounterDate ?? ctx.examRecordedAt
     if (examDate) {
-      this.doc.text(`First visit date ${formatUsDate(examDate)}`, innerX + colW, innerY + 34)
+      this.doc.text(`${this.text.firstVisit} ${formatDocDate(examDate, this.language)}`, innerX + colW, innerY + 34)
     }
 
     if (ctx.lastAudit) {
       this.doc.setFont('helvetica', 'italic')
       this.doc.setFontSize(9)
-      this.doc.text(formatAuditLine(ctx.lastAudit), innerX, innerY + 54)
+      this.doc.text(formatAuditLine(ctx.lastAudit, this.text, this.language), innerX, innerY + 54)
     }
 
     this.doc.setTextColor(INK.r, INK.g, INK.b)
@@ -188,16 +327,18 @@ class PhysicalExamPdfLayout {
 
     this.newPageIfNeeded(28)
     const parts: string[] = []
-    if (counts.N) parts.push(`${counts.N} normal`)
-    if (counts.A) parts.push(`${counts.A} abnormal`)
-    if (counts.NA) parts.push(`${counts.NA} not assessed`)
+    // [singular, plural]
+    const word = (forms: readonly [string, string], n: number) => `${n} ${forms[n === 1 ? 0 : 1]}`
+    if (counts.N) parts.push(word(this.text.normalCount, counts.N))
+    if (counts.A) parts.push(word(this.text.abnormalCount, counts.A))
+    if (counts.NA) parts.push(word(this.text.notAssessedCount, counts.NA))
 
     this.doc.setFillColor(238, 245, 255)
     this.doc.setDrawColor(191, 219, 254)
     this.doc.roundedRect(MARGIN, this.y, CONTENT_W, 26, 4, 4, 'FD')
     this.setInk(10, 'bold')
     this.doc.setTextColor(BRAND.r, BRAND.g, BRAND.b)
-    this.doc.text(`Summary: ${parts.join(' · ')}`, MARGIN + 12, this.y + 16)
+    this.doc.text(`${this.text.summary}: ${parts.join(' · ')}`, MARGIN + 12, this.y + 16)
     this.doc.setTextColor(INK.r, INK.g, INK.b)
     this.y += 32
   }
@@ -226,9 +367,9 @@ class PhysicalExamPdfLayout {
 
     this.setInk(8, 'bold')
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-    this.doc.text('SYSTEM', MARGIN + 8, this.y + 13)
-    this.doc.text('STATUS', MARGIN + systemW + 8, this.y + 13)
-    this.doc.text('DETAILS', detailsX, this.y + 13)
+    this.doc.text(this.text.system, MARGIN + 8, this.y + 13)
+    this.doc.text(this.text.status, MARGIN + systemW + 8, this.y + 13)
+    this.doc.text(this.text.details, detailsX, this.y + 13)
     this.doc.setTextColor(INK.r, INK.g, INK.b)
     this.y += 20
 
@@ -263,7 +404,7 @@ class PhysicalExamPdfLayout {
       this.doc.setFont('helvetica', 'bold')
       this.doc.setFontSize(9)
       this.doc.setTextColor(...meta.text)
-      this.doc.text(meta.label, x + 8, y + 11)
+      this.doc.text(this.text[meta.labelKey], x + 8, y + 11)
     } else {
       this.doc.setFillColor(255, 255, 255)
       this.doc.setDrawColor(LINE.r, LINE.g, LINE.b)
@@ -271,7 +412,7 @@ class PhysicalExamPdfLayout {
       this.doc.setFont('helvetica', 'normal')
       this.doc.setFontSize(9)
       this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-      this.doc.text('Not recorded', x + 8, y + 11)
+      this.doc.text(this.text.notRecorded, x + 8, y + 11)
     }
     this.doc.setTextColor(INK.r, INK.g, INK.b)
   }
@@ -319,7 +460,8 @@ class PhysicalExamPdfLayout {
     rows: RosRowDef[] | ExamRowDef[],
     getStatus: (key: string) => SystemStatus | undefined,
     getSectionData: () => Record<string, unknown> | undefined,
-    findings: FindingSelectionMap | undefined
+    findings: FindingSelectionMap | undefined,
+    esLabels: Record<string, string>
   ) {
     const blockTop = this.y
     this.drawSectionTitle(title)
@@ -327,10 +469,11 @@ class PhysicalExamPdfLayout {
 
     for (const row of rows) {
       const status = getStatus(row.key)
-      const extras = collectExtras(getSectionData(), row.extras)
+      const extras = collectExtras(getSectionData(), row.extras, this.language)
       const abnormal = formatFindingLabels(findings?.[row.key])
-      if (abnormal) extras.unshift(`Abnormal: ${abnormal}`)
-      this.drawTableRow(row.label, status, extras, layout)
+      if (abnormal) extras.unshift(`${this.text.abnormalPrefix}: ${abnormal}`)
+      const label = this.language === 'es' ? esLabels[row.key] ?? row.label : row.label
+      this.drawTableRow(label, status, extras, layout)
     }
 
     this.doc.setDrawColor(LINE.r, LINE.g, LINE.b)
@@ -343,26 +486,28 @@ class PhysicalExamPdfLayout {
     this.drawSummary(countStatuses(ctx.rosExam))
 
     this.drawSystemTable(
-      'Review of Systems (ROS)',
+      this.text.rosTitle,
       ROS_ROWS,
       (key) => getRosSystemStatus(ctx.rosExam, key as keyof RosData),
       () => ctx.rosExam.ros as Record<string, unknown> | undefined,
-      ctx.rosExam.ros_findings
+      ctx.rosExam.ros_findings,
+      ES_ROS_LABELS
     )
 
     this.drawSystemTable(
-      'Physical Examination (EXAM)',
+      this.text.examTitle,
       EXAM_ROWS,
       (key) => getExamSystemStatus(ctx.rosExam, key as keyof ExamData),
       () => ctx.rosExam.exam as Record<string, unknown> | undefined,
-      ctx.rosExam.exam_findings
+      ctx.rosExam.exam_findings,
+      ES_EXAM_LABELS
     )
   }
 
   drawRemarks(remarks: string) {
     this.newPageIfNeeded(56)
     this.setInk(12, 'bold')
-    this.doc.text('Remarks', MARGIN, this.y)
+    this.doc.text(this.text.remarks, MARGIN, this.y)
     this.y += 14
 
     const text = remarks.trim()
@@ -383,7 +528,7 @@ class PhysicalExamPdfLayout {
   drawLegacyFindings(text: string) {
     this.newPageIfNeeded(40)
     this.setInk(12, 'bold')
-    this.doc.text('Examination findings', MARGIN, this.y)
+    this.doc.text(this.text.findings, MARGIN, this.y)
     this.y += 16
     this.setInk(11, 'normal')
     const lines = this.doc.splitTextToSize(text, CONTENT_W)
@@ -399,7 +544,7 @@ class PhysicalExamPdfLayout {
     this.doc.setFont('helvetica', 'italic')
     this.doc.setFontSize(8)
     this.doc.setTextColor(MUTED.r, MUTED.g, MUTED.b)
-    this.doc.text('Generated from the latest saved physical examination in MEMR.', MARGIN, PAGE_H - 26)
+    this.doc.text(this.text.footer, MARGIN, PAGE_H - 26)
     this.doc.setTextColor(INK.r, INK.g, INK.b)
   }
 }
@@ -410,7 +555,7 @@ export async function generatePhysicalExaminationPdfBytes(
 ): Promise<Uint8Array> {
   const { jsPDF } = await import('jspdf')
   const doc = new jsPDF({ unit: 'pt', format: 'letter' })
-  const layout = new PhysicalExamPdfLayout(doc)
+  const layout = new PhysicalExamPdfLayout(doc, ctx.language ?? 'en')
 
   layout.drawDocumentHeader(ctx)
 

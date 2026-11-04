@@ -21,6 +21,14 @@ export function physicalExaminationStoragePath(patientId: number): string {
   return `patient-${patientId}/clinical/physical-examination.pdf`
 }
 
+/**
+ * Spanish copy stored next to the English PDF. The documents API returns it as
+ * `file_url_es` and the patient file shows it when the UI is in Spanish.
+ */
+export function physicalExaminationSpanishPath(englishPath: string): string {
+  return englishPath.replace(/\.pdf$/, '.es.pdf')
+}
+
 export type PhysicalExamChartSyncAction = 'created' | 'updated' | 'removed' | 'skipped'
 
 export type PhysicalExamChartSyncResult = {
@@ -169,7 +177,7 @@ export async function syncLatestPhysicalExaminationToPatientChart(
 
     if (existing?.id) {
       await admin.from('patient_documents').delete().eq('id', existing.id)
-      await admin.storage.from('patient-documents').remove([filePath])
+      await admin.storage.from('patient-documents').remove([filePath, physicalExaminationSpanishPath(filePath)])
     }
     return { action: 'removed', filePath: null }
   }
@@ -216,7 +224,10 @@ export async function syncLatestPhysicalExaminationToPatientChart(
     legacyExam: latest.legacyExam,
   }
 
-  const pdfBytes = await generatePhysicalExaminationPdfBytes(pdfContext)
+  const [pdfBytes, pdfBytesEs] = await Promise.all([
+    generatePhysicalExaminationPdfBytes({ ...pdfContext, language: 'en' }),
+    generatePhysicalExaminationPdfBytes({ ...pdfContext, language: 'es' }),
+  ])
   const now = new Date().toISOString()
 
   const { error: uploadErr } = await admin.storage.from('patient-documents').upload(filePath, pdfBytes, {
@@ -227,6 +238,18 @@ export async function syncLatestPhysicalExaminationToPatientChart(
   if (uploadErr) {
     console.error('[physical-examination] patient document upload:', uploadErr.message)
     throw uploadErr
+  }
+
+  // Best effort: without the Spanish copy the chart simply shows the English PDF.
+  const { error: uploadEsErr } = await admin.storage
+    .from('patient-documents')
+    .upload(physicalExaminationSpanishPath(filePath), pdfBytesEs, {
+      cacheControl: '3600',
+      upsert: true,
+      contentType: 'application/pdf',
+    })
+  if (uploadEsErr) {
+    console.error('[physical-examination] Spanish copy upload:', uploadEsErr.message)
   }
 
   const { data: existing } = await admin
