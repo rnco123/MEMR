@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback, useMemo, useRef, type FormEvent } fro
 import { toast } from 'sonner'
 import { UserAvatar } from '@/components/UserAvatar'
 import { PasswordStrengthMeter } from '@/components/PasswordStrengthMeter'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { meetsPasswordCriteria } from '@/lib/security/password-checks'
 import { LocationAssignmentChecklist } from '@/components/LocationAssignmentChecklist'
 import { useT } from '@/lib/i18n'
 import {
@@ -317,6 +319,10 @@ export default function AdminUsersPage() {
   const handleResetPasswordSave = async (e: FormEvent) => {
     e.preventDefault()
     if (!resetUser) return
+    if (!meetsPasswordCriteria(resetPassword)) {
+      setModalError(t('admin.users.password_requirements'))
+      return
+    }
     setModalSubmitting(true)
     setModalError(null)
     try {
@@ -362,6 +368,10 @@ export default function AdminUsersPage() {
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
+    if (!meetsPasswordCriteria(password)) {
+      setFormError(t('admin.users.password_requirements'))
+      return
+    }
     setSubmitting(true)
     setFormError(null)
     setFormSuccess(null)
@@ -423,8 +433,9 @@ export default function AdminUsersPage() {
     if (page > totalPages) setPage(totalPages)
   }, [page, totalPages])
 
+  const [pendingDelete, setPendingDelete] = useState<StaffUser | null>(null)
+
   const handleSoftDelete = async (u: StaffUser) => {
-    if (!window.confirm(t('admin.users.soft_delete_confirm', { name: userLabel(u) }))) return
     setDeletingUid(u.uid)
     try {
       const res = await fetch('/api/admin/users', {
@@ -438,6 +449,7 @@ export default function AdminUsersPage() {
         return
       }
       toast.success(t('admin.users.soft_deleted', { name: userLabel(u) }))
+      setPendingDelete(null)
       load()
     } catch {
       toast.error(t('admin.users.network_error'))
@@ -750,7 +762,7 @@ export default function AdminUsersPage() {
                 onEdit={openEdit}
                 onResetPassword={openResetPassword}
                 onChangeLocations={openChangeLocations}
-                onDelete={handleSoftDelete}
+                onDelete={setPendingDelete}
                 t={t}
               />
             ))}
@@ -945,7 +957,7 @@ export default function AdminUsersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={modalSubmitting}
+                  disabled={modalSubmitting || !meetsPasswordCriteria(resetPassword)}
                   className="flex-1 h-10 bg-amber-600 text-white rounded-xl text-sm font-semibold disabled:opacity-60"
                 >
                   {modalSubmitting ? t('common.saving') : t('admin.users.reset_password')}
@@ -1038,6 +1050,21 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        onClose={() => {
+          if (!deletingUid) setPendingDelete(null)
+        }}
+        onConfirm={async () => {
+          if (pendingDelete) await handleSoftDelete(pendingDelete)
+        }}
+        title={t('admin.users.delete')}
+        message={pendingDelete ? t('admin.users.soft_delete_confirm', { name: userLabel(pendingDelete) }) : ''}
+        confirmLabel={t('admin.users.delete')}
+        variant="danger"
+        loading={deletingUid != null}
+      />
     </div>
   )
 }
