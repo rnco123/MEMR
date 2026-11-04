@@ -368,6 +368,15 @@ export default function AdminUsersPage() {
 
   const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
+    // Same rules as the API schema, so the user sees what to fix instead of "Invalid input".
+    if (name.trim().length < 2) {
+      setFormError(t('admin.users.name_required'))
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setFormError(t('admin.users.email_invalid'))
+      return
+    }
     if (!meetsPasswordCriteria(password)) {
       setFormError(t('admin.users.password_requirements'))
       return

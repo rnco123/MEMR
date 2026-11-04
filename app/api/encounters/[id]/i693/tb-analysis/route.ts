@@ -7,6 +7,7 @@ import {
   AuthorizationError,
   NotFoundError,
   ValidationError,
+  AppError,
 } from '@/lib/api-error-handler'
 import { isI693ApiRole } from '@/lib/immigration/api-auth'
 import { guardI693EncounterAccess } from '@/lib/encounters/guard'
@@ -74,7 +75,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
     const patientId = await resolveEncounterPatientId(admin, encounter)
 
     const pdfBytes = new Uint8Array(await file.arrayBuffer())
-    const { values, model } = await extractQftValuesFromPdf(pdfBytes, { fileName: file.name })
+    let extracted: Awaited<ReturnType<typeof extractQftValuesFromPdf>>
+    try {
+      extracted = await extractQftValuesFromPdf(pdfBytes, { fileName: file.name })
+    } catch (aiErr) {
+      if (aiErr instanceof TbAnalysisConfigError || aiErr instanceof TbAnalysisExtractionError) throw aiErr
+      // Invalid key, provider outage, unknown model…: report the AI as unavailable, not a 500.
+      console.error('[i693 tb-analysis] AI request failed:', aiErr)
+      throw new AppError('The AI service is unavailable right now', 503, 'AI_UNAVAILABLE')
+    }
+    const { values, model } = extracted
 
     const isQuantiferon = values.assay === 'quantiferon_plus' || values.assay === 'quantiferon_other'
 
@@ -131,7 +141,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
     })
   } catch (e) {
     if (e instanceof TbAnalysisConfigError) {
-      return NextResponse.json({ error: 'TB analysis is not configured' }, { status: 503 })
+      return NextResponse.json(
+        { error: 'TB analysis is not configured', code: 'AI_UNAVAILABLE' },
+        { status: 503 }
+      )
     }
     if (e instanceof TbAnalysisExtractionError) {
       return handleApiError(new ValidationError(e.message))

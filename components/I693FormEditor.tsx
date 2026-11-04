@@ -128,7 +128,11 @@ export function I693FormEditor({ encounterId, patientName, isImmigration }: Prop
         headers: { 'Content-Type': 'application/json' },
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || json.message || 'AI fill failed')
+      if (!res.ok) {
+        throw new Error(
+          json.code === 'AI_UNAVAILABLE' ? t('i693.ai_unavailable') : json.error || json.message || t('i693.ai_fill_failed')
+        )
+      }
 
       let raw = extractFormDataFromApi(json)
       if (raw == null) {

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { fetchUserRole } from '@/lib/fetch-user-role'
-import { handleApiError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
+import { handleApiError, AppError, AuthenticationError, AuthorizationError, ValidationError } from '@/lib/api-error-handler'
 import { mergeI693Form } from '@/lib/i693/types'
 import { prefillFromPatient } from '@/lib/i693/ai-fill'
 import type { I693FormData } from '@/lib/i693/types'
@@ -64,7 +64,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
     let base = mergeI693Form((existing?.form_data as Partial<I693FormData>) ?? undefined)
     base = prefillFromPatient(bundle.patient, bundle.vitals, base)
 
-    const { form, model } = await fillI693WithOpenAI(bundle.textBlock, base)
+    let filled: Awaited<ReturnType<typeof fillI693WithOpenAI>>
+    try {
+      filled = await fillI693WithOpenAI(bundle.textBlock, base)
+    } catch (aiErr) {
+      // Missing/invalid key, provider outage or a bad model reply: tell the user the AI is
+      // unavailable instead of a generic 500.
+      console.error('[i693 ai-fill] AI request failed:', aiErr)
+      throw new AppError('The AI service is unavailable right now', 503, 'AI_UNAVAILABLE')
+    }
+    const { form, model } = filled
     const now = new Date().toISOString()
 
     const row = {

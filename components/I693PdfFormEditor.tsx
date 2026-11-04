@@ -448,7 +448,11 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         cache: 'no-store',
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || json.message || 'AI fill failed')
+      if (!res.ok) {
+        throw new Error(
+          json.code === 'AI_UNAVAILABLE' ? t('i693.ai_unavailable') : json.error || json.message || t('i693.ai_fill_failed')
+        )
+      }
 
       const raw =
         extractFormDataFromApi(json) ??
@@ -466,7 +470,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         toast.success(t('i693.ai_done'))
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'AI fill failed')
+      toast.error(e instanceof Error ? e.message : t('i693.ai_fill_failed'))
     } finally {
       setAiChartLoading(false)
     }
@@ -485,7 +489,11 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
         body: formData,
       })
       const json = await res.json()
-      if (!res.ok) throw new Error(json.error || json.message || t('i693.tb_flag_failed'))
+      if (!res.ok) {
+        throw new Error(
+          json.code === 'AI_UNAVAILABLE' ? t('i693.ai_unavailable') : json.error || json.message || t('i693.tb_flag_failed')
+        )
+      }
 
       const result = json as TbFlagResult
       setTbFlag(result)
