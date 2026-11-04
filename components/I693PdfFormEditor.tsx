@@ -50,6 +50,7 @@ import { printPdfBlob } from '@/lib/patient-documents/print-document'
 import { mergeAcceptedI693AiDraft } from '@/lib/i693/supporting-documents/merge-draft'
 import type { I693LocationAutofillMeta } from '@/lib/i693/location-autofill'
 import { useT } from '@/lib/i18n'
+import { useConfirm } from '@/components/useConfirm'
 import { ImmigrationWorkflowStatusBadge } from '@/components/ImmigrationWorkflowStatusBadge'
 import { useImmigrationWorkflowCase } from '@/lib/hooks/use-immigration-workflow-case'
 
@@ -181,6 +182,7 @@ function formatTbValue(value: number | null): string {
 
 export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
   const { t } = useT()
+  const { confirm, confirmDialog } = useConfirm()
   const { caseRow: workflowCase, loading: workflowCaseLoading, reload: reloadWorkflowCase } = useImmigrationWorkflowCase(encounterId)
   const [loading, setLoading] = useState(true)
   const [pdfReady, setPdfReady] = useState(false)
@@ -333,7 +335,14 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   const handleCompleteEncounter = useCallback(async () => {
     if (completingEncounter) return
-    if (!window.confirm(t('encounter_modal.complete_confirm'))) return
+    if (
+      !(await confirm({
+        title: t('encounter_modal.complete_encounter'),
+        message: t('encounter_modal.complete_confirm'),
+        confirmLabel: t('encounter_modal.complete_encounter'),
+      }))
+    )
+      return
 
     setCompletingEncounter(true)
     try {
@@ -360,7 +369,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
     } finally {
       setCompletingEncounter(false)
     }
-  }, [completingEncounter, encounterId, saveCurrent, t])
+  }, [completingEncounter, encounterId, saveCurrent, t, confirm])
 
   const updateWorkflowStatus = useCallback(
     async (nextStatus: ImmigrationWorkflowStatus) => {
@@ -1067,6 +1076,7 @@ export function I693PdfFormEditor({ encounterId, patientName, onBack }: Props) {
 
   return (
     <div className="w-full max-w-full min-w-0 space-y-3 overflow-x-hidden text-slate-900">
+      {confirmDialog}
       <div className="rounded-xl border border-slate-200 bg-white/80 backdrop-blur-md shadow-sm">
         {/* Context strip: the patient/date/location line used to share a row with the
             action buttons, which squeezed it until the clinic name read "C…". It gets

@@ -3,6 +3,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import {
+  physicalExamExtraLabel,
+  physicalExamFindingLabel,
+  physicalExamRowLabel,
+} from '@/lib/encounter/physical-examination-i18n'
 import { isForbiddenResponse } from '@/lib/http/api-response'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
@@ -314,7 +319,7 @@ export function EncounterPhysicalExamPanel({
                   : 'bg-white text-slate-500 border-slate-200 hover:border-slate-400 hover:text-slate-700'
               }`}
             >
-              {finding.label}
+              {physicalExamFindingLabel(finding.label, language)}
             </button>
           )
         })}
@@ -326,7 +331,7 @@ export function EncounterPhysicalExamPanel({
     const status = (rosExam.ros?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{row.label}</td>
+        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{physicalExamRowLabel('ros', row.key, row.label.replace(/:$/, ''), language)}:</td>
         <td className="py-2 pr-1.5 w-10 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setRosStatus(row.key, v)} />
         </td>
@@ -339,7 +344,7 @@ export function EncounterPhysicalExamPanel({
             <input
               key={String(ex.key)}
               type="text"
-              placeholder={ex.placeholder}
+              placeholder={physicalExamExtraLabel(ex.key, ex.placeholder, language)}
               disabled={locked || saving}
               value={(rosExam.ros?.[ex.key] as string | null | undefined) ?? ''}
               onChange={e => setRosText(ex.key, e.target.value)}
@@ -355,7 +360,7 @@ export function EncounterPhysicalExamPanel({
     const status = (rosExam.exam?.[row.key] ?? null) as SystemStatus
     return (
       <tr key={row.key} className="border-b border-slate-100 last:border-0">
-        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{row.label}</td>
+        <td className="py-2 pr-3 text-sm font-semibold text-slate-800 whitespace-nowrap w-[100px] align-top">{physicalExamRowLabel('exam', row.key, row.label.replace(/:$/, ''), language)}:</td>
         <td className="py-2 pr-1.5 w-10 text-center align-top">
           <StatusBtn value="N" current={status} disabled={locked || saving} onChange={v => setExamStatus(row.key, v)} />
         </td>
@@ -368,7 +373,7 @@ export function EncounterPhysicalExamPanel({
             <input
               key={String(ex.key)}
               type="text"
-              placeholder={ex.placeholder}
+              placeholder={physicalExamExtraLabel(ex.key, ex.placeholder, language)}
               disabled={locked || saving}
               value={(rosExam.exam?.[ex.key] as string | null | undefined) ?? ''}
               onChange={e => setExamText(ex.key, e.target.value)}
@@ -423,17 +428,17 @@ export function EncounterPhysicalExamPanel({
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-slate-600">
             <span className="flex items-center gap-1.5">
               <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-emerald-400 bg-emerald-100 text-emerald-800 font-bold text-xs">N</span>
-              Normal
+              {t('encounter_modal.pe_legend_normal')}
             </span>
             <span className="flex items-center gap-1.5">
               <span className="inline-flex items-center justify-center w-7 h-6 rounded border border-red-400 bg-red-100 text-red-800 font-bold text-xs">A</span>
-              Abnormal
+              {t('encounter_modal.pe_legend_abnormal')}
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full border border-red-400 bg-red-100 text-red-800 font-medium text-xs">Finding</span>
-              Click a finding to mark it abnormal
+              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full border border-red-400 bg-red-100 text-red-800 font-medium text-xs">{t('encounter_modal.pe_legend_finding')}</span>
+              {t('encounter_modal.pe_legend_finding_hint')}
             </span>
-            <span className="text-slate-400 text-xs">(click again to deselect)</span>
+            <span className="text-slate-400 text-xs">{t('encounter_modal.pe_legend_deselect')}</span>
           </div>
 
           {/* Two-column ROS / EXAM tables */}
@@ -449,7 +454,7 @@ export function EncounterPhysicalExamPanel({
                   <span className="text-sm font-bold text-slate-700 uppercase tracking-wide flex-1" aria-hidden />
                   <span className="w-10 text-center text-xs font-semibold text-slate-500">N</span>
                   <span className="w-10 text-center text-xs font-semibold text-slate-500 mr-2">A</span>
-                  <span className="text-xs font-semibold text-slate-500 flex-1">Findings</span>
+                  <span className="text-xs font-semibold text-slate-500 flex-1">{t('encounter_modal.pe_findings')}</span>
                 </div>
               </div>
               <div className="px-4 py-1">
@@ -472,7 +477,7 @@ export function EncounterPhysicalExamPanel({
                   <span className="text-sm font-bold text-slate-700 uppercase tracking-wide flex-1" aria-hidden />
                   <span className="w-10 text-center text-xs font-semibold text-slate-500">N</span>
                   <span className="w-10 text-center text-xs font-semibold text-slate-500 mr-2">A</span>
-                  <span className="text-xs font-semibold text-slate-500 flex-1">Findings</span>
+                  <span className="text-xs font-semibold text-slate-500 flex-1">{t('encounter_modal.pe_findings')}</span>
                 </div>
               </div>
               <div className="px-4 py-1">
@@ -496,7 +501,7 @@ export function EncounterPhysicalExamPanel({
               disabled={locked || saving}
               onChange={e => setRemarks(e.target.value)}
               className="w-full bg-[#f9fbff] border border-slate-200 rounded-xl px-3 py-2 text-slate-900 text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3]/35 focus:border-[#2E6EF3] disabled:opacity-50 disabled:bg-slate-50 resize-y min-h-[72px] [color-scheme:light]"
-              placeholder="Additional remarks…"
+              placeholder={t('encounter_modal.pe_remarks_placeholder')}
             />
           </div>
 

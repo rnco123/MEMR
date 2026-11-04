@@ -30,6 +30,7 @@ import {
 } from '@/components/FlowboardViewToggle'
 import { formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
+import { useConfirm } from '@/components/useConfirm'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { LocationFilterSelect } from '@/components/LocationFilterSelect'
 import { MobilePageHeader } from '@/components/mobile/MobilePageHeader'
@@ -92,6 +93,7 @@ function FlowboardPage() {
   const { user, role } = useAuth()
   const router = useRouter()
   const { t, language } = useT()
+  const { confirm, confirmDialog } = useConfirm()
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
@@ -402,7 +404,14 @@ function FlowboardPage() {
   const batchCompleteEncounters = useCallback(async () => {
     const ids = [...selectedEncounterIds]
     if (ids.length === 0 || batchCompleting) return
-    if (!window.confirm(t('flow.batch_complete_confirm', { count: ids.length }))) return
+    if (
+      !(await confirm({
+        title: t('flow.batch_complete_encounters'),
+        message: t('flow.batch_complete_confirm', { count: ids.length }),
+        confirmLabel: t('flow.batch_complete_encounters'),
+      }))
+    )
+      return
 
     setBatchCompleting(true)
     try {
@@ -431,7 +440,7 @@ function FlowboardPage() {
     } finally {
       setBatchCompleting(false)
     }
-  }, [selectedEncounterIds, batchCompleting, t, clearEncounterSelection, refreshData])
+  }, [selectedEncounterIds, batchCompleting, t, clearEncounterSelection, refreshData, confirm])
 
   const refreshAction = (
     <button
@@ -448,6 +457,7 @@ function FlowboardPage() {
 
   return (
     <div className="flex flex-col min-h-0">
+      {confirmDialog}
       {/* ---- Mobile app-header (phone only) ---- */}
       <MobilePageHeader
         title={t('flow.title')}

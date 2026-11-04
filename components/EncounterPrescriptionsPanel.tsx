@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { useConfirm } from '@/components/useConfirm'
 import { isForbiddenResponse } from '@/lib/http/api-response'
 import { canEditEncounterPrescriptions } from '@/lib/prescriptions/encounter-prescriptions'
 import {
@@ -84,6 +85,7 @@ export function EncounterPrescriptionsPanel({
   onPharmaciesReload,
 }: Props) {
   const { t, language } = useT()
+  const { confirm, confirmDialog } = useConfirm()
   const canManagePharmacy = canManagePharmacyProp ?? canEdit
   const [released, setReleased] = useState(false)
   const [sendingReady, setSendingReady] = useState(false)
@@ -346,7 +348,15 @@ export function EncounterPrescriptionsPanel({
 
   const removeRx = async (rxId: number) => {
     if (!editable) return
-    if (!window.confirm(t('encounter_modal.rx_confirm_remove'))) return
+    if (
+      !(await confirm({
+        title: t('common.remove'),
+        message: t('encounter_modal.rx_confirm_remove'),
+        confirmLabel: t('common.remove'),
+        variant: 'danger',
+      }))
+    )
+      return
 
     setSaving(true)
     try {
@@ -371,6 +381,7 @@ export function EncounterPrescriptionsPanel({
 
   return (
     <div className="rounded-xl border border-violet-200 bg-violet-50/50 p-6 shadow-sm ring-1 ring-violet-100">
+      {confirmDialog}
       <h3 className="text-lg font-bold text-slate-900 mb-1 flex items-center gap-2 flex-wrap">
         <span className="inline-flex items-center gap-2">
         <svg className="w-5 h-5 text-violet-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>

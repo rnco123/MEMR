@@ -13,6 +13,12 @@ import {
   type SystemStatus,
 } from '@/lib/encounter/physical-examination'
 import { EXAM_ROWS, ROS_ROWS, type ExamRowDef, type RosRowDef } from '@/lib/encounter/physical-examination-rows'
+import {
+  ES_EXAM_LABELS,
+  ES_ROS_LABELS,
+  physicalExamExtraLabel,
+  physicalExamFindingLabel,
+} from '@/lib/encounter/physical-examination-i18n'
 
 export type PhysicalExaminationPdfContext = {
   patientName: string
@@ -92,47 +98,6 @@ const PDF_TEXT = {
 
 type PdfText = (typeof PDF_TEXT)[PhysicalExamPdfLanguage]
 
-/** Spanish row labels (English labels come from the row definitions). */
-const ES_ROS_LABELS: Record<string, string> = {
-  cons: 'Generales',
-  skin: 'Piel',
-  eyes: 'Ojos',
-  ears: 'Oídos',
-  nose: 'Nariz',
-  throat: 'Garganta',
-  cv_resp: 'CV/Resp',
-  gi: 'GI',
-  gu: 'GU',
-  gyn: 'GIN',
-  male: 'Masculino',
-  ms: 'Musculoesq.',
-  neu: 'Neuro',
-  psych: 'Psiq.',
-  hemat_lymph: 'Hemat/Linf',
-}
-const ES_EXAM_LABELS: Record<string, string> = {
-  general: 'General',
-  skin: 'Piel',
-  head: 'Cabeza',
-  eyes: 'Ojos',
-  ears: 'Oídos',
-  nose: 'Nariz',
-  throat: 'Garganta',
-  neck: 'Cuello',
-  cv: 'CV',
-  respir: 'Resp',
-  abdomen: 'Abdomen',
-  gu: 'GU fem/masc',
-  rectal: 'Rectal',
-  ms: 'Musculoesq.',
-  neuro: 'Neuro',
-}
-const ES_EXTRA_LABELS: Record<string, string> = {
-  gyn_lmp: 'FUM',
-  neu_numbness: 'Entumecimiento',
-  neu_tingling: 'Hormigueo',
-  ms_sites: 'Sitios examinados',
-}
 const ES_ROLES: Record<string, string> = {
   doctor: 'médico',
   fnp: 'FNP',
@@ -227,7 +192,7 @@ function collectExtras(
     .map((ex) => {
       const value = data[ex.key]
       if (typeof value !== 'string' || !value.trim()) return null
-      const label = language === 'es' ? ES_EXTRA_LABELS[ex.key] ?? ex.placeholder : ex.placeholder
+      const label = physicalExamExtraLabel(ex.key, ex.placeholder, language)
       return `${label}: ${value.trim()}`
     })
     .filter(Boolean) as string[]
@@ -470,7 +435,9 @@ class PhysicalExamPdfLayout {
     for (const row of rows) {
       const status = getStatus(row.key)
       const extras = collectExtras(getSectionData(), row.extras, this.language)
-      const abnormal = formatFindingLabels(findings?.[row.key])
+      const abnormal = formatFindingLabels(
+        findings?.[row.key]?.map((f) => physicalExamFindingLabel(f, this.language))
+      )
       if (abnormal) extras.unshift(`${this.text.abnormalPrefix}: ${abnormal}`)
       const label = this.language === 'es' ? esLabels[row.key] ?? row.label : row.label
       this.drawTableRow(label, status, extras, layout)

@@ -7,6 +7,7 @@ import { LocationCheckboxDropdown } from '@/components/LocationCheckboxDropdown'
 import { FlowboardBatchActionBar } from '@/components/FlowboardBatchActionBar'
 import { formatClinicDateTimeForLanguage } from '@/lib/datetime/clinic-timezone'
 import { useT } from '@/lib/i18n'
+import { useConfirm } from '@/components/useConfirm'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import {
   WORKFLOW_COLUMNS,
@@ -107,6 +108,7 @@ export function I693WorkflowBoard({
   onOpenPdfEditor,
 }: Props) {
   const { t, language } = useT()
+  const { confirm, confirmDialog } = useConfirm()
   const {
     locations: userLocations,
     unrestricted: locationsUnrestricted,
@@ -327,7 +329,14 @@ export function I693WorkflowBoard({
   const closeSelectedForms = async () => {
     const encounterIds = [...selectedDeliveredIds]
     if (encounterIds.length === 0) return
-    if (!window.confirm(t('i693.wf_close_confirm', { count: encounterIds.length }))) return
+    if (
+      !(await confirm({
+        title: t('i693.wf_close_selected'),
+        message: t('i693.wf_close_confirm', { count: encounterIds.length }),
+        confirmLabel: t('i693.wf_close_selected'),
+      }))
+    )
+      return
 
     setClosingForms(true)
     try {
@@ -449,6 +458,7 @@ export function I693WorkflowBoard({
 
   return (
     <div className="space-y-4">
+      {confirmDialog}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">

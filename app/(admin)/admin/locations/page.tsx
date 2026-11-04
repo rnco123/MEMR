@@ -15,6 +15,7 @@ import {
 import { suggestNextTenantCode } from '@/lib/locations/suggest-codes'
 import { useTenantColors } from '@/lib/configurations/use-tenant-colors'
 import { useT } from '@/lib/i18n'
+import { useConfirm } from '@/components/useConfirm'
 import { UserRole } from '@/lib/roles'
 import type { TenantRow } from '@/lib/tenants/types'
 import { toast } from 'sonner'
@@ -106,6 +107,7 @@ function MapLinkHint({
 
 function AdminLocationsPage() {
   const { t } = useT()
+  const { confirm, confirmDialog } = useConfirm()
   // Tenant brand colors come from Admin → Configurations.
   const { badgeStyleForTenant } = useTenantColors()
   const [rows, setRows] = useState<LocationRow[]>([])
@@ -335,7 +337,15 @@ function AdminLocationsPage() {
   const toggleActive = async (row: LocationRow) => {
     const nextActive = !row.is_active
     const confirmKey = nextActive ? 'locations.confirm_enable' : 'locations.confirm_disable'
-    if (!window.confirm(t(confirmKey, { name: row.title }))) return
+    if (
+      !(await confirm({
+        title: t(nextActive ? 'locations.enable' : 'locations.disable'),
+        message: t(confirmKey, { name: row.title }),
+        confirmLabel: t(nextActive ? 'locations.enable' : 'locations.disable'),
+        variant: nextActive ? 'default' : 'danger',
+      }))
+    )
+      return
 
     try {
       const res = await fetch(`/api/admin/locations/${row.id}`, {
@@ -490,6 +500,7 @@ function AdminLocationsPage() {
 
   return (
     <div className="p-6 lg:p-10 max-w-7xl mx-auto">
+      {confirmDialog}
       <div className="mb-8">
         <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
           <h1 className="text-3xl font-bold text-slate-900">{t('locations.title')}</h1>
