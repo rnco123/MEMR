@@ -135,7 +135,7 @@ export function VitalsFormModal({ encounterId, isOpen, onClose, onSave }: Vitals
       }
 
       // Vitals saved successfully — confirm and refresh immediately.
-      toast.success('Vitals saved')
+      toast.success(t('vitals.saved'))
       onSave()
       setFormData({ ...EMPTY_VITALS_FORM_INPUT })
       setErrors({})
