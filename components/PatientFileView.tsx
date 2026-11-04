@@ -1,5 +1,6 @@
 'use client'
 
+import { toast } from 'sonner'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
@@ -263,12 +264,12 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
     if (!file) return
     const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase()
     if (!PATIENT_DOC_ALLOWED_TYPES.includes(file.type) && !PATIENT_DOC_ALLOWED_EXT.includes(fileExtension)) {
-      alert(t('patient_file.alert_invalid_type'))
+      toast.error(t('patient_file.alert_invalid_type'))
       if (fileInputEl) fileInputEl.value = ''
       return
     }
     if (file.size > PATIENT_DOC_MAX_BYTES) {
-      alert(t('patient_file.alert_file_size'))
+      toast.error(t('patient_file.alert_file_size'))
       if (fileInputEl) fileInputEl.value = ''
       return
     }
@@ -510,7 +511,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       } else {
         const err = await response.json().catch(() => ({}))
         console.error('Failed to fetch documents', err)
-        alert(err.error || t('patient_file.alert_load_docs_failed'))
+        toast.error(err.error || t('patient_file.alert_load_docs_failed'))
       }
     } catch (error) {
       console.error('Error fetching documents:', error)
@@ -572,7 +573,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!uploadForm.file || !uploadForm.document_name || !patientId || isNaN(patientId)) {
-      alert(t('patient_file.alert_fill'))
+      toast.error(t('patient_file.alert_fill'))
       return
     }
 
@@ -603,11 +604,11 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
         if (fileInput) fileInput.value = ''
       } else {
         const error = await response.json()
-        alert(error.error || t('patient_file.alert_upload_failed'))
+        toast.error(error.error || t('patient_file.alert_upload_failed'))
       }
     } catch (error) {
       console.error('Error uploading document:', error)
-      alert(t('patient_file.alert_upload_failed'))
+      toast.error(t('patient_file.alert_upload_failed'))
     } finally {
       setUploading(false)
     }
@@ -628,7 +629,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
       document_name: doc.document_name,
     })
     if (!ok) {
-      alert(t('patient_file.print_popup_blocked'))
+      toast.error(t('patient_file.print_popup_blocked'))
     }
   }, [t])
 
@@ -649,11 +650,11 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
         setDocumentToDelete(null)
       } else {
         const error = await response.json()
-        alert(error.error || t('patient_file.alert_delete_failed'))
+        toast.error(error.error || t('patient_file.alert_delete_failed'))
       }
     } catch (error) {
       console.error('Error deleting document:', error)
-      alert(t('patient_file.alert_delete_failed'))
+      toast.error(t('patient_file.alert_delete_failed'))
     } finally {
       setDeleting(false)
     }

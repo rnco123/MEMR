@@ -614,7 +614,7 @@ export function I693WorkflowBoard({
               {t('i693.wf_no_search_results')}
             </div>
           ) : (
-        <ul className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100 max-h-[calc(100vh-14rem)] overflow-y-auto">
+        <ul className="bg-white border border-slate-200 rounded-2xl divide-y divide-slate-100">
           {filtered.map((row) => {
             const c = row.case!
             const dot = COLOR_DOT[c.status_color] ?? 'bg-slate-400'
