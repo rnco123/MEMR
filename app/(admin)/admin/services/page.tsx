@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AdminService } from '@/lib/services/admin-service'
+import { useT } from '@/lib/i18n'
+import { ConfirmDialog } from '@/components/ConfirmDialog'
 
 type Draft = {
   title_en: string
@@ -40,6 +42,7 @@ const toPayload = (draft: Draft) =>
   )
 
 export default function AdminServicesPage() {
+  const { t } = useT()
   const [services, setServices] = useState<AdminService[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -48,6 +51,7 @@ export default function AdminServicesPage() {
   const [editingId, setEditingId] = useState<number | 'new' | null>(null)
   const [draft, setDraft] = useState<Draft>(EMPTY)
   const [search, setSearch] = useState('')
+  const [pendingDelete, setPendingDelete] = useState<AdminService | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -55,14 +59,14 @@ export default function AdminServicesPage() {
     try {
       const response = await fetch('/api/admin/services')
       const body = await response.json()
-      if (!response.ok) throw new Error(body?.error || 'Failed to load services')
+      if (!response.ok) throw new Error(body?.error || t('admin.services.load_failed'))
       setServices(body.data ?? [])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load services')
+      setError(err instanceof Error ? err.message : t('admin.services.load_failed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => {
     void load()
@@ -95,7 +99,7 @@ export default function AdminServicesPage() {
 
   const save = async () => {
     if (!draft.title_en.trim()) {
-      setError('English title is required')
+      setError(t('admin.services.title_required'))
       return
     }
     setSaving(true)
@@ -111,34 +115,34 @@ export default function AdminServicesPage() {
         }
       )
       const body = await response.json()
-      if (!response.ok) throw new Error(body?.error || 'Failed to save service')
+      if (!response.ok) throw new Error(body?.error || t('admin.services.save_failed'))
 
       setNotice(
         body.portal_synced
-          ? 'Saved and synced to the public site.'
-          : 'Saved in the EMR, but the public site copy did not update. It will sync on the next save.'
+          ? t('admin.services.saved_synced')
+          : t('admin.services.saved_not_synced')
       )
       cancel()
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save service')
+      setError(err instanceof Error ? err.message : t('admin.services.save_failed'))
     } finally {
       setSaving(false)
     }
   }
 
   const remove = async (service: AdminService) => {
-    if (!confirm(`Delete "${service.title_en}"? This removes it from the public site too.`)) return
     setSaving(true)
     setError(null)
     try {
       const response = await fetch(`/api/admin/services/${service.id}`, { method: 'DELETE' })
       const body = await response.json()
-      if (!response.ok) throw new Error(body?.error || 'Failed to delete service')
-      setNotice('Service deleted.')
+      if (!response.ok) throw new Error(body?.error || t('admin.services.delete_failed'))
+      setNotice(t('admin.services.deleted'))
+      setPendingDelete(null)
       await load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete service')
+      setError(err instanceof Error ? err.message : t('admin.services.delete_failed'))
     } finally {
       setSaving(false)
     }
@@ -168,16 +172,16 @@ export default function AdminServicesPage() {
     <div className="p-6 space-y-4">
       <header className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Services</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.services.title')}</h1>
           <p className="text-sm text-gray-500">
-            Managed here and published to the public site automatically.
+            {t('admin.services.subtitle')}
           </p>
         </div>
         <button
           onClick={startCreate}
           className="rounded bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700"
         >
-          Add service
+          {t('admin.services.add')}
         </button>
       </header>
 
@@ -195,16 +199,16 @@ export default function AdminServicesPage() {
       {editingId !== null && (
         <section className="rounded border border-gray-200 bg-white p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900">
-            {editingId === 'new' ? 'New service' : `Editing service #${editingId}`}
+            {editingId === 'new' ? t('admin.services.new') : t('admin.services.editing', { id: String(editingId) })}
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
-            {field('title_en', 'Title (English)')}
-            {field('title_es', 'Title (Spanish)')}
-            {field('description_en', 'Description (English)', { textarea: true })}
-            {field('description_es', 'Description (Spanish)', { textarea: true })}
-            {field('image', 'Image URL')}
-            {field('icon', 'Icon URL')}
-            {field('slug', 'Slug')}
+            {field('title_en', t('admin.services.title_en'))}
+            {field('title_es', t('admin.services.title_es'))}
+            {field('description_en', t('admin.services.description_en'), { textarea: true })}
+            {field('description_es', t('admin.services.description_es'), { textarea: true })}
+            {field('image', t('admin.services.image_url'))}
+            {field('icon', t('admin.services.icon_url'))}
+            {field('slug', t('admin.services.slug'))}
           </div>
           <div className="flex gap-2">
             <button
@@ -212,14 +216,14 @@ export default function AdminServicesPage() {
               disabled={saving}
               className="rounded bg-purple-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-purple-700 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('common.saving') : t('common.save')}
             </button>
             <button
               onClick={cancel}
               disabled={saving}
               className="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-700"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           </div>
         </section>
@@ -228,7 +232,7 @@ export default function AdminServicesPage() {
       <input
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        placeholder="Search services…"
+        placeholder={t('admin.services.search')}
         className="w-full max-w-sm rounded border border-gray-300 px-3 py-1.5 text-sm"
       />
 
@@ -237,9 +241,9 @@ export default function AdminServicesPage() {
           <thead className="bg-gray-50 text-left text-xs uppercase text-gray-500">
             <tr>
               <th className="px-3 py-2">ID</th>
-              <th className="px-3 py-2">English</th>
-              <th className="px-3 py-2">Spanish</th>
-              <th className="px-3 py-2">Slug</th>
+              <th className="px-3 py-2">{t('admin.services.col_english')}</th>
+              <th className="px-3 py-2">{t('admin.services.col_spanish')}</th>
+              <th className="px-3 py-2">{t('admin.services.slug')}</th>
               <th className="px-3 py-2" />
             </tr>
           </thead>
@@ -247,13 +251,13 @@ export default function AdminServicesPage() {
             {loading ? (
               <tr>
                 <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
-                  Loading…
+                  {t('common.loading')}
                 </td>
               </tr>
             ) : visible.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-3 py-6 text-center text-gray-500">
-                  No services found.
+                  {t('admin.services.empty')}
                 </td>
               </tr>
             ) : (
@@ -268,13 +272,13 @@ export default function AdminServicesPage() {
                       onClick={() => startEdit(service)}
                       className="text-purple-600 hover:underline"
                     >
-                      Edit
+                      {t('common.edit')}
                     </button>
                     <button
-                      onClick={() => remove(service)}
+                      onClick={() => setPendingDelete(service)}
                       className="ml-3 text-red-600 hover:underline"
                     >
-                      Delete
+                      {t('common.delete')}
                     </button>
                   </td>
                 </tr>
@@ -283,6 +287,21 @@ export default function AdminServicesPage() {
           </tbody>
         </table>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete != null}
+        onClose={() => {
+          if (!saving) setPendingDelete(null)
+        }}
+        onConfirm={async () => {
+          if (pendingDelete) await remove(pendingDelete)
+        }}
+        title={t('common.delete')}
+        message={t('admin.services.delete_confirm', { name: pendingDelete?.title_en ?? '' })}
+        confirmLabel={t('common.delete')}
+        variant="danger"
+        loading={saving}
+      />
     </div>
   )
 }
