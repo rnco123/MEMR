@@ -1,7 +1,11 @@
 'use client'
 
-import { FLOWBOARD_SELECT_CLASS } from '@/components/FlowboardFilterToolbar'
 import { useT } from '@/lib/i18n'
+
+// Own sizing: FLOWBOARD_SELECT_CLASS has `w-full`, which made the From box fill the row
+// and pushed the To box out of view (the field clips overflow).
+const DATE_INPUT_CLASS =
+  'h-9 min-w-[8.5rem] flex-1 px-2.5 bg-white border border-slate-200 rounded-lg text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2E6EF3] cursor-pointer'
 
 export type AppointmentDateRangeFilterProps = {
   from: string
@@ -32,7 +36,7 @@ export function AppointmentDateRangeFilter({
         type="date"
         value={from}
         onChange={(e) => onFromChange(e.target.value)}
-        className={`${FLOWBOARD_SELECT_CLASS} w-[min(100%,9.5rem)] shrink-0`}
+        className={DATE_INPUT_CLASS}
         aria-label={fromAria}
       />
       <span className="shrink-0 text-xs text-slate-400" aria-hidden>
@@ -42,7 +46,7 @@ export function AppointmentDateRangeFilter({
         type="date"
         value={to}
         onChange={(e) => onToChange(e.target.value)}
-        className={`${FLOWBOARD_SELECT_CLASS} w-[min(100%,9.5rem)] shrink-0`}
+        className={DATE_INPUT_CLASS}
         aria-label={toAria}
       />
     </div>

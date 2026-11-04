@@ -1263,6 +1263,7 @@ const en: Dictionary = {
   'appointments.col_time': 'Time',
   'appointments.col_location': 'Location',
   'appointments.col_visit_type': 'Visit type',
+  'appointments.col_status': 'Status',
   'appointments.move_to_flowboard': 'Move to waiting room',
   'appointments.move_to_flowboard_confirm':
     'Move this visit to today ({date})? It will appear on the virtual waiting room.',
@@ -3347,6 +3348,7 @@ const es: Dictionary = {
   'appointments.col_time': 'Hora',
   'appointments.col_location': 'Ubicación',
   'appointments.col_visit_type': 'Tipo de visita',
+  'appointments.col_status': 'Estado',
   'appointments.move_to_flowboard': 'Mover a sala de espera',
   'appointments.move_to_flowboard_confirm':
     '¿Mover esta visita a hoy ({date})? Aparecerá en la sala de espera virtual.',

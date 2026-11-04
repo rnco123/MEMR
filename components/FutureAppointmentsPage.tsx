@@ -358,13 +358,13 @@ function FutureAppointmentsPageInner() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    <th className="px-4 py-3">{t('appointments.col_patient')}</th>
-                    <th className="px-4 py-3">{t('appointments.col_date')}</th>
-                    <th className="px-4 py-3">{t('appointments.col_time')}</th>
-                    <th className="px-4 py-3">{t('appointments.col_location')}</th>
-                    <th className="px-4 py-3">{t('appointments.col_visit_type')}</th>
-                    <th className="px-4 py-3">{t('flow.status')}</th>
-                    <th className="px-4 py-3 text-right">{t('common.actions')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_patient')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_date')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_time')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_location')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_visit_type')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap">{t('appointments.col_status')}</th>
+                    <th className="px-4 py-3 whitespace-nowrap text-right">{t('common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -407,9 +407,11 @@ function FutureAppointmentsPageInner() {
                             </span>
                             <PatientSourceBadge source={appointment.patient?.created_by_source} />
                           </p>
-                          <p className="text-xs text-slate-500 mt-0.5">
-                            {formatDobShort(appointment.patient?.date_of_birth) ?? '—'}
-                          </p>
+                          {formatDobShort(appointment.patient?.date_of_birth) && (
+                            <p className="text-xs text-slate-500 mt-0.5">
+                              {formatDobShort(appointment.patient?.date_of_birth)}
+                            </p>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-700">
                           {formatClinicDateOnly(appointment.appointment_date, language, {
