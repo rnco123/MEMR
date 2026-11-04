@@ -3,6 +3,7 @@
 import { toast } from 'sonner'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { createPortal } from 'react-dom'
 import { type EncounterStatus, getStatusInfo } from '@/lib/encounter-status'
 import { LoadingSpinner } from '@/components/LoadingSpinner'
 import { EncounterDetailModal } from '@/components/EncounterDetailModal'
@@ -159,6 +160,14 @@ export type PatientFileViewProps = {
   backHref: string
   /** When true, renders inside admin/dashboard shell (no full-page dark layout). */
   embedded?: boolean
+}
+
+/**
+ * Render full-screen overlays under <body>: inside the dashboard shell a `fixed inset-0`
+ * overlay leaves an uncovered strip at the top of the screen.
+ */
+function portalToBody(node: React.ReactNode) {
+  return typeof document === 'undefined' ? node : createPortal(node, document.body)
 }
 
 export function PatientFileView({ patientId, backHref, embedded = false }: PatientFileViewProps) {
@@ -1812,7 +1821,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                     )}
 
                     {/* Upload Modal */}
-                    {showUploadModal && (
+                    {showUploadModal && portalToBody(
                       <div
                         className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
                         onClick={(e) => {
@@ -1985,7 +1994,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                     )}
 
                     {/* Document Viewer Modal */}
-                    {viewingDocument && (
+                    {viewingDocument && portalToBody(
                       <div 
                         className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-2"
                         onClick={(e) => {
@@ -2095,7 +2104,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                     )}
 
                     {/* Delete Confirmation Modal */}
-                    {showDeleteConfirm && (
+                    {showDeleteConfirm && portalToBody(
                       <div
                         className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
                         onClick={(e) => {

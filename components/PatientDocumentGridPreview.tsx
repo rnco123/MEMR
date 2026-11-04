@@ -12,7 +12,7 @@ const ICON_GENERIC =
 
 function pdfEmbedSrc(url: string): string {
   const base = url.includes('#') ? url.split('#')[0]! : url
-  return `${base}#toolbar=0&navpanes=0&scrollbar=0`
+  return `${base}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
 }
 
 function iconForType(fileType: string): { d: string; color: string } {
@@ -81,10 +81,12 @@ export function PatientDocumentGridPreview({
 
   if (isPdf) {
     return (
+      // Chrome ignores `scrollbar=0`; the frame is 24px wider than the card (which clips
+      // overflow) so the PDF viewer's scrollbar is cut off in the thumbnail.
       <iframe
         title={documentName}
         src={pdfEmbedSrc(url)}
-        className="pointer-events-none h-full min-h-[160px] w-full border-0 bg-[#e8e8ea]"
+        className="pointer-events-none h-full min-h-[160px] w-[calc(100%+24px)] max-w-none border-0 bg-[#e8e8ea]"
       />
     )
   }
