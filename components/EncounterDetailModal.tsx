@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { useT } from '@/lib/i18n'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { isImmigrationEncounterForI693 } from '@/lib/i693/immigration-eligibility'
 import { stripServiceFee } from '@/lib/services/service-title'
 import { useLocationServices } from '@/lib/configurations/use-location-services'
@@ -780,7 +781,7 @@ export function EncounterDetailModal({
                                 : 'bg-orange-50 text-orange-900 border-orange-200'
                 }`}
               >
-                {getStatusInfo(encounter.status as EncounterStatus)?.label ?? encounter.status}
+                {translateEncounterStatus(t, encounter.status)}
               </span>
             )}
             {encounter?.status === 'completed' && (

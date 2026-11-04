@@ -11,6 +11,7 @@ import { PatientDocumentGridPreview } from '@/components/PatientDocumentGridPrev
 import { PatientPdfViewer } from '@/components/PatientPdfViewer'
 import { PatientDocxViewer } from '@/components/PatientDocxViewer'
 import { useT } from '@/lib/i18n'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { formatClinicDateTimeForLanguage, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { ageFromCalendarDate, formatCalendarDate } from '@/lib/datetime/date-input'
 import { printPatientDocument } from '@/lib/patient-documents/print-document'
@@ -925,7 +926,7 @@ export function PatientFileView({ patientId, backHref, embedded = false }: Patie
                                       encounter.status === 'in_consultation' ? 'bg-blue-100 text-blue-800' :
                                       'bg-amber-100 text-amber-800'
                                     }`}>
-                                      {(getStatusInfo(encounter.status as EncounterStatus)?.label || encounter.status.replace('_', ' ')).toUpperCase()}
+                                      {translateEncounterStatus(t, encounter.status).toUpperCase()}
                                     </span>
                                   )}
                                 </div>

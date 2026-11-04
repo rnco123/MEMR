@@ -7,6 +7,7 @@ import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { useT } from '@/lib/i18n'
+import { translateEncounterStatus } from '@/lib/encounter-status-i18n'
 import { formatClinicDateOnly, formatClinicTimeSlot } from '@/lib/datetime/clinic-timezone'
 import { useUserLocations } from '@/lib/hooks/use-user-locations'
 import { AssignedLocationsPanel } from '@/components/AssignedLocationsPanel'
@@ -454,8 +455,7 @@ function DashboardPage() {
                           const encounterStatus = appt.status ?? ''
                           const statusLabel = isScheduled
                             ? t('common.scheduled')
-                            : getStatusInfo(encounterStatus as EncounterStatus)?.label ??
-                              encounterStatus.replace(/_/g, ' ')
+                            : translateEncounterStatus(t, encounterStatus)
                           const badgeClass = isScheduled
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : getStatusBadgeClasses(encounterStatus)
